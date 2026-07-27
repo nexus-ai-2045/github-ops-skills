@@ -1,0 +1,203 @@
+{
+  "schema_version": "github-ops/source-manifest/v1",
+  "sources": [
+    {
+      "source_root": "shared",
+      "source_path": "skills/github-cli-ops-guard/manifest.yaml",
+      "target_path": "skills/github-cli-ops-guard/manifest.yaml",
+      "sha256": "d2b5bc27b6a26a525a13f85e33473645946ee7251f55b2fd3272996abdd0f47d",
+      "source_sha256": "d2b5bc27b6a26a525a13f85e33473645946ee7251f55b2fd3272996abdd0f47d",
+      "target_sha256": "d2b5bc27b6a26a525a13f85e33473645946ee7251f55b2fd3272996abdd0f47d",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/github-cli-ops-guard/references/official-gh-auth.md",
+      "target_path": "skills/github-cli-ops-guard/references/official-gh-auth.md",
+      "sha256": "95c6845736326228641db722295a8b92b4b55649ff6fc369d1769578da32f73a",
+      "source_sha256": "6f94d76c2065720fbf411ad50ea7e628c256b8e216e8516c3339c488f8aba13d",
+      "target_sha256": "95c6845736326228641db722295a8b92b4b55649ff6fc369d1769578da32f73a",
+      "normalized": true
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/github-cli-ops-guard/runtime/agents/openai.yaml",
+      "target_path": "skills/github-cli-ops-guard/runtime/agents/openai.yaml",
+      "sha256": "8fdc90b03a8779c601298976e59e73c57a3c7d20cba199ab43e19fbeb48e36ff",
+      "source_sha256": "8fdc90b03a8779c601298976e59e73c57a3c7d20cba199ab43e19fbeb48e36ff",
+      "target_sha256": "8fdc90b03a8779c601298976e59e73c57a3c7d20cba199ab43e19fbeb48e36ff",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/github-cli-ops-guard/scripts/gh_account_cd_hook.ps1",
+      "target_path": "skills/github-cli-ops-guard/scripts/gh_account_cd_hook.ps1",
+      "sha256": "de7a0734ca813a5dd93fdc0c27d35568223351e11e0ac1d6c8b6a04d7ef4c83d",
+      "source_sha256": "de7a0734ca813a5dd93fdc0c27d35568223351e11e0ac1d6c8b6a04d7ef4c83d",
+      "target_sha256": "de7a0734ca813a5dd93fdc0c27d35568223351e11e0ac1d6c8b6a04d7ef4c83d",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
+      "target_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
+      "sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
+      "source_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
+      "target_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/github-cli-ops-guard/SKILL.md",
+      "target_path": "skills/github-cli-ops-guard/SKILL.md",
+      "sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
+      "source_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
+      "target_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/commit-push-pr/manifest.yaml",
+      "target_path": "skills/commit-push-pr/manifest.yaml",
+      "sha256": "af52ddeef7d54a38cf46d69ca2e2313512adcbdf84f68b6a05f821f74eb22ab2",
+      "source_sha256": "af52ddeef7d54a38cf46d69ca2e2313512adcbdf84f68b6a05f821f74eb22ab2",
+      "target_sha256": "af52ddeef7d54a38cf46d69ca2e2313512adcbdf84f68b6a05f821f74eb22ab2",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/commit-push-pr/runtime/agents/openai.yaml",
+      "target_path": "skills/commit-push-pr/runtime/agents/openai.yaml",
+      "sha256": "a81efbe0117d3f4ee695afeb208626b0378743e787c6d3f852a37ab7c4a6394d",
+      "source_sha256": "a81efbe0117d3f4ee695afeb208626b0378743e787c6d3f852a37ab7c4a6394d",
+      "target_sha256": "a81efbe0117d3f4ee695afeb208626b0378743e787c6d3f852a37ab7c4a6394d",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/commit-push-pr/SKILL.md",
+      "target_path": "skills/commit-push-pr/SKILL.md",
+      "sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
+      "source_sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
+      "target_sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/pr-status/manifest.yaml",
+      "target_path": "skills/pr-status/manifest.yaml",
+      "sha256": "8cfa23f26bb75348de66d2045e8fa712d9247937e8f4d8f1aee958433895a7d4",
+      "source_sha256": "8cfa23f26bb75348de66d2045e8fa712d9247937e8f4d8f1aee958433895a7d4",
+      "target_sha256": "8cfa23f26bb75348de66d2045e8fa712d9247937e8f4d8f1aee958433895a7d4",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/pr-status/runtime/agents/openai.yaml",
+      "target_path": "skills/pr-status/runtime/agents/openai.yaml",
+      "sha256": "db10b75998aac0ce61631b2eebf1f9d1a460a249423a3b409d94b12317fc2b64",
+      "source_sha256": "db10b75998aac0ce61631b2eebf1f9d1a460a249423a3b409d94b12317fc2b64",
+      "target_sha256": "db10b75998aac0ce61631b2eebf1f9d1a460a249423a3b409d94b12317fc2b64",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/pr-status/SKILL.md",
+      "target_path": "skills/pr-status/SKILL.md",
+      "sha256": "5d362536451977d8d63b21c600fe53d3c9b07d0e64f1430f5abfb6ef4bb13bd7",
+      "source_sha256": "5d362536451977d8d63b21c600fe53d3c9b07d0e64f1430f5abfb6ef4bb13bd7",
+      "target_sha256": "5d362536451977d8d63b21c600fe53d3c9b07d0e64f1430f5abfb6ef4bb13bd7",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/review-pr/manifest.yaml",
+      "target_path": "skills/review-pr/manifest.yaml",
+      "sha256": "872922f5704f5bb8e6509ad5446c5efd58e0b54a94636b93808f7ad836b6ba4c",
+      "source_sha256": "872922f5704f5bb8e6509ad5446c5efd58e0b54a94636b93808f7ad836b6ba4c",
+      "target_sha256": "872922f5704f5bb8e6509ad5446c5efd58e0b54a94636b93808f7ad836b6ba4c",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/review-pr/runtime/agents/openai.yaml",
+      "target_path": "skills/review-pr/runtime/agents/openai.yaml",
+      "sha256": "39fd6a7819fe03bcb9e1aaf11ad20f0cd2f440d859acdca9f1fcbd653c303d99",
+      "source_sha256": "39fd6a7819fe03bcb9e1aaf11ad20f0cd2f440d859acdca9f1fcbd653c303d99",
+      "target_sha256": "39fd6a7819fe03bcb9e1aaf11ad20f0cd2f440d859acdca9f1fcbd653c303d99",
+      "normalized": false
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/review-pr/SKILL.md",
+      "target_path": "skills/review-pr/SKILL.md",
+      "sha256": "bb550945844dfc4c0dbaf8905694dee1b73fd30934aedbe4dcddf6e723043b65",
+      "source_sha256": "bb550945844dfc4c0dbaf8905694dee1b73fd30934aedbe4dcddf6e723043b65",
+      "target_sha256": "bb550945844dfc4c0dbaf8905694dee1b73fd30934aedbe4dcddf6e723043b65",
+      "normalized": false
+    },
+    {
+      "source_root": "agent-skills",
+      "source_path": "public-repo-readiness/SKILL.md",
+      "target_path": "skills/public-repo-readiness/SKILL.md",
+      "sha256": "3da7fe01084b15892d9e864d2e22e402407decbc0f20572566a74d44ab347aa0",
+      "source_sha256": "abce52a292552656150cad5d45d2157b75614c2c1ee66b81a34f4fe894f2aa0b",
+      "target_sha256": "3da7fe01084b15892d9e864d2e22e402407decbc0f20572566a74d44ab347aa0",
+      "normalized": true
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/post-merge-closeout/manifest.yaml",
+      "target_path": "skills/post-merge-closeout/manifest.yaml",
+      "sha256": "3ed1c6aef6af7890122793e2931a02e51e422c519a106a8d78ee2451cb28e29b",
+      "source_sha256": "66e7c0df107b969c96ebb0da71f28516596fa8277027d76afab2a0c804753068",
+      "target_sha256": "3ed1c6aef6af7890122793e2931a02e51e422c519a106a8d78ee2451cb28e29b",
+      "normalized": true
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/post-merge-closeout/runtime/agents/openai.yaml",
+      "target_path": "skills/post-merge-closeout/runtime/agents/openai.yaml",
+      "sha256": "6650e3b7f8157422af57d7307d0c6c2dc6b174b372eee562e2b9d0c2a9288f53",
+      "source_sha256": "2a110024e79db60fec17f71ac1b091425694cc8222e45b0152b58efeb807d03f",
+      "target_sha256": "6650e3b7f8157422af57d7307d0c6c2dc6b174b372eee562e2b9d0c2a9288f53",
+      "normalized": true
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/post-merge-closeout/SKILL.md",
+      "target_path": "skills/post-merge-closeout/SKILL.md",
+      "sha256": "740363fe491fa4b241ee0ad57ae61bbc7e5f6394f37f2965fe4d487512bf6cc0",
+      "source_sha256": "916f255cc72757a917b2e7ba987ceed14d8a6912bde9917cddbc8c990b8ed31c",
+      "target_sha256": "740363fe491fa4b241ee0ad57ae61bbc7e5f6394f37f2965fe4d487512bf6cc0",
+      "normalized": true
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/pr-convergence-loop/manifest.yaml",
+      "target_path": "skills/pr-convergence-loop/manifest.yaml",
+      "sha256": "f44da3421990c8846b90dd2e9a1d55fe16bd6d8977744394afa9496743b282cc",
+      "source_sha256": "c7ebf10ede7d74053a2fc44bb164c8e0d19d171a608d2cb8c27838851d8888c3",
+      "target_sha256": "f44da3421990c8846b90dd2e9a1d55fe16bd6d8977744394afa9496743b282cc",
+      "normalized": true
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/pr-convergence-loop/runtime/agents/openai.yaml",
+      "target_path": "skills/pr-convergence-loop/runtime/agents/openai.yaml",
+      "sha256": "d697b5e3f13ca61364bfb6ed773b7903419c1d9918993457af601bdb255c732c",
+      "source_sha256": "7595befe46d123c4c8dc55e7cd51dea70dc6d6b7ae96de989001d827e16b0a3c",
+      "target_sha256": "d697b5e3f13ca61364bfb6ed773b7903419c1d9918993457af601bdb255c732c",
+      "normalized": true
+    },
+    {
+      "source_root": "shared",
+      "source_path": "skills/pr-convergence-loop/SKILL.md",
+      "target_path": "skills/pr-convergence-loop/SKILL.md",
+      "sha256": "7551b19283cc95eb422d55d0c5cac08c317170531ae0b905a791aa3f19a20975",
+      "source_sha256": "a691ab04c0a439c59490b28fa697dfccf59e82fba3d34037043ba28c86a547da",
+      "target_sha256": "7551b19283cc95eb422d55d0c5cac08c317170531ae0b905a791aa3f19a20975",
+      "normalized": true
+    }
+  ]
+}

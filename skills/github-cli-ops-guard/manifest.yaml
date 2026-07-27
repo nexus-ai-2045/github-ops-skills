@@ -1,0 +1,29 @@
+# github-cli-ops-guard の配布マニフェスト
+# SSOT: shared/skills/github-cli-ops-guard/ (唯一の正本)
+# 配布エンジン: shared/scripts/skills_distribute.py
+# drift lint: shared/scripts/skills_lint.py
+name: github-cli-ops-guard
+owner_kind: skill
+ssot_pointers:
+  - shared/skills/github-cli-ops-guard/references/official-gh-auth.md
+  - shared/skills/github-cli-ops-guard/scripts/gh_identity_probe.py
+runtimes:
+  claude:
+    mode: copy
+    files:
+      - SKILL.md
+      - scripts/gh_identity_probe.py
+      - references/official-gh-auth.md
+  codex:
+    mode: copy
+    files:
+      - SKILL.md
+      - scripts/gh_identity_probe.py
+      - references/official-gh-auth.md
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: skip
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2

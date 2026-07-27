@@ -1,0 +1,26 @@
+# pr-convergence-loop の配布マニフェスト
+# SSOT: shared/skills/pr-convergence-loop/ (唯一の正本)
+# 配布エンジン: shared/scripts/skills_distribute.py
+# drift lint: shared/scripts/skills_lint.py
+name: pr-convergence-loop
+owner_kind: skill
+ssot_pointers:
+  - shared/skills/github-cli-ops-guard/SKILL.md
+  - shared/skills/done-verification-closeout/SKILL.md
+  - shared/skills/status-sweep/SKILL.md
+runtimes:
+  claude:
+    mode: copy
+    files:
+      - SKILL.md
+  codex:
+    mode: copy
+    files:
+      - SKILL.md
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: skip
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
