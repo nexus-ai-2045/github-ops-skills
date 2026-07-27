@@ -55,3 +55,16 @@ def test_runner_uses_no_window_flag_on_windows(monkeypatch) -> None:
     runner = CommandRunner(run_impl=fake_run)
     runner.run(["gh", "--version"])
     assert captured["creationflags"] != 0
+
+
+def test_runner_decodes_machine_output_as_utf8() -> None:
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout="日本語", stderr="")
+
+    result = CommandRunner(run_impl=fake_run).run(["git", "show", "HEAD"])
+    assert captured["encoding"] == "utf-8"
+    assert captured["errors"] == "replace"
+    assert result.stdout == "日本語"
