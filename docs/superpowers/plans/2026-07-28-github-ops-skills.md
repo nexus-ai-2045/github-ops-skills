@@ -768,7 +768,7 @@ python -m pytest tests/unit/test_import_legacy_sources.py -q
 
 ```powershell
 python -m pytest tests/unit/test_import_legacy_sources.py -q
-rg -n -i 'C:\\Users\\|/Users/|gh auth switch|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_' skills migration
+python scripts/public_identity_guard.py --repo . --range HEAD --json
 ```
 
 期待結果:
@@ -1017,7 +1017,7 @@ python -m pytest -q
 
 ```powershell
 rg -n -i 'gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|Authorization:\\s*Bearer\\s+\\S+' . -g '!docs/superpowers/plans/**'
-rg -n -i 'C:\\Users\\|/Users/|/home/' . -g '!docs/superpowers/plans/**'
+python scripts/public_identity_guard.py --repo . --range HEAD --json
 git diff --check HEAD
 git status --short --branch
 ```
@@ -1032,7 +1032,7 @@ git status --short --branch
 - [ ] Step 6: Windows補助terminal smokeを実行
 
 ```powershell
-python C:\Users\yas\Projects\shared\scripts\windows_terminal_flash_guard.py --repo C:\Users\yas\Projects --smoke-count 3 --json
+python <SHARED_ROOT>\scripts\windows_terminal_flash_guard.py --repo <PROJECTS_ROOT> --smoke-count 3 --json
 ```
 
 期待結果: 3回のsmokeが成功し、可視補助terminal違反0件。失敗時はローカル実装完了としない。
@@ -1063,7 +1063,7 @@ python C:\Users\yas\Projects\shared\scripts\windows_terminal_flash_guard.py --re
 保存前に実測値で置換し、次で検証する。
 
 ```powershell
-Get-Content docs/evidence/local-verification.json -Raw | python C:\Users\yas\.codex\skills\pre-execution-fact-check\scripts\validate_fact_provenance.py
+Get-Content docs/evidence/local-verification.json -Raw | python <CODEX_HOME>\skills\pre-execution-fact-check\scripts\validate_fact_provenance.py
 ```
 
 期待結果: `PASS`。

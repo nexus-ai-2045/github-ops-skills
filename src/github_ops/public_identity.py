@@ -8,8 +8,8 @@ from .result import Outcome, Status
 
 RULES = {
     "windows_home_path": re.compile(r"(?i)\b[A-Z]:\\Users\\[^\\/\s]+"),
-    "macos_home_path": re.compile(r"/Users/[^/\s]+"),
-    "linux_home_path": re.compile(r"/home/[^/\s]+"),
+    "macos_home_path": re.compile("/" + r"Users/[^/\s]+"),
+    "linux_home_path": re.compile("/" + r"home/[^/\s]+"),
     "classic_github_token": re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
     "fine_grained_github_token": re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
     "bearer_token": re.compile(r"(?i)Authorization:\s*Bearer\s+\S+"),

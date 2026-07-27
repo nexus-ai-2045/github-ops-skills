@@ -1,0 +1,35 @@
+{
+  "schema_version": "fact-provenance/v1",
+  "thread_id": "019f9750-f503-7521-8dc4-fd2b95bfcba5",
+  "recorded_at": "2026-07-28T02:34:13.9766184+09:00",
+  "recorded_by": "codex",
+  "claims": [
+    {
+      "classification": "fact",
+      "claim": "offline tests passed: 43",
+      "source": ".venv Python -m pytest -q",
+      "actor": "pytest",
+      "event_time": "2026-07-28T02:34:13.9766184+09:00",
+      "observed_at": "2026-07-28T02:34:13.9766184+09:00",
+      "scope": "github-ops-skills implementation worktree"
+    },
+    {
+      "classification": "unknown",
+      "claim": "GitHub read-only L3 execution readiness",
+      "actor": "codex",
+      "event_time": "unknown",
+      "unknown_reason": "target repository and approved account overlay are not configured",
+      "verification_next": "set the three documented GITHUB_OPS live inputs and rerun scripts/run_read_only_e2e.py",
+      "scope": "GitHub live read-only operation"
+    },
+    {
+      "classification": "non_fact",
+      "claim": "private repository creation should be reviewed next",
+      "actor": "codex",
+      "event_time": "2026-07-28T02:34:13.9766184+09:00",
+      "non_fact_kind": "proposal",
+      "basis": "local implementation is ready for closeout while external operations remain gated",
+      "scope": "human review"
+    }
+  ]
+}
