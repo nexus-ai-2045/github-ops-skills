@@ -20,6 +20,19 @@ def test_scoped_env_does_not_mutate_parent(monkeypatch) -> None:
     assert os.environ.get("GH_TOKEN") is None
 
 
+def test_unset_env_removes_token_only_from_child(monkeypatch) -> None:
+    monkeypatch.setenv("GH_TOKEN", "parent-secret")
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured.update(kwargs["env"])
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    CommandRunner(run_impl=fake_run).run(["gh", "auth", "status"], unset_env={"GH_TOKEN"})
+    assert "GH_TOKEN" not in captured
+    assert os.environ["GH_TOKEN"] == "parent-secret"
+
+
 def test_result_output_is_redacted() -> None:
     token = "gh" + "p_" + "a" * 36
 

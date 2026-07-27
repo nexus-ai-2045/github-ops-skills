@@ -31,9 +31,12 @@ class CommandRunner:
         *,
         cwd: Path | str | None = None,
         scoped_env: Mapping[str, str] | None = None,
+        unset_env: set[str] | None = None,
         timeout: float = 15,
     ) -> CommandResult:
         env = os.environ.copy()
+        for name in unset_env or set():
+            env.pop(name, None)
         if scoped_env:
             env.update(scoped_env)
         creationflags = (
