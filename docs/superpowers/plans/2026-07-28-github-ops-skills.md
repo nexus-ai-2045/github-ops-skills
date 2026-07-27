@@ -627,7 +627,7 @@ def test_english_only_heading_is_blocked() -> None:
 
 
 def test_windows_personal_path_is_blocked() -> None:
-    result = scan_text("artifact at C:\\Users\\alice\\secret.txt")
+    result = scan_text("artifact at C:" + "\\Users\\alice\\secret.txt")
     assert result.status.value == "BLOCKED"
     assert "alice" not in result.to_json()
 ```

@@ -5,7 +5,11 @@ import hashlib
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from github_ops.output import configure_utf8_stdout
 from github_ops.public_identity import scan_text

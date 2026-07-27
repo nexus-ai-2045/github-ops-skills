@@ -3,7 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from github_ops.identity import IdentityProbe
 from github_ops.output import configure_utf8_stdout
