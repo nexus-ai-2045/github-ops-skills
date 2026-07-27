@@ -3,9 +3,9 @@
 ## 記録情報
 
 - schema_version: `fact-provenance/v1`
-- recorded_at: `2026-07-27T20:35:00+09:00`
+- recorded_at: `2026-07-28T02:02:42+09:00`
 - recorded_by: `codex`
-- status: `人間レビュー待ち`
+- status: `expected_login分離の修正差分レビュー待ち`
 - visibility_intent: `private`
 
 ## 目的
@@ -68,7 +68,7 @@ github-ops-skills/
 
 ```text
 GitHub操作要求
-  → 対象repositoryと期待ownerを解決
+  → 対象repository、期待owner、期待loginを解決
   → ローカルoverlayを検証
   → identity probe
   → 操作別preflight
@@ -83,6 +83,7 @@ GitHub操作要求
 次のidentityを別々に観測し、同一のものとして推測しない。
 
 - `expected_owner`
+- `expected_login`
 - 現在の`gh` active account
 - 対象processへ渡されたtokenのlogin
 - Git remoteのowner
@@ -96,7 +97,7 @@ global accountを切り替えずに対象アカウントを使う場合は、次
 
 1. token値を画面・ログへ表示せず取得する。
 2. そのtokenを使った`gh api user`でloginを確認する。
-3. loginが`expected_owner`と一致する場合だけ続行する。
+3. loginがoverlayの`expected_login`と一致する場合だけ続行する。organization所有repositoryでは`expected_owner`と`expected_login`が異なることを正常系として扱う。
 4. tokenは対象commandまたは子processだけへ渡す。
 5. command終了後に環境から除去する。
 6. 操作前後でglobal active accountが変化していないことを確認する。
@@ -128,7 +129,7 @@ globalな`gh auth switch`は既定経路では使わない。明示的な復旧�
 少なくとも次の場合は書き込みを行わない。
 
 - ownerまたはrepositoryを一意に解決できない
-- token loginと期待ownerが不一致
+- token loginと期待loginが不一致
 - remote ownerが期待値と不一致
 - 必須overlayがない、またはschema不適合
 - 対象外のdirty worktreeを含む
