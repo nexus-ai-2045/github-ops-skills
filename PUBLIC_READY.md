@@ -7,8 +7,8 @@ canary、公開判断を別々に記録します。
 
 | 層 | 現在状態 | 根拠 |
 |---|---|---|
-| L1 静的契約 | 再測定待ち | closeout時に記録 |
-| L2 ローカル実行 | 再測定待ち | closeout時に記録 |
+| L1 静的契約 | READY | 2026-07-28 02:36 JST、44 tests成功 |
+| L2 ローカル実行 | READY | adapter一致、Git fsck成功、Windows smoke 3/3 |
 | L3 GitHub read-only | UNKNOWN | 対象repositoryとoverlay未設定 |
 | L4 private canary | 未実施 | 人間承認が必要 |
 

@@ -1,17 +1,26 @@
 {
   "schema_version": "fact-provenance/v1",
   "thread_id": "019f9750-f503-7521-8dc4-fd2b95bfcba5",
-  "recorded_at": "2026-07-28T02:34:13.9766184+09:00",
+  "recorded_at": "2026-07-28T02:36:13.9512630+09:00",
   "recorded_by": "codex",
   "claims": [
     {
       "classification": "fact",
-      "claim": "offline tests passed: 43",
+      "claim": "offline tests passed: 44",
       "source": ".venv Python -m pytest -q",
       "actor": "pytest",
-      "event_time": "2026-07-28T02:34:13.9766184+09:00",
-      "observed_at": "2026-07-28T02:34:13.9766184+09:00",
+      "event_time": "2026-07-28T02:36:13.9512630+09:00",
+      "observed_at": "2026-07-28T02:36:13.9512630+09:00",
       "scope": "github-ops-skills implementation worktree"
+    },
+    {
+      "classification": "fact",
+      "claim": "Windows hidden-console smoke passed: 3 of 3",
+      "source": "windows_terminal_flash_guard.py --smoke-count 3 --json",
+      "actor": "windows_terminal_flash_guard",
+      "event_time": "2026-07-28T02:36:13.9512630+09:00",
+      "observed_at": "2026-07-28T02:36:13.9512630+09:00",
+      "scope": "Projects Windows subprocess policy"
     },
     {
       "classification": "unknown",
@@ -26,7 +35,7 @@
       "classification": "non_fact",
       "claim": "private repository creation should be reviewed next",
       "actor": "codex",
-      "event_time": "2026-07-28T02:34:13.9766184+09:00",
+      "event_time": "2026-07-28T02:36:13.9512630+09:00",
       "non_fact_kind": "proposal",
       "basis": "local implementation is ready for closeout while external operations remain gated",
       "scope": "human review"

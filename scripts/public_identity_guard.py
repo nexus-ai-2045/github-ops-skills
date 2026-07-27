@@ -19,25 +19,56 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def scan_git_tree(runner: CommandRunner, repo: Path, revision: str) -> Outcome:
+    listing = runner.run(
+        ["git", "ls-tree", "-r", "--name-only", revision],
+        cwd=repo,
+        timeout=30,
+    )
+    if listing.returncode != 0:
+        return Outcome(
+            status=Status.UNKNOWN,
+            code="git_range_unverified",
+            cause="指定Git treeを確認できません",
+            impact="公開・pushへ進めません",
+            recovery="revisionとrepositoryを確認してください",
+            evidence={"returncode": listing.returncode},
+        )
+    rules: set[str] = set()
+    for relative in listing.stdout.splitlines():
+        blob = runner.run(
+            ["git", "show", f"{revision}:{relative}"],
+            cwd=repo,
+            timeout=30,
+        )
+        if blob.returncode != 0:
+            continue
+        scanned = scan_text(blob.stdout)
+        rules.update(scanned.evidence.get("rules", []))
+    if rules:
+        return Outcome(
+            status=Status.BLOCKED,
+            code="identity_exposure_detected",
+            cause="公開候補treeにidentityまたはsecretのpatternがあります",
+            impact="公開・pushへ進めません",
+            recovery="該当ruleを除去して再検査してください",
+            evidence={"rules": sorted(rules)},
+        )
+    return Outcome(
+        status=Status.READY,
+        code="identity_scan_ready",
+        cause="公開候補treeにblocked patternはありません",
+        impact="次の公開準備checkへ進めます",
+        recovery="none",
+        evidence={"revision": revision},
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     runner = CommandRunner()
-    show = runner.run(
-        ["git", "show", "--format=fuller", "--find-renames", args.range],
-        cwd=args.repo,
-        timeout=30,
-    )
-    if show.returncode != 0:
-        outcome = Outcome(
-            status=Status.UNKNOWN,
-            code="git_range_unverified",
-            cause="指定Git rangeを確認できません",
-            impact="公開・pushへ進めません",
-            recovery="rangeとrepositoryを確認してください",
-            evidence={"returncode": show.returncode},
-        )
-    else:
-        outcome = scan_text(show.stdout)
+    outcome = scan_git_tree(runner, args.repo, args.range)
+    if outcome.status is not Status.UNKNOWN:
         artifact_rules: set[str] = set(outcome.evidence.get("rules", []))
         artifact_files: list[str] = []
         for artifact in args.artifact:
