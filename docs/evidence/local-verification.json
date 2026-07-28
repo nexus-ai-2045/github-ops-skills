@@ -1,16 +1,16 @@
 {
   "schema_version": "fact-provenance/v1",
   "thread_id": "019f9750-f503-7521-8dc4-fd2b95bfcba5",
-  "recorded_at": "2026-07-28T02:36:13.9512630+09:00",
+  "recorded_at": "2026-07-28T15:21:05.4033285+09:00",
   "recorded_by": "codex",
   "claims": [
     {
       "classification": "fact",
-      "claim": "offline tests passed: 44",
+      "claim": "offline tests passed: 45",
       "source": ".venv Python -m pytest -q",
       "actor": "pytest",
-      "event_time": "2026-07-28T02:36:13.9512630+09:00",
-      "observed_at": "2026-07-28T02:36:13.9512630+09:00",
+      "event_time": "2026-07-28T15:21:05.4033285+09:00",
+      "observed_at": "2026-07-28T15:21:05.4033285+09:00",
       "scope": "github-ops-skills implementation worktree"
     },
     {
@@ -23,21 +23,21 @@
       "scope": "Projects Windows subprocess policy"
     },
     {
-      "classification": "unknown",
-      "claim": "GitHub read-only L3 execution readiness",
-      "actor": "codex",
-      "event_time": "unknown",
-      "unknown_reason": "target repository and approved account overlay are not configured",
-      "verification_next": "set the three documented GITHUB_OPS live inputs and rerun scripts/run_read_only_e2e.py",
+      "classification": "fact",
+      "claim": "GitHub read-only L3 execution is READY",
+      "source": "scripts/run_read_only_e2e.py --json",
+      "actor": "github-ops-skills read-only E2E",
+      "event_time": "2026-07-28T15:21:05.4033285+09:00",
+      "observed_at": "2026-07-28T15:21:05.4033285+09:00",
       "scope": "GitHub live read-only operation"
     },
     {
       "classification": "non_fact",
-      "claim": "private repository creation should be reviewed next",
+      "claim": "L4 private canary should remain deferred",
       "actor": "codex",
-      "event_time": "2026-07-28T02:36:13.9512630+09:00",
+      "event_time": "2026-07-28T15:21:05.4033285+09:00",
       "non_fact_kind": "proposal",
-      "basis": "local implementation is ready for closeout while external operations remain gated",
+      "basis": "L3 passed and the current Draft PR already provides private GitHub write-path evidence",
       "scope": "human review"
     }
   ]
