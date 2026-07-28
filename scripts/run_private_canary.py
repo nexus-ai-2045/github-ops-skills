@@ -10,6 +10,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from github_ops.output import configure_utf8_stdout
 from github_ops.result import Outcome, Status
 
 
@@ -37,6 +38,7 @@ def validate_canary_request(request: CanaryRequest) -> Outcome:
 
 
 def main() -> int:
+    configure_utf8_stdout()
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True)
     parser.add_argument("--branch", required=True)
