@@ -1,0 +1,9 @@
+interface:
+  display_name: "マージ後クローズアウト"
+  short_description: "PRマージ後の証跡を確認し、PR単体とrepo全体の残務を混ぜずに報告する。"
+  default_prompt: "PRマージ後や残務ゼロ確認では $post-merge-closeout を使い、PR単体、repo全体、次の1手を日本語優先で分けて報告する。"
+  instructions: |
+    SKILL.mdを正本手順として読む。
+    repoとPR番号が分かっている時はread-only collectorを実行する。
+    PR単体、repo全体、次の1手を分け、日本語優先で報告する。
+    approve、merge、push、branch deletion、hook/settings/auth、secrets、production変更の前で止める。

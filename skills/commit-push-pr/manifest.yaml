@@ -1,0 +1,22 @@
+name: commit-push-pr
+owner_kind: skill
+ssot_pointers: []
+runtimes:
+  claude:
+    mode: copy
+    files: [SKILL.md]
+  codex:
+    mode: copy
+    files: [SKILL.md]
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: copy
+    files: [SKILL.md]
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "Commit Push PR"
+  short_description: "commit、push、PR 作成を安全確認付きで進める skill。"
+  default_prompt: "Use $commit-push-pr when the user asks to commit, push, and create a PR for the current changes."

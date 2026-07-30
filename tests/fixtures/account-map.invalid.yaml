@@ -1,0 +1,6 @@
+schema_version: github-ops/account-map/v1
+accounts:
+  work:
+    expected_login: example-user
+    token: secret-must-not-be-accepted
+repositories: {}

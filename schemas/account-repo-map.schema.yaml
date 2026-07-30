@@ -1,0 +1,35 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: github-ops/account-repo-map/v1
+type: object
+additionalProperties: false
+required: [schema_version, accounts, repositories]
+properties:
+  schema_version:
+    const: github-ops/account-map/v1
+  accounts:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [expected_login]
+      properties:
+        expected_login:
+          type: string
+          minLength: 1
+  repositories:
+    type: object
+    minProperties: 1
+    patternProperties:
+      "^[^/]+/[^/]+$":
+        type: object
+        additionalProperties: false
+        required: [account, expected_owner]
+        properties:
+          account:
+            type: string
+            minLength: 1
+          expected_owner:
+            type: string
+            minLength: 1
+    additionalProperties: false

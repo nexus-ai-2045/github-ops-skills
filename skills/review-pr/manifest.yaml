@@ -1,0 +1,22 @@
+name: review-pr
+owner_kind: skill
+ssot_pointers: []
+runtimes:
+  claude:
+    mode: copy
+    files: [SKILL.md]
+  codex:
+    mode: copy
+    files: [SKILL.md]
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: copy
+    files: [SKILL.md]
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "Review PR"
+  short_description: "PR / branch diff を品質・設計・test 観点で review する skill。"
+  default_prompt: "Use $review-pr to review a pull request or branch diff and report findings by severity before summary."

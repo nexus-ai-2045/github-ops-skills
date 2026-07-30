@@ -1,0 +1,33 @@
+# post-merge-closeout の配布マニフェスト
+# SSOT: shared/skills/post-merge-closeout/ (唯一の正本)
+# 配布エンジン: shared/scripts/skills_distribute.py
+# drift lint: shared/scripts/skills_lint.py
+name: post-merge-closeout
+owner_kind: skill
+ssot_pointers:
+  - shared/scripts/post_merge_closeout_report.py
+runtimes:
+  claude:
+    mode: copy
+    files:
+      - SKILL.md
+  codex:
+    mode: copy
+    files:
+      - SKILL.md
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: skip
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "マージ後クローズアウト"
+  short_description: "PRマージ後のread-only証跡を集め、PR単体とrepo全体の残務を分けて確認する。"
+  default_prompt: "PRマージ後や残務ゼロ確認では $post-merge-closeout を使い、PR単体、repo全体、次の1手を日本語優先で分けて報告する。"
+  instructions: |
+    SKILL.mdを正本手順として読む。
+    repoとPR番号が分かっている時は shared/scripts/post_merge_closeout_report.py collect を実行する。
+    PR単体、repo全体、次の1手を分け、日本語優先で報告する。
+    このskillではapprove、merge、push、branch削除、PR編集をしない。

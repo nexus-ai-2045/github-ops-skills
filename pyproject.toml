@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "github-ops-skills"
+version = "0.1.0"
+description = "GitHub操作をfail-closedで検証するローカル優先ツール群"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0.2,<7", "jsonschema>=4.23,<5"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+pythonpath = ["src"]
