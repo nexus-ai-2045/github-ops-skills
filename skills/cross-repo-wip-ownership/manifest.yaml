@@ -1,0 +1,23 @@
+name: cross-repo-wip-ownership
+owner_kind: skill
+ssot_pointers:
+  - schemas/wip-ownership-registry.schema.json
+runtimes:
+  claude:
+    mode: copy
+    files: [SKILL.md]
+  codex:
+    mode: copy
+    files: [SKILL.md]
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: copy
+    files: [SKILL.md]
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "Cross-repo WIP Ownership"
+  short_description: "並列WIPの所有権を安全に分類するskill。"
+  default_prompt: "Use $cross-repo-wip-ownership to classify sibling repository WIP before GitHub operations."

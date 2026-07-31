@@ -1,0 +1,6 @@
+name: cross-repo-wip-ownership
+description: "sibling repositoryの未commit変更を所有権台帳でfail-closed分類する。"
+interface:
+  key: cross-repo-wip-ownership
+  display_name: "Cross-repo WIP Ownership"
+  short_description: "並列WIPをallow／warn／blockへ分類。"

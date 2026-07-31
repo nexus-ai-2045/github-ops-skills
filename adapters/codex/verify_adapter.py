@@ -11,7 +11,7 @@ def verify(repo: Path) -> dict[str, object]:
     manifest = (repo / "migration" / "source-manifest.json").resolve()
     skills = sorted(path.name for path in root.iterdir() if path.is_dir())
     return {
-        "status": "READY" if len(skills) == 7 and manifest.is_file() else "BLOCKED",
+        "status": "READY" if len(skills) == 8 and manifest.is_file() else "BLOCKED",
         "skill_root": str(root),
         "skill_count": len(skills),
         "skills": skills,

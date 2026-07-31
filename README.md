@@ -24,5 +24,10 @@ python -m venv .venv
 結果は`READY`、`BLOCKED`、`UNKNOWN`の3状態です。`UNKNOWN`を成功として扱いません。
 account overlay例は`examples/account-repo-map.example.yaml`にあります。
 
+並列作業中のsibling repositoryに未commit変更がある場合は、
+`skills/cross-repo-wip-ownership/`と
+`schemas/wip-ownership-registry.schema.json`で所有者、期限、依存関係、
+secretリスクを`allow`／`warn`／`block`へ分類できます。
+
 保証はL1（静的契約）、L2（ローカル実行）、L3（GitHub read-only実測）、
 L4（private canary）を分離します。現在の実測は`PUBLIC_READY.md`を参照してください。
