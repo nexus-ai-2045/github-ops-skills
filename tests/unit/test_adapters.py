@@ -11,7 +11,7 @@ def test_both_adapters_resolve_the_same_skill_root() -> None:
     codex = verify_codex(repo)
     claude = verify_claude(repo)
     assert codex["skill_root"] == claude["skill_root"]
-    assert codex["skill_count"] == 7
+    assert codex["skill_count"] == 8
     assert codex["manifest_sha256"] == claude["manifest_sha256"]
 
 

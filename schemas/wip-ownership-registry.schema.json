@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github-ops-skills.local/schemas/wip-ownership-registry.schema.json",
+  "title": "Cross-repository WIP ownership registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "recorded_at", "recorded_by", "entries"],
+  "properties": {
+    "schema_version": { "const": "wip-ownership/v1" },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "recorded_by": { "type": "string", "minLength": 1 },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository", "path", "match_mode", "owner", "scope", "reason",
+        "dependency", "classification", "secret_risk", "known_generated",
+        "diff_sha256", "expires_at", "return_path"
+      ],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "match_mode": { "enum": ["exact", "prefix"] },
+        "owner": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "dependency": { "enum": ["independent", "target", "unknown"] },
+        "classification": { "enum": ["allow", "warn", "block"] },
+        "secret_risk": { "enum": ["clear", "suspected", "unknown"] },
+        "known_generated": { "type": "boolean" },
+        "diff_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(Z|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        "return_path": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
