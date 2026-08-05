@@ -58,8 +58,10 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
             f'--draft-pr-title "{request.draft_pr_title}" '
             "--expected-account nexus-ai-2045 "
             f"--approval-ref L4-CANARY:{request.repo}:{request.branch} "
+            "--approval-file <repo-external-approval.json> "
+            "--thread-id <current-thread-id> "
             "--confirm-private-canary --execute "
-            "--report-path docs/evidence/private-canary-execution.json"
+            "--report-path <repo-external-private-canary-execution.json>"
         ),
         "exact_operation": [
             "git fetch origin main",
@@ -83,6 +85,7 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
             "read-back reports OPEN draft PR with matching base/head",
             "global active account is unchanged",
             "report contains no credential material",
+            "approval artifact is HMAC-valid, unexpired, executor-bound, and one-time",
         ],
         "failure_evidence": [
             "visibility, account, owner, remote, or branch mismatch",
@@ -90,6 +93,7 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
             "push or draft PR creation failure",
             "read-back mismatch or missing evidence",
             "credential material detected in output",
+            "approval artifact invalid, expired, tampered, or consumed",
         ],
         "stop_boundaries": {
             "requires_separate_current_conversation_approval": [

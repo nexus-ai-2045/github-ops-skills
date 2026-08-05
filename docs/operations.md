@@ -22,6 +22,10 @@ remote branch削除はcleanupとして別承認を必要とし、自動実行し
 人間レビュー後の実行commandは次です。このcommandはbranch pushとDraft PR作成を行うため、
 表示された文字列全体に対する現在会話の明示承認が必要です。
 
+承認後、32 byte以上の一時HMAC keyをprocess環境だけへ設定し、repo外へ60分以内の
+one-time approval artifactを発行します。artifactはtarget、branch、thread、executor hash、
+executor commit、expected account、Draft PR titleへ拘束され、最初のpush直前に消費されます。
+
 ```powershell
 python scripts/execute_private_canary.py `
   --repo . `
@@ -30,10 +34,15 @@ python scripts/execute_private_canary.py `
   --draft-pr-title "GitHub操作経路canary" `
   --expected-account nexus-ai-2045 `
   --approval-ref L4-CANARY:nexus-ai-2045/github-ops-skills:canary/github-ops-skills `
+  --approval-file <repo外のapproval.json> `
+  --thread-id <current-thread-id> `
   --confirm-private-canary `
   --execute `
-  --report-path docs/evidence/private-canary-execution.json
+  --report-path <repo外のprivate-canary-execution.json>
 ```
 
 runnerはclean worktree、remote、account、PRIVATE、permission、default branch、canary branch
-不存在をpush前に検証します。途中失敗後の自動cleanupは行いません。
+不存在、marker不存在をpush前に検証します。各stepをrepo外journalへ原子的に保存し、
+pushはbranch不存在を期待する`--force-with-lease=<ref>:`でraceをfail-closedにします。
+GitHub hostは`github.com`へ固定し、repo-local credential usernameもexpected accountと照合します。
+途中失敗後の自動cleanupは行いません。
