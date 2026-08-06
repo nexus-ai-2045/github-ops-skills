@@ -1,6 +1,6 @@
 ---
 name: github-cli-ops-guard
-description: GitHub CLI (`gh`) のactive account drift、remote owner不一致、repo解決失敗、credential username差分、Git author差分をGitHub write前後に検査する共有向け運用ゲート。Use before or after `gh` / GitHub operations such as `git push`, `gh pr create`, `gh pr edit`, `gh pr merge`, branch cleanup, release/tag work, GitHub issue/discussion writes, or when errors mention wrong account, active account, repo not found, GraphQL repository resolution, `gh auth switch`, `gh auth status`, `GITHUB_TOKEN`, credential username, owner mismatch, or Japanese requests such as "gh名義", "GitHub名義", "repo解決失敗", "マージ前確認", "PR前ゲート", "運用保証", "共有前提".
+description: GitHub CLI (`gh`) のactive account drift、remote owner不一致、repo解決失敗、credential username差分、Git author差分、PR review未吸収をGitHub write前後に検査する共有向け運用ゲート。Use before or after `gh` / GitHub operations such as `git push`, `gh pr create`, `gh pr edit`, PR review absorption, `gh pr merge`, branch cleanup, release/tag work, GitHub issue/discussion writes, or when errors mention wrong account, active account, repo not found, GraphQL repository resolution, unresolved review threads, `gh auth switch`, `gh auth status`, `GITHUB_TOKEN`, credential username, owner mismatch, or Japanese requests such as "gh名義", "GitHub名義", "repo解決失敗", "マージ前確認", "PR前ゲート", "review吸収", "運用保証", "共有前提".
 ---
 
 # GitHub CLI Ops Guard
@@ -34,14 +34,16 @@ If `operation` mutates GitHub state, apply the publication/human-review gate fir
 ## Required Workflow
 
 1. Identify the target repo from the local checkout or explicit `--repo owner/name`.
-2. Run the bundled read-only probe:
+2. Run the bundled read-only probe (prefer this repository's script when operating from github-ops-skills):
 
 ```powershell
-python shared/skills/github-cli-ops-guard/scripts/gh_identity_probe.py --repo <repo-root> --json
+python scripts/gh_identity_probe.py --repo <repo-root> --json
+# or skill-local copy:
+python skills/github-cli-ops-guard/scripts/gh_identity_probe.py --repo <repo-root> --json
 ```
 
 3. If the repo has a stronger local preflight, run it too. Prefer repo-local or shared scripts over ad hoc parsing.
-4. Treat `status=error` as a hard stop for GitHub writes. Do not push, create/edit PRs, merge, tag, release, or change settings.
+4. Treat `status=error` / `BLOCKED` / `UNKNOWN` as a hard stop for GitHub writes. Do not push, create/edit PRs, merge, tag, release, or change settings.
 5. If the only problem is active-account drift and the expected account is already authenticated, run the exact switch command shown by the probe, then rerun the probe:
 
 ```powershell
@@ -49,6 +51,24 @@ gh auth switch --hostname github.com --user <expected_owner>
 ```
 
 6. After any GitHub write, verify the result with a read command and rerun the identity check if additional GitHub writes remain.
+
+## PR review 吸収ゲート
+
+PR review を吸収してから merge する時は、GitHub GraphQL `reviewThreads.isResolved` を解決状態の正本にします。comment 本文や commit の更新だけで「解決済み」と推定しません。
+
+この Core Suite では、既存の read-only helper を吸収した次の script を使います。
+
+```powershell
+python scripts/github_pr_review_thread_audit.py --repo owner/name --pr N --json
+```
+
+- exit `0` / `decision=pass`: 未解決 thread なし、pagination 完了。
+- exit `1` / `decision=warn`: 未解決 current/outdated thread あり、または pagination 未完了。吸収と resolve 後に再実行する。
+- exit `1` / `decision=error`: GitHub API error または応答が壊れている。状態を推定せず停止する。
+
+`gh pr merge` は identity probe と review-thread audit が通るまで実行しない。merge 自体は現在会話の明示承認が必要で、本 skill は merge を自動実行しない。
+
+GitHub Settings の `Require conversation resolution` と required checks は local command や repository file だけでは保証できない。Settings 権限を持つ人間または管理 API の確認がない限り、`not_enabled_or_unverified` として扱う。
 
 ## Stop Lines
 
@@ -60,6 +80,7 @@ Stop and explain in human language when any of these are true:
 - `GITHUB_TOKEN` or `GH_TOKEN` is present and its identity has not been confirmed.
 - Repo visibility is public or unknown and the user did not explicitly approve that target and operation.
 - The target operation is `gh pr merge`, `commands:register`, release/tag, visibility, hook/settings/auth, or credential mutation without current-turn approval.
+- `github_pr_review_thread_audit.py` returns non-pass for a merge candidate.
 - The working tree is dirty and the intended GitHub write does not explicitly include or exclude that dirty scope.
 
 ## Recovery Pattern
@@ -74,13 +95,14 @@ Use proportional recovery, not broad reset:
 | `gh auth switch` succeeds but repo still fails | token scope/session may be stale | run `gh auth status`, consider `gh auth refresh` only after approval if scopes change |
 | wrong owner in remote | checkout is not the intended repo | stop; do not switch accounts to fit the wrong remote |
 | multiple possible expected owners | target is ambiguous | ask one short question before write |
+| review threads remain unresolved | merge candidate still has open discussion | absorb findings, resolve threads, rerun audit |
 
 ## Closeout
 
 A GitHub operation is not closed until all relevant checks are true:
 
 - target repo and operation were named
-- `shared/skills/github-cli-ops-guard/scripts/gh_identity_probe.py` or equivalent preflight passed
+- `scripts/gh_identity_probe.py` or equivalent preflight passed
 - write command succeeded, if a write was approved
 - result was verified by read-only command (`gh pr view`, `gh pr checks`, `git rev-parse`, `gh release view`, etc.)
 - open PR / branch / dirty worktree state is explained
@@ -89,4 +111,4 @@ A GitHub operation is not closed until all relevant checks are true:
 
 ## References
 
-Read `shared/skills/github-cli-ops-guard/references/official-gh-auth.md` when diagnosing `gh auth status`, `gh auth switch`, token precedence, or multi-account behavior.
+Read `skills/github-cli-ops-guard/references/official-gh-auth.md` when diagnosing `gh auth status`, `gh auth switch`, token precedence, or multi-account behavior.

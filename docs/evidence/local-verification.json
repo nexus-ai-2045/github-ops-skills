@@ -1,43 +1,61 @@
 {
   "schema_version": "fact-provenance/v1",
-  "thread_id": "019f9750-f503-7521-8dc4-fd2b95bfcba5",
-  "recorded_at": "2026-07-28T15:21:05.4033285+09:00",
-  "recorded_by": "codex",
+  "thread_id": "github-ops-hardening-2026-08-06",
+  "recorded_at": "2026-08-06T12:00:00+09:00",
+  "recorded_by": "grok",
   "claims": [
     {
       "classification": "fact",
-      "claim": "offline tests passed: 45",
+      "claim": "offline tests passed: 89",
       "source": ".venv Python -m pytest -q",
       "actor": "pytest",
-      "event_time": "2026-07-28T15:21:05.4033285+09:00",
-      "observed_at": "2026-07-28T15:21:05.4033285+09:00",
-      "scope": "github-ops-skills implementation worktree"
+      "event_time": "2026-08-06T12:00:00+09:00",
+      "observed_at": "2026-08-06T12:00:00+09:00",
+      "scope": "github-ops-skills codex/ops-hardening-drift-absorb"
     },
     {
       "classification": "fact",
-      "claim": "Windows hidden-console smoke passed: 3 of 3",
-      "source": "windows_terminal_flash_guard.py --smoke-count 3 --json",
-      "actor": "windows_terminal_flash_guard",
-      "event_time": "2026-07-28T02:36:13.9512630+09:00",
-      "observed_at": "2026-07-28T02:36:13.9512630+09:00",
-      "scope": "Projects Windows subprocess policy"
+      "claim": "Codex/Claude/Grok adapters READY with skill_count=8",
+      "source": "adapters/*/verify_adapter.py --repo . --json",
+      "actor": "adapters",
+      "event_time": "2026-08-06T12:00:00+09:00",
+      "observed_at": "2026-08-06T12:00:00+09:00",
+      "scope": "github-ops-skills adapters"
     },
     {
       "classification": "fact",
       "claim": "GitHub read-only L3 execution is READY",
       "source": "scripts/run_read_only_e2e.py --json",
       "actor": "github-ops-skills read-only E2E",
-      "event_time": "2026-07-28T15:21:05.4033285+09:00",
-      "observed_at": "2026-07-28T15:21:05.4033285+09:00",
-      "scope": "GitHub live read-only operation"
+      "event_time": "2026-08-06T12:00:00+09:00",
+      "observed_at": "2026-08-06T12:00:00+09:00",
+      "scope": "GitHub live read-only operation on nexus-ai-2045/github-ops-skills"
+    },
+    {
+      "classification": "fact",
+      "claim": "identity probe READY for nexus-ai-2045/github-ops-skills",
+      "source": "scripts/gh_identity_probe.py --repo . --json",
+      "actor": "gh_identity_probe",
+      "event_time": "2026-08-06T12:00:00+09:00",
+      "observed_at": "2026-08-06T12:00:00+09:00",
+      "scope": "private repository identity"
+    },
+    {
+      "classification": "fact",
+      "claim": "skill_drift_check detects remaining runtime drift against local agents skills root",
+      "source": "scripts/skill_drift_check.py --local-root <runtime-skills-root>",
+      "actor": "skill_drift_check",
+      "event_time": "2026-08-06T12:00:00+09:00",
+      "observed_at": "2026-08-06T12:00:00+09:00",
+      "scope": "runtime vs SSOT comparison"
     },
     {
       "classification": "non_fact",
       "claim": "L4 private canary should remain deferred",
-      "actor": "codex",
-      "event_time": "2026-07-28T15:21:05.4033285+09:00",
+      "actor": "grok",
+      "event_time": "2026-08-06T12:00:00+09:00",
       "non_fact_kind": "proposal",
-      "basis": "L3 passed and the current Draft PR already provides private GitHub write-path evidence",
+      "basis": "L1-L3 pass; mutation canary still requires separate human approval",
       "scope": "human review"
     }
   ]

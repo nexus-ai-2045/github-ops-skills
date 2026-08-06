@@ -24,6 +24,7 @@ SKILL_SOURCES = {
     "public-repo-readiness": ("agent-skills", "public-repo-readiness"),
     "post-merge-closeout": ("shared", "skills/post-merge-closeout"),
     "pr-convergence-loop": ("shared", "skills/pr-convergence-loop"),
+    "cross-repo-wip-ownership": ("shared", "skills/cross-repo-wip-ownership"),
 }
 
 
@@ -158,11 +159,33 @@ def _expand_skill_mappings(
 
 
 def _safe_child(root: Path, relative: str) -> Path:
-    candidate = (root / relative).resolve()
+    """Return a child path under root without following intermediate symlinks.
+
+    Symlink components are rejected before resolve. The returned path is the
+    non-resolved child so callers can still observe symlink status if needed.
+    """
     resolved_root = root.resolve()
-    if candidate != resolved_root and resolved_root not in candidate.parents:
+    current = resolved_root
+    parts = Path(relative).parts
+    if not parts:
+        raise ValueError("relative path is required")
+    for index, part in enumerate(parts):
+        nxt = current / part
+        if nxt.is_symlink():
+            raise ValueError(f"symlink source is not allowed: {relative}")
+        if nxt.exists():
+            current = nxt
+            continue
+        # Remaining components do not exist yet (import target creation).
+        candidate = nxt.joinpath(*parts[index + 1 :])
+        parent = current.resolve()
+        if parent != resolved_root and resolved_root not in parent.parents:
+            raise ValueError(f"path escapes root: {relative}")
+        return candidate
+    resolved = current.resolve()
+    if resolved != resolved_root and resolved_root not in resolved.parents:
         raise ValueError(f"path escapes root: {relative}")
-    return candidate
+    return current
 
 
 def _sha256(path: Path) -> str:

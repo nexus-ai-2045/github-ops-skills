@@ -1,12 +1,12 @@
-# github-cli-ops-guard の配布マニフェスト
-# SSOT: shared/skills/github-cli-ops-guard/ (唯一の正本)
-# 配布エンジン: shared/scripts/skills_distribute.py
-# drift lint: shared/scripts/skills_lint.py
+# github-cli-ops-guard
+# SSOT in this repository: skills/github-cli-ops-guard/
 name: github-cli-ops-guard
 owner_kind: skill
 ssot_pointers:
-  - shared/skills/github-cli-ops-guard/references/official-gh-auth.md
-  - shared/skills/github-cli-ops-guard/scripts/gh_identity_probe.py
+  - skills/github-cli-ops-guard/references/official-gh-auth.md
+  - skills/github-cli-ops-guard/scripts/gh_identity_probe.py
+  - scripts/gh_identity_probe.py
+  - scripts/github_pr_review_thread_audit.py
 runtimes:
   claude:
     mode: copy
@@ -23,7 +23,15 @@ runtimes:
     extra:
       agents/openai.yaml: runtime/agents/openai.yaml
   grok:
-    mode: skip
+    mode: copy
+    files:
+      - SKILL.md
+      - scripts/gh_identity_probe.py
+      - references/official-gh-auth.md
 duplication_guard:
   enabled: true
   max_overlap_lines: 2
+interface:
+  display_name: "GitHub CLI Ops Guard"
+  short_description: "GitHub write前に identity / approval / review thread を fail-closed で検査する。"
+  default_prompt: "Use $github-cli-ops-guard before GitHub writes to verify account identity and review absorption."

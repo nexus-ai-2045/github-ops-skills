@@ -1,31 +1,27 @@
 # 人間レビュー判断資料
 
-## 実装範囲
+## 実装範囲（本 PR）
 
-identity probe、account overlay、write preflight、PR日本語検査、公開identity検査、
-legacy skill移植、Codex/Claude adapter、read-only E2E、private canary停止gateです。
+- symlink import 拒否バグ修正
+- 既存 `github_pr_review_thread_audit` の Core Suite 吸収
+- `github-cli-ops-guard` / `public-repo-readiness` の運用学習吸収
+- `public-repo-readiness/manifest.yaml` 追加
+- Grok adapter 追加
+- `skill_drift_check` による runtime 差分検出
+- L1/L2/L3 再実測
 
 ## 現在の判断
 
-private repositoryとDraft PRは作成済みです。現在の推奨は、人間がDraft PRを
-レビューし、L4 private canaryは追加実施せず保留することです。
-公開、merge、Draft解除、release、追加canaryは実施しません。
+private repository を維持したまま hardening PR を作成します。推奨は次の通りです。
 
-予定対象は`nexus-ai-2045/github-ops-skills`、予定visibilityは`private`です。
-作成時は全commit historyとrepository内fileがGitHub上の権限保有者へ見えるように
-なります。
-
-2026-07-28 15:21 JSTのcloseoutでは45 tests成功、Codex/Claude adapterの
-skill root・7 skill・manifest hash一致、Git fsck成功、Windows補助窓smoke 3/3成功を
-確認しました。L1/L2はREADYです。L3は`nexus-ai-2045/github-ops-skills`を対象に
-private visibility、ADMIN権限、default branch `main`、active account不変をread-onlyで
-実測しREADYです。L4は保留・未実施です。
-
-送信済み範囲はDraft PR #1のtracked fileとcommitです。remote repositoryはprivateを
-維持しています。公開、merge、Draft解除、releaseは人間判断まで停止します。
+1. 本 PR をレビューし、L1-L3 の再実測を確認する
+2. L4 private canary は追加実施せず保留
+3. 公開、merge（人間承認後を除く）、release は実施しない
+4. runtime skill への一括同期は別判断（`skill_drift_check` で差分は可視化済み）
 
 ## 明示レビュー項目
 
-1. SECURITY.mdの報告方針が、private運用中と将来public化後の境界を正しく説明しているか。
-2. account overlay契約とL3実測結果を採用するか。
-3. L4 private canaryを保留のままとするか。
+1. review-thread audit の吸収範囲が十分か（merge 自動化は意図的に入れていない）
+2. public-repo-readiness の個人情報正規化が十分か
+3. runtime drift を残したまま PR を merge してよいか
+4. L4 を引き続き保留でよいか
