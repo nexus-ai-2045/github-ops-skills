@@ -25,3 +25,6 @@ private repository を維持したまま hardening PR を作成します。推�
 2. public-repo-readiness の個人情報正規化が十分か
 3. runtime drift を残したまま PR を merge してよいか
 4. L4 を引き続き保留でよいか
+5. operating-card + preflight_write_gate の接続方針でよいか
+
+詳細チェックリスト: `docs/human-review-packet.md`

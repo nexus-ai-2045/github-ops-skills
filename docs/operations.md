@@ -8,7 +8,10 @@ python adapters/codex/verify_adapter.py --repo . --json
 python adapters/claude/verify_adapter.py --repo . --json
 python adapters/grok/verify_adapter.py --repo . --json
 python scripts/gh_identity_probe.py --repo . --json
+python scripts/preflight_write_gate.py --repo . --json
 ```
+
+接続順の正本: `docs/operating-card.md`
 
 GitHub write 前の review thread 確認:
 

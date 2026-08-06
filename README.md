@@ -39,6 +39,15 @@ runtime skill との差分確認:
 .\.venv\Scripts\python.exe scripts/skill_drift_check.py --repo . --local-root <runtime-skills-root> --json
 ```
 
+GitHub write 前の薄い接続ゲート（場所 + dirty + identity）:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --json
+```
+
+既存 worktree skill/repo との接続順は `docs/operating-card.md`。  
+人間レビュー材料は `docs/human-review-packet.md`。
+
 並列作業中のsibling repositoryに未commit変更がある場合は、
 `skills/cross-repo-wip-ownership/`と
 `schemas/wip-ownership-registry.schema.json`で所有者、期限、依存関係、
