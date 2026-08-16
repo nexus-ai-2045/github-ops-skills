@@ -51,8 +51,9 @@ jobs:
               return html_comments.sub("", "\n".join(visible))
 
           rendered_body = rendered_text(body)
+          visible_title = html_comments.sub("", title)
           errors = []
-          if not japanese.search(title):
+          if not japanese.search(visible_title):
               errors.append("PR titleに日本語がありません")
           if not japanese.search(rendered_body):
               errors.append("PR bodyに日本語がありません")

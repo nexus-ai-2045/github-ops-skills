@@ -30,9 +30,10 @@ def _rendered_text(body: str) -> str:
 
 
 def check_pr_metadata(title: str, body: str) -> Outcome:
+    visible_title = HTML_COMMENT_RE.sub("", title)
     rendered_body = _rendered_text(body)
     evidence = {
-        "title_has_japanese": bool(JAPANESE_RE.search(title)),
+        "title_has_japanese": bool(JAPANESE_RE.search(visible_title)),
         "body_has_japanese": bool(JAPANESE_RE.search(rendered_body)),
     }
     if not evidence["title_has_japanese"]:
