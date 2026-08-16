@@ -13,12 +13,14 @@ runtimes:
     files:
       - SKILL.md
       - scripts/gh_identity_probe.py
+      - scripts/github_pr_review_thread_audit.py
       - references/official-gh-auth.md
   codex:
     mode: copy
     files:
       - SKILL.md
       - scripts/gh_identity_probe.py
+      - scripts/github_pr_review_thread_audit.py
       - references/official-gh-auth.md
     extra:
       agents/openai.yaml: runtime/agents/openai.yaml
@@ -27,6 +29,7 @@ runtimes:
     files:
       - SKILL.md
       - scripts/gh_identity_probe.py
+      - scripts/github_pr_review_thread_audit.py
       - references/official-gh-auth.md
 duplication_guard:
   enabled: true

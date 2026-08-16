@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from github_ops.review_threads import fetch, repo_parts, summarize
+from github_ops.review_threads import THREAD_QUERY
 
 
 def _payload(*threads: dict) -> dict:
@@ -108,3 +109,7 @@ def test_fetch_follows_all_review_thread_pages(monkeypatch) -> None:
     assert calls == [None, "cursor-1"]
     nodes = payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
     assert len(nodes) == 2
+
+
+def test_query_requests_latest_comment_only() -> None:
+    assert "comments(last:1)" in THREAD_QUERY

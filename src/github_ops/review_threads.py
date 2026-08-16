@@ -26,7 +26,7 @@ query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
           id
           isResolved
           isOutdated
-          comments(first:20) {
+          comments(last:1) {
             nodes {
               id
               path
@@ -173,7 +173,14 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
         "-f",
         f"query={THREAD_QUERY}",
     ]
-    completed = subprocess.run(command, check=True, capture_output=True, text=True)
+    completed = subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     return json.loads(completed.stdout)
 
 

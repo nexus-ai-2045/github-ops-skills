@@ -6,10 +6,9 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from .result import Outcome, Status
-
-
-TRACKED_FILES = ("SKILL.md", "manifest.yaml")
 
 
 @dataclass(frozen=True)
@@ -45,8 +44,10 @@ def compare_skill_roots(
     skills = list_skill_names(ssot_skills_root)
     rows: list[SkillFileDrift] = []
     for skill in skills:
-        for relative in TRACKED_FILES:
-            ssot_path = ssot_skills_root / skill / relative
+        skill_root = ssot_skills_root / skill
+        mappings = _runtime_file_mappings(skill_root)
+        for relative, source_relative in mappings:
+            ssot_path = ssot_skills_root / skill / source_relative
             local_path = local_skills_root / skill / relative
             ssot_hash = sha256_file(ssot_path) if ssot_path.is_file() else None
             local_hash = sha256_file(local_path) if local_path.is_file() else None
@@ -72,9 +73,23 @@ def compare_skill_roots(
     return rows
 
 
+def _runtime_file_mappings(skill_root: Path) -> list[tuple[str, str]]:
+    files = {("SKILL.md", "SKILL.md")}
+    manifest = skill_root / "manifest.yaml"
+    if not manifest.is_file():
+        return sorted(files)
+    files.add(("manifest.yaml", "manifest.yaml"))
+    payload = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
+    for runtime in (payload.get("runtimes") or {}).values():
+        files.update((item, item) for item in (runtime.get("files") or []))
+        files.update((target, source) for target, source in (runtime.get("extra") or {}).items())
+    return sorted(files)
+
+
 def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
     drifts = [row for row in rows if row.status == "drift"]
     local_only = [row for row in rows if row.status == "local_only"]
+    missing = [row for row in rows if row.status == "ssot_only"]
     evidence = {
         "local_root": local_root,
         "compared_files": len(rows),
@@ -104,7 +119,7 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
             recovery="local rootとskills/を確認してください",
             evidence=evidence,
         )
-    if drifts or local_only:
+    if drifts or local_only or missing:
         return Outcome(
             status=Status.BLOCKED,
             code="skill_drift_detected",

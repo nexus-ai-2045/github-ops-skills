@@ -60,6 +60,8 @@ PR review を吸収してから merge する時は、GitHub GraphQL `reviewThrea
 
 ```powershell
 python scripts/github_pr_review_thread_audit.py --repo owner/name --pr N --json
+# or skill-local copy:
+python skills/github-cli-ops-guard/scripts/github_pr_review_thread_audit.py --repo owner/name --pr N --json
 ```
 
 - exit `0` / `decision=pass`: 未解決 thread なし、pagination 完了。

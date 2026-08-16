@@ -38,6 +38,8 @@ def main(argv: list[str] | None = None) -> int:
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or str(exc)).strip()
         result = error_result(f"gh_api_failed: {detail}")
+    except OSError as exc:
+        result = error_result(f"gh_launch_failed: {exc}")
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         result = error_result(f"unexpected_github_response: {exc}")
 
