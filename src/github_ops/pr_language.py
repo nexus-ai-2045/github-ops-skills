@@ -6,7 +6,10 @@ from .result import Outcome, Status
 
 
 JAPANESE_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
-HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+ATX_HEADING_RE = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+(.+?)\s*$", re.MULTILINE)
+SETEXT_HEADING_RE = re.compile(
+    r"^[ \t]{0,3}(.+?)\s*\n[ \t]{0,3}(?:=+|-+)\s*$", re.MULTILINE
+)
 FENCE_OPEN_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
@@ -48,9 +51,12 @@ def check_pr_metadata(title: str, body: str) -> Outcome:
             "PR bodyに日本語がありません",
             evidence,
         )
+    headings = ATX_HEADING_RE.findall(rendered_body) + SETEXT_HEADING_RE.findall(
+        rendered_body
+    )
     english_only = [
         heading
-        for heading in HEADING_RE.findall(rendered_body)
+        for heading in headings
         if re.search(r"[A-Za-z]", heading) and not JAPANESE_RE.search(heading)
     ]
     if english_only:

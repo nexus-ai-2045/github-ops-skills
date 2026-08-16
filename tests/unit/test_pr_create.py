@@ -285,3 +285,21 @@ def test_read_back_base_sha_mismatch_is_unknown(tmp_path: Path) -> None:
     )
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_read_back_mismatch"
+
+
+def test_non_default_base_branch_is_supported(tmp_path: Path) -> None:
+    responses = _preflight_ready()
+    responses[4] = CommandResult(0, f"{BASE_SHA}\trefs/heads/develop\n", "")
+    body = _body_file(tmp_path).read_text(encoding="utf-8")
+    url = "https://github.com/example-org/tooling/pull/12"
+    read_back = _read_back("PR日本語gateを追加", body, url)
+    payload = json.loads(read_back.stdout)
+    payload["baseRefName"] = "develop"
+    runner = FakeRunner(
+        responses
+        + [CommandResult(0, f"{url}\n", ""), CommandResult(0, json.dumps(payload), "")]
+    )
+    outcome = create_pr_with_japanese_gate(
+        **_kwargs(tmp_path, base="develop"), runner=runner
+    )
+    assert outcome.status is Status.READY

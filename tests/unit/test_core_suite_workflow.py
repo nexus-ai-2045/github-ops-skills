@@ -15,7 +15,8 @@ def test_core_suite_workflow_covers_local_verification_without_write_permissions
     for required in (
         "python -m pytest -q",
         "python -m compileall -q src scripts tests",
-        "git diff --check HEAD^..HEAD",
+        'git diff --check "$BEFORE_SHA"..HEAD',
+        'git diff --check "$BASE_SHA"..HEAD',
         "python adapters/codex/verify_adapter.py",
         "python adapters/claude/verify_adapter.py",
     ):

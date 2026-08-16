@@ -46,3 +46,19 @@ def test_japanese_only_in_title_html_comment_does_not_pass() -> None:
         "## 概要\n安全な変更です。",
     )
     assert result.code == "title_not_japanese"
+
+
+def test_indented_english_heading_is_blocked() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## 概要\n説明は日本語です。\n\n   ## Summary\nEnglish section.",
+    )
+    assert result.code == "english_only_heading"
+
+
+def test_setext_english_heading_is_blocked() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## 概要\n説明は日本語です。\n\nSummary\n=======\nEnglish section.",
+    )
+    assert result.code == "english_only_heading"

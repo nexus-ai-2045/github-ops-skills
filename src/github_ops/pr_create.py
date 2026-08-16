@@ -338,7 +338,6 @@ def _verify_preflight(
     exact = (
         repo_info.get("nameWithOwner") == repo
         and repo_info.get("visibility") == expected_visibility
-        and (repo_info.get("defaultBranchRef") or {}).get("name") == base
         and permission in {"WRITE", "MAINTAIN", "ADMIN"}
         and local_head == expected_head_sha
         and remote_head_sha == expected_head_sha

@@ -46,7 +46,16 @@ jobs:
         run: python -m compileall -q src scripts tests
       - name: 差分形式を確認
         shell: bash
-        run: git diff --check HEAD^..HEAD
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            git diff --check "$BEFORE_SHA"..HEAD
+          else
+            git diff --check "$BASE_SHA"..HEAD
+          fi
       - name: Codex adapterを検証
         run: python adapters/codex/verify_adapter.py
       - name: Claude adapterを検証
