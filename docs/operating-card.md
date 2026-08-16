@@ -29,11 +29,11 @@ GitHub を触る直前（この repo）
 ## 1 コマンド（この Core Suite）
 
 ```powershell
-python scripts/preflight_write_gate.py --repo . --json
+python scripts/preflight_write_gate.py --repo . --expected-login <login> --json
 # dirty を意図的に含む write なら:
-python scripts/preflight_write_gate.py --repo . --approved-path path/a.py --json
+python scripts/preflight_write_gate.py --repo . --expected-login <login> --approved-path path/a.py --json
 # または明示:
-python scripts/preflight_write_gate.py --repo . --allow-dirty --json
+python scripts/preflight_write_gate.py --repo . --expected-login <login> --allow-dirty --json
 ```
 
 ## 責務境界

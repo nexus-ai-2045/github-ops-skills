@@ -44,7 +44,7 @@ runtime skill との差分確認:
 GitHub write 前の薄い接続ゲート（場所 + dirty + identity）:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --json
+.\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --expected-login <login> --json
 ```
 
 既存 worktree skill/repo との接続順は `docs/operating-card.md`。

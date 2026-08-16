@@ -19,6 +19,43 @@ def test_all_adapters_resolve_the_same_skill_root() -> None:
     assert (repo / "skills/public-repo-readiness/manifest.yaml").is_file()
 
 
+def test_adapter_blocks_when_required_skill_is_missing(tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    for name in {
+        "commit-push-pr",
+        "github-cli-ops-guard",
+        "post-merge-closeout",
+        "pr-convergence-loop",
+        "pr-status",
+        "public-repo-readiness",
+        "review-pr",
+    }:
+        (skills / name).mkdir(parents=True)
+    migration = tmp_path / "migration"
+    migration.mkdir()
+    (migration / "source-manifest.json").write_text(
+        '{"schema_version":"github-ops/source-manifest/v1","sources":[{}]}',
+        encoding="utf-8",
+    )
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["missing_skills"] == ["cross-repo-wip-ownership"]
+
+
+def test_adapter_blocks_invalid_source_manifest(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            (tmp_path / "skills" / source.name).mkdir(parents=True)
+    (tmp_path / "migration").mkdir()
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        "not-json", encoding="utf-8"
+    )
+    result = verify_grok(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["manifest_valid"] is False
+
+
 def test_claude_adapter_supports_direct_script_execution() -> None:
     repo = Path(__file__).resolve().parents[2]
     completed = subprocess.run(

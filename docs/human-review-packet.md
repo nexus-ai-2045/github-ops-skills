@@ -32,7 +32,7 @@
 | adapters codex/claude/grok | READY / skill_count=8 |
 | `scripts/gh_identity_probe.py --repo . --json` | READY |
 | `scripts/run_read_only_e2e.py --json`（overlay 付き） | READY private/ADMIN |
-| `scripts/preflight_write_gate.py --repo . --json` | location+identity 結果 |
+| `scripts/preflight_write_gate.py --repo . --expected-login <login> --json` | location+identity 結果 |
 | personal path / token scan | 0 件 |
 
 ## 明示ストップライン（自動でやらない）
