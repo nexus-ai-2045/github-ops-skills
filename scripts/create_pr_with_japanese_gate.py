@@ -29,7 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="PRIVATE",
         help="確認済みの期待visibility。既定はPRIVATEです",
     )
-    parser.add_argument("--title", required=True)
+    title_source = parser.add_mutually_exclusive_group(required=True)
+    title_source.add_argument("--title")
+    title_source.add_argument("--title-file", type=Path)
     parser.add_argument("--body-file", required=True, type=Path)
     parser.add_argument("--draft", action="store_true")
     parser.add_argument(
@@ -43,11 +45,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    title = (
+        args.title
+        if args.title is not None
+        else args.title_file.read_text(encoding="utf-8").rstrip("\r\n")
+    )
     outcome = create_pr_with_japanese_gate(
         repo=args.repo,
         base=args.base,
         head=args.head,
-        title=args.title,
+        title=title,
         body_file=args.body_file,
         repo_root=args.repo_root,
         account_map_file=args.account_map,

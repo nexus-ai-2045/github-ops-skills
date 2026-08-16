@@ -1,5 +1,13 @@
 # PR日本語gateの運用
 
+## 構文契約
+
+- titleは平文日本語とし、Markdown linkを使用しない。
+- bodyには日本語のATX見出しを最低1つ置く。
+- 英語だけのATX／Setext見出しと、見出し内のMarkdown linkは使用しない。
+- title/bodyはUTF-8ファイルでgateとwrapperへ渡す。
+- 詳細な理由は[ADR-0001](adr/0001-pr-japanese-gate-boundary.md)を参照する。
+
 ユーザー向け文書とPRのtitle/bodyは日本語を既定にします。コミットメッセージは
 repo固有規約を優先し、規約がなければ日本語または英語を選べます。
 Conventional Commitsのtype/scope、コード識別子、API名は英語のままで構いません。

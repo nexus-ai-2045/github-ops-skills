@@ -11,8 +11,8 @@ def test_workflow_is_metadata_only_and_read_only() -> None:
     assert "GITHUB_EVENT_PATH" in workflow
     assert "rendered_body = rendered_text(body)" in workflow
     assert "html_comments" in workflow
-    assert "reference_definitions" in workflow
-    assert "inline_links" in workflow
+    assert "markdown_links" in workflow
+    assert "日本語の見出しがありません" in workflow
     assert "visible_title = rendered_text(title)" in workflow
     assert "`{3,}|~{3,}" in workflow
     assert "actions/checkout" not in workflow

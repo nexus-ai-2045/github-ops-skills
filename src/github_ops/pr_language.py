@@ -12,8 +12,7 @@ SETEXT_HEADING_RE = re.compile(
 )
 FENCE_OPEN_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-REFERENCE_DEFINITION_RE = re.compile(r"^[ \t]{0,3}\[[^\]]+\]:\s*\S+.*$", re.MULTILINE)
-INLINE_LINK_RE = re.compile(r"!?\[([^\]]*)\]\([^\n)]*\)")
+MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(")
 
 
 def _rendered_text(body: str) -> str:
@@ -22,42 +21,41 @@ def _rendered_text(body: str) -> str:
     fence_length = 0
     for line in body.splitlines():
         if fence_char:
-            if re.fullmatch(rf"\s*{re.escape(fence_char)}{{{fence_length},}}\s*", line):
+            if re.fullmatch(
+                rf"[ \t]{{0,3}}{re.escape(fence_char)}{{{fence_length},}}[ \t]*",
+                line,
+            ):
                 fence_char = None
             continue
-        opening = FENCE_OPEN_RE.match(line)
+        opening = FENCE_OPEN_RE.match(line) if len(line) - len(line.lstrip(" \t")) <= 3 else None
         if opening:
             marker = opening.group(1)
             fence_char, fence_length = marker[0], len(marker)
             continue
         visible.append(line)
-    rendered = HTML_COMMENT_RE.sub("", "\n".join(visible))
-    rendered = REFERENCE_DEFINITION_RE.sub("", rendered)
-    return INLINE_LINK_RE.sub(r"\1", rendered)
+    return HTML_COMMENT_RE.sub("", "\n".join(visible))
 
 
 def check_pr_metadata(title: str, body: str) -> Outcome:
     visible_title = _rendered_text(title)
     rendered_body = _rendered_text(body)
+    headings = ATX_HEADING_RE.findall(rendered_body) + SETEXT_HEADING_RE.findall(
+        rendered_body
+    )
     evidence = {
         "title_has_japanese": bool(JAPANESE_RE.search(visible_title)),
-        "body_has_japanese": bool(JAPANESE_RE.search(rendered_body)),
+        "body_has_japanese_heading": any(JAPANESE_RE.search(item) for item in headings),
     }
+    if MARKDOWN_LINK_RE.search(visible_title):
+        return _blocked("title_markdown_link_not_allowed", "PR titleにMarkdown linkがあります", evidence)
     if not evidence["title_has_japanese"]:
         return _blocked(
             "title_not_japanese",
             "PR titleに日本語がありません",
             evidence,
         )
-    if not evidence["body_has_japanese"]:
-        return _blocked(
-            "body_not_japanese",
-            "PR bodyに日本語がありません",
-            evidence,
-        )
-    headings = ATX_HEADING_RE.findall(rendered_body) + SETEXT_HEADING_RE.findall(
-        rendered_body
-    )
+    if any(MARKDOWN_LINK_RE.search(item) for item in headings):
+        return _blocked("heading_markdown_link_not_allowed", "見出しにMarkdown linkがあります", evidence)
     english_only = [
         heading
         for heading in headings
@@ -68,6 +66,12 @@ def check_pr_metadata(title: str, body: str) -> Outcome:
         return _blocked(
             "english_only_heading",
             "英語だけの見出しがあります",
+            evidence,
+        )
+    if not evidence["body_has_japanese_heading"]:
+        return _blocked(
+            "japanese_heading_required",
+            "PR bodyに日本語の見出しがありません",
             evidence,
         )
     return Outcome(

@@ -1,5 +1,7 @@
 # アーキテクチャ
 
+設計判断は[ADR-0001: PR日本語gateは限定的な構文契約とする](adr/0001-pr-japanese-gate-boundary.md)に記録しています。
+
 `src/github_ops/`が結果契約、出力秘匿、コマンド実行、account overlay、identity、
 preflightを提供します。`scripts/`は薄いCLI、`skills/`は移植したSSOT、
 `adapters/`は読み取り専用の参照検証です。外部変更の判断はCLIの外側に残します。

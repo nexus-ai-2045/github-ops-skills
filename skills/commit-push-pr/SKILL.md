@@ -31,11 +31,11 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
    - 拒否 → pushスキップ（次のコミット時にまた聞く）
    - push失敗（オフライン等） → エラーを伝えて終了（次回に持ち越し）
    - ブランチの場合、PR title/bodyを日本語でドラフトし、ユーザーへ提示して確認
-   - PR bodyはUTF-8の一時ファイルへ保存し、次のgateを必ず実行する
-     `python scripts/check_pr_japanese.py --title "<日本語title>" --body-file <body-file> --json`
+   - PR title/bodyはUTF-8の一時ファイルへ保存し、shell展開を避けて次のgateを必ず実行する
+     `python scripts/check_pr_japanese.py --title-file <title-file> --body-file <body-file> --json`
    - gateが`READY`のときだけ、現在の会話でPR作成承認を再確認する
    - 承認後、次のwrapperで`gh pr create --body-file`と作成後read-backを実行する
-     `python scripts/create_pr_with_japanese_gate.py --repo <owner/name> --base <base> --head <branch> --repo-root . --account-map <account-map> --expected-base-sha <base-sha> --expected-head-sha <head-sha> --expected-visibility PRIVATE --title "<日本語title>" --body-file <body-file> --confirm --json`
+     `python scripts/create_pr_with_japanese_gate.py --repo <owner/name> --base <base> --head <branch> --repo-root . --account-map <account-map> --expected-base-sha <base-sha> --expected-head-sha <head-sha> --expected-visibility PRIVATE --title-file <title-file> --body-file <body-file> --confirm --json`
    - wrapperが`UNKNOWN`または`BLOCKED`なら、PRを編集・再作成せず停止して報告する
 7. 結果を返す
 
