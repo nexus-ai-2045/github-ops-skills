@@ -38,7 +38,7 @@ def _git_ok_responses(
         ("git", "branch", "--show-current"): CommandResult(0, branch, ""),
         ("git", "rev-parse", "--git-dir"): CommandResult(0, git_dir, ""),
         ("git", "rev-parse", "--git-common-dir"): CommandResult(0, common_dir, ""),
-        ("git", "status", "--porcelain", "--untracked-files=all"): CommandResult(
+        ("git", "status", "--porcelain=v1", "-z", "--untracked-files=all"): CommandResult(
             0, dirty, ""
         ),
         ("git", "worktree", "list", "--porcelain"): CommandResult(
@@ -49,7 +49,7 @@ def _git_ok_responses(
 
 def test_blocks_unapproved_dirty_paths(tmp_path: Path) -> None:
     runner = FakeRunner(
-        _git_ok_responses(dirty=" M src/a.py\n M docs/b.md\n")
+        _git_ok_responses(dirty=" M src/a.py\0 M docs/b.md\0")
     )
     identity = FakeIdentity(
         Outcome(
@@ -63,6 +63,7 @@ def test_blocks_unapproved_dirty_paths(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
         approved_paths=("src/a.py",),
@@ -86,6 +87,7 @@ def test_ready_when_location_clean_and_identity_ready(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
     )
@@ -98,7 +100,7 @@ def test_ready_when_location_clean_and_identity_ready(tmp_path: Path) -> None:
 def test_preserves_leading_space_in_porcelain_paths(tmp_path: Path) -> None:
     # Regression: stripping full porcelain output turned " M README.md" into "M README.md"
     # and sliced path to "EADME.md".
-    runner = FakeRunner(_git_ok_responses(dirty=" M README.md\n"))
+    runner = FakeRunner(_git_ok_responses(dirty=" M README.md\0"))
     identity = FakeIdentity(
         Outcome(
             Status.READY,
@@ -111,6 +113,7 @@ def test_preserves_leading_space_in_porcelain_paths(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
         allow_dirty=True,
@@ -139,6 +142,7 @@ def test_propagates_identity_block_with_location_evidence(tmp_path: Path) -> Non
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_login="a",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
     )
@@ -159,4 +163,19 @@ def test_blocks_unconfirmed_environment_token(tmp_path: Path) -> None:
         identity_probe=identity,  # type: ignore[arg-type]
     )
     assert outcome.status is Status.BLOCKED
-    assert outcome.code == "token_identity_unconfirmed"
+    assert outcome.code == "expected_login_required"
+
+
+def test_porcelain_arrow_text_is_preserved_as_filename(tmp_path: Path) -> None:
+    runner = FakeRunner(_git_ok_responses(dirty="?? secret -> approved\0"))
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"login": "o"})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["unapproved_paths"] == ["secret -> approved"]

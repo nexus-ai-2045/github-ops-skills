@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from scripts.import_legacy_sources import import_sources, verify_records
+from scripts.import_legacy_sources import _safe_child, import_sources, verify_records
 
 
 def test_import_copies_without_modifying_source(tmp_path: Path) -> None:
@@ -46,6 +46,17 @@ def test_import_rejects_symlink(tmp_path: Path) -> None:
         assert "symlink" in str(exc)
     else:
         raise AssertionError("symlink must be rejected")
+
+
+def test_safe_child_rejects_escape_after_missing_component(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    try:
+        _safe_child(root, "missing/../../escaped.txt")
+    except ValueError as exc:
+        assert "escapes root" in str(exc)
+    else:
+        raise AssertionError("missing component must not bypass root boundary")
 
 
 def test_import_normalizes_private_identity_without_modifying_source(

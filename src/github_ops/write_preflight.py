@@ -71,7 +71,7 @@ def collect_location_facts(
 
     porcelain, dirty_err = _run_text(
         command,
-        ["git", "status", "--porcelain", "--untracked-files=all"],
+        ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
         cwd=root_path,
     )
     if dirty_err is not None and porcelain is None:
@@ -84,14 +84,20 @@ def collect_location_facts(
             evidence={"repo_root": str(root_path)},
         )
     dirty_paths: list[str] = []
-    for line in (porcelain or "").splitlines():
-        if not line.strip():
+    records = (porcelain or "").split("\0")
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if not record:
             continue
-        # porcelain v1: XY<space>path  or rename "old -> new"
-        path = line[3:] if len(line) >= 4 else line.strip()
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
+        # porcelain v1 -z: XY<space>path\0. Rename/copy records add the
+        # original path as a second NUL field; the first path is the target.
+        status = record[:2]
+        path = record[3:] if len(record) >= 4 else record.strip()
         dirty_paths.append(path.replace("\\", "/"))
+        if any(marker in status for marker in ("R", "C")) and index < len(records):
+            index += 1
 
     worktree_count: int | None = None
     wt_out, _ = _run_text(
@@ -132,14 +138,17 @@ def evaluate_write_preflight(
         return location_error
     assert location is not None
 
-    if token and not expected_login:
+    if not expected_login:
         return Outcome(
             status=Status.BLOCKED,
-            code="token_identity_unconfirmed",
-            cause="token環境変数のGitHub loginを確認できません",
-            impact="stored credentialとは別accountで書き込む事故を止めています",
-            recovery="--expected-loginでtokenの想定loginを明示してください",
-            evidence={"repo_root": location.repo_root, "token_env_present": True},
+            code="expected_login_required",
+            cause="書き込みに使用するGitHub loginが未指定です",
+            impact="別の認証済みaccountで書き込む事故を止めています",
+            recovery="--expected-loginまたはaccount overlayで想定loginを明示してください",
+            evidence={
+                "repo_root": location.repo_root,
+                "token_env_present": bool(token),
+            },
         )
 
     if location.dirty_paths and not allow_dirty:

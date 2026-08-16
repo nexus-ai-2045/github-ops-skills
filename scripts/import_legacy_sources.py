@@ -178,8 +178,11 @@ def _safe_child(root: Path, relative: str) -> Path:
             continue
         # Remaining components do not exist yet (import target creation).
         candidate = nxt.joinpath(*parts[index + 1 :])
-        parent = current.resolve()
-        if parent != resolved_root and resolved_root not in parent.parents:
+        resolved_candidate = candidate.resolve()
+        if (
+            resolved_candidate != resolved_root
+            and resolved_root not in resolved_candidate.parents
+        ):
             raise ValueError(f"path escapes root: {relative}")
         return candidate
     resolved = current.resolve()
