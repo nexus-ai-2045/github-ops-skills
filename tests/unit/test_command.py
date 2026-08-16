@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from github_ops.command import CommandRunner
 
@@ -64,8 +65,9 @@ def test_runner_uses_no_window_flag_on_windows() -> None:
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    runner = CommandRunner(run_impl=fake_run, os_name="nt")
-    runner.run(["gh", "--version"])
+    with patch("github_ops.command.subprocess.CREATE_NO_WINDOW", 0x08000000, create=True):
+        runner = CommandRunner(run_impl=fake_run, os_name="nt")
+        runner.run(["gh", "--version"])
     assert captured["creationflags"] != 0
 
 
