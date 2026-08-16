@@ -20,12 +20,16 @@ class IdentityProbe:
         *,
         expected_login: str,
         token: str,
+        expected_host: str | None = None,
         cwd: Path | str | None = None,
     ) -> Outcome:
         result = self.runner.run(
             ["gh", "api", "user", "--jq", ".login"],
             cwd=cwd,
-            scoped_env={"GH_TOKEN": token},
+            scoped_env={
+                **({"GH_HOST": expected_host} if expected_host else {}),
+                "GH_TOKEN": token,
+            },
         )
         if result.returncode != 0:
             return Outcome(
@@ -65,11 +69,13 @@ class IdentityProbe:
         self,
         *,
         cwd: Path | str | None = None,
+        expected_host: str | None = None,
     ) -> tuple[str | None, str | None]:
         result = self.runner.run(
             ["gh", "api", "user", "--jq", ".login"],
             cwd=cwd,
             unset_env=TOKEN_ENV_NAMES,
+            scoped_env={"GH_HOST": expected_host} if expected_host else None,
         )
         if result.returncode != 0:
             return None, result.stderr.strip() or "active loginを確認できません"
@@ -83,6 +89,7 @@ class IdentityProbe:
         expected_owner: str | None = None,
         expected_login: str | None = None,
         token: str | None = None,
+        expected_host: str | None = None,
     ) -> Outcome:
         resolved_repo = repo.resolve()
         remote = self.runner.run(
@@ -122,6 +129,7 @@ class IdentityProbe:
             token_outcome = self.validate_token_login(
                 expected_login=expected_login,
                 token=token,
+                expected_host=expected_host,
                 cwd=resolved_repo,
             )
             if token_outcome.status is not Status.READY:
@@ -129,7 +137,9 @@ class IdentityProbe:
             login = token_outcome.evidence["token_login"]
             mode = "validated-token"
         else:
-            login, error = self.active_login(cwd=resolved_repo)
+            login, error = self.active_login(
+                cwd=resolved_repo, expected_host=expected_host
+            )
             if error:
                 return Outcome(
                     status=Status.UNKNOWN,

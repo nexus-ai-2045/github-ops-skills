@@ -14,3 +14,112 @@ def test_english_only_heading_is_blocked() -> None:
 def test_english_only_title_is_blocked() -> None:
     result = check_pr_metadata("Add safety gate", "## 概要\n誤操作を停止します。")
     assert result.code == "title_not_japanese"
+
+
+def test_english_heading_inside_fenced_example_is_ignored() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## 概要\n使用例です。\n\n```markdown\n## Summary\nexample\n```",
+    )
+    assert result.status.value == "READY"
+
+
+def test_english_heading_inside_long_fence_is_ignored() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## 概要\n使用例です。\n\n````markdown\n## Summary\nexample\n````",
+    )
+    assert result.status.value == "READY"
+
+
+def test_japanese_only_in_html_comment_does_not_pass() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "<!-- 本文は日本語で書いてください -->\nEnglish body only.",
+    )
+    assert result.code == "japanese_heading_required"
+
+
+def test_japanese_only_in_title_html_comment_does_not_pass() -> None:
+    result = check_pr_metadata(
+        "<!-- 日本語 --> Add gate",
+        "## 概要\n安全な変更です。",
+    )
+    assert result.code == "title_not_japanese"
+
+
+def test_indented_english_heading_is_blocked() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## 概要\n説明は日本語です。\n\n   ## Summary\nEnglish section.",
+    )
+    assert result.code == "english_only_heading"
+
+
+def test_setext_english_heading_is_blocked() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## 概要\n説明は日本語です。\n\nSummary\n=======\nEnglish section.",
+    )
+    assert result.code == "english_only_heading"
+
+
+def test_japanese_only_in_reference_destination_does_not_pass() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "English body only.\n\n[id]: https://example.com/日本語",
+    )
+    assert result.code == "japanese_heading_required"
+
+
+def test_japanese_only_in_inline_link_destination_does_not_pass() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "[English label](https://example.com/日本語)",
+    )
+    assert result.code == "japanese_heading_required"
+
+
+def test_japanese_inline_link_label_is_visible_and_passes() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## 概要\n[日本語の説明](https://example.com/english)",
+    )
+    assert result.status.value == "READY"
+
+
+def test_title_japanese_only_in_link_destination_does_not_pass() -> None:
+    result = check_pr_metadata(
+        "[Add gate](https://example.com/日本語)",
+        "## 概要\n安全な変更です。",
+    )
+    assert result.code == "title_markdown_link_not_allowed"
+
+
+def test_four_space_indented_fence_does_not_hide_heading() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## 概要\n説明です。\n    ```\n## Summary\n    ```",
+    )
+    assert result.code == "english_only_heading"
+
+
+def test_japanese_heading_is_required() -> None:
+    result = check_pr_metadata("日本語gateを追加", "説明は日本語です。")
+    assert result.code == "japanese_heading_required"
+
+
+def test_markdown_link_in_heading_is_blocked() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "## [概要](https://example.com)\n説明です。",
+    )
+    assert result.code == "heading_markdown_link_not_allowed"
+
+
+def test_japanese_setext_heading_does_not_replace_required_atx_heading() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "概要\n====\n説明です。",
+    )
+    assert result.code == "japanese_heading_required"

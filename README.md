@@ -11,6 +11,7 @@ GitHub書き込み前にfail-closedで停止できます。
 - tokenをfile、引数、出力へ保存しません。
 - adapterはhome directoryや設定を変更しません。
 - push、PR、repository作成、visibility変更は現在会話の明示承認なしに実行しません。
+- PR title/bodyは日本語gateを通し、作成後に承認済み入力との一致をread-backします。
 
 ## ローカル確認
 
@@ -23,6 +24,7 @@ python -m venv .venv
 
 結果は`READY`、`BLOCKED`、`UNKNOWN`の3状態です。`UNKNOWN`を成功として扱いません。
 account overlay例は`examples/account-repo-map.example.yaml`にあります。
+PR作成手順は`docs/pr-japanese-gate.md`を参照してください。
 
 並列作業中のsibling repositoryに未commit変更がある場合は、
 `skills/cross-repo-wip-ownership/`と

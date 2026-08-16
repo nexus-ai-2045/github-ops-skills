@@ -158,7 +158,10 @@ def _expand_skill_mappings(
 
 
 def _safe_child(root: Path, relative: str) -> Path:
-    candidate = (root / relative).resolve()
+    unresolved_candidate = root / relative
+    if unresolved_candidate.is_symlink():
+        raise ValueError(f"symlink path is not allowed: {relative}")
+    candidate = unresolved_candidate.resolve()
     resolved_root = root.resolve()
     if candidate != resolved_root and resolved_root not in candidate.parents:
         raise ValueError(f"path escapes root: {relative}")
