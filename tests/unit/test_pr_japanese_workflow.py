@@ -13,7 +13,7 @@ def test_workflow_is_metadata_only_and_read_only() -> None:
     assert "html_comments" in workflow
     assert "reference_definitions" in workflow
     assert "inline_links" in workflow
-    assert 'visible_title = html_comments.sub("", title)' in workflow
+    assert "visible_title = rendered_text(title)" in workflow
     assert "`{3,}|~{3,}" in workflow
     assert "actions/checkout" not in workflow
     assert "pull_request_target" not in workflow

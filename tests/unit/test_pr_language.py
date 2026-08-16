@@ -86,3 +86,11 @@ def test_japanese_inline_link_label_is_visible_and_passes() -> None:
         "[日本語の説明](https://example.com/english)",
     )
     assert result.status.value == "READY"
+
+
+def test_title_japanese_only_in_link_destination_does_not_pass() -> None:
+    result = check_pr_metadata(
+        "[Add gate](https://example.com/日本語)",
+        "## 概要\n安全な変更です。",
+    )
+    assert result.code == "title_not_japanese"

@@ -62,7 +62,7 @@ jobs:
               return inline_links.sub(r"\1", rendered)
 
           rendered_body = rendered_text(body)
-          visible_title = html_comments.sub("", title)
+          visible_title = rendered_text(title)
           errors = []
           if not japanese.search(visible_title):
               errors.append("PR titleに日本語がありません")
