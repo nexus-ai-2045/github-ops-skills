@@ -115,6 +115,25 @@ def test_query_requests_latest_comment_only() -> None:
     assert "comments(last:1)" in THREAD_QUERY
 
 
+def test_graphql_omits_cursor_on_initial_request(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Completed:
+        returncode = 0
+        stdout = '{"data": {}}'
+        stderr = ""
+
+    def fake_run(command, **kwargs):  # noqa: ANN001, ANN003
+        captured["command"] = command
+        return Completed()
+
+    monkeypatch.setattr("github_ops.review_threads.subprocess.run", fake_run)
+    from github_ops.review_threads import graphql
+
+    graphql("owner/name", 3)
+    assert not any(str(item).startswith("cursor=") for item in captured["command"])
+
+
 def test_summarize_falls_back_to_original_line_for_outdated_comment() -> None:
     thread = _thread(resolved=False, outdated=True)
     thread["comments"]["nodes"][0]["line"] = None

@@ -42,6 +42,21 @@ def test_adapter_blocks_when_required_skill_is_missing(tmp_path: Path) -> None:
     assert result["missing_skills"] == ["cross-repo-wip-ownership"]
 
 
+def test_adapter_blocks_empty_required_skill_directories(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            (tmp_path / "skills" / source.name).mkdir(parents=True)
+    (tmp_path / "migration").mkdir()
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        '{"schema_version":"github-ops/source-manifest/v1","sources":[{}]}',
+        encoding="utf-8",
+    )
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["missing_entrypoints"]
+
+
 def test_adapter_blocks_invalid_source_manifest(tmp_path: Path) -> None:
     repo = Path(__file__).resolve().parents[2]
     for source in (repo / "skills").iterdir():

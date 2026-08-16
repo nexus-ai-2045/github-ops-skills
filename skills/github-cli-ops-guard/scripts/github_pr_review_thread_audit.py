@@ -23,12 +23,15 @@ query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
 """
 
 
-def graphql(owner: str, name: str, number: int, cursor: str = "") -> dict:
+def graphql(owner: str, name: str, number: int, cursor: str | None = None) -> dict:
+    command = [
+        "gh", "api", "graphql", "-f", f"owner={owner}", "-f", f"name={name}",
+        "-F", f"number={number}", "-f", f"query={QUERY}",
+    ]
+    if cursor is not None:
+        command.extend(["-f", f"cursor={cursor}"])
     completed = subprocess.run(
-        [
-            "gh", "api", "graphql", "-f", f"owner={owner}", "-f", f"name={name}",
-            "-F", f"number={number}", "-f", f"cursor={cursor}", "-f", f"query={QUERY}",
-        ],
+        command,
         check=True,
         capture_output=True,
         text=True,

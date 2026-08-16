@@ -173,10 +173,10 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
         "-F",
         f"number={number}",
         "-f",
-        f"cursor={cursor or ''}",
-        "-f",
         f"query={THREAD_QUERY}",
     ]
+    if cursor is not None:
+        command.extend(["-f", f"cursor={cursor}"])
     completed = subprocess.run(
         command,
         check=True,
