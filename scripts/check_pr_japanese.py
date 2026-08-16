@@ -14,7 +14,9 @@ from github_ops.pr_language import check_pr_metadata
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="PR title/bodyの日本語境界を確認します")
-    parser.add_argument("--title", required=True)
+    title_source = parser.add_mutually_exclusive_group(required=True)
+    title_source.add_argument("--title")
+    title_source.add_argument("--title-file", type=Path)
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--body")
     source.add_argument("--body-file", type=Path)
@@ -24,8 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    title = args.title if args.title is not None else args.title_file.read_text(encoding="utf-8").rstrip("\r\n")
     body = args.body if args.body is not None else args.body_file.read_text(encoding="utf-8")
-    outcome = check_pr_metadata(args.title, body)
+    outcome = check_pr_metadata(title, body)
     if args.json:
         configure_utf8_stdout()
         print(json.dumps(outcome.to_dict(), ensure_ascii=False, indent=2))

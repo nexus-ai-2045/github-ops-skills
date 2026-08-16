@@ -40,3 +40,6 @@ python scripts/skill_drift_check.py --repo . --local-root <runtime-skills-root> 
 
 private canaryはreview packetだけを生成します。現versionは`--execute`を指定しても
 外部変更しません。実canaryは対象、visibility、送信内容を人間が確認した後の別工程です。
+
+commit、push、PR作成は別々に人間確認を行います。PR作成時の日本語gateと作成後の
+read-back手順は[`pr-japanese-gate.md`](pr-japanese-gate.md)を参照してください。
