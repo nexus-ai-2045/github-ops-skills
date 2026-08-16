@@ -97,7 +97,10 @@ def collect_location_facts(
         path = record[3:] if len(record) >= 4 else record.strip()
         dirty_paths.append(path.replace("\\", "/"))
         if any(marker in status for marker in ("R", "C")) and index < len(records):
+            source_path = records[index]
             index += 1
+            if source_path:
+                dirty_paths.append(source_path.replace("\\", "/"))
 
     worktree_count: int | None = None
     wt_out, _ = _run_text(

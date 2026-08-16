@@ -54,3 +54,20 @@ def test_parse_https_and_ssh_remotes() -> None:
         "example-org",
         "tooling",
     )
+
+
+def test_probe_blocks_mismatched_git_credential_username(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "protocol=https\nhost=github.com\nusername=other-user\npassword=hidden\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "credential_username_mismatch"
+    assert outcome.evidence["credential_username"] == "other-user"

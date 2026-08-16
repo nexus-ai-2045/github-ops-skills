@@ -125,6 +125,41 @@ class IdentityProbe:
                 evidence={"expected_owner": expected_owner, "remote_owner": owner},
             )
 
+        if expected_login and remote.stdout.strip().startswith("https://"):
+            credential = self.runner.run(
+                ["git", "credential", "fill"],
+                cwd=resolved_repo,
+                input_text="protocol=https\nhost=github.com\n\n",
+                redact_stdout=False,
+            )
+            if credential.returncode != 0:
+                return Outcome(
+                    status=Status.UNKNOWN,
+                    code="credential_username_unverified",
+                    cause="Git credential usernameを確認できません",
+                    impact="git pushの実行名義を確定できないため書き込みを止めています",
+                    recovery="GitHub credential helperを確認してください",
+                    evidence={"repository": f"{owner}/{name}"},
+                )
+            credential_fields = dict(
+                line.split("=", 1)
+                for line in credential.stdout.splitlines()
+                if "=" in line
+            )
+            credential_username = credential_fields.get("username")
+            if credential_username != expected_login:
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="credential_username_mismatch",
+                    cause="Git credential usernameがexpected loginと一致しません",
+                    impact="git pushを別accountで実行する事故を止めています",
+                    recovery="repo-local credential usernameまたはcredential helperを修正してください",
+                    evidence={
+                        "expected_login": expected_login,
+                        "credential_username": credential_username,
+                    },
+                )
+
         if token and expected_login:
             token_outcome = self.validate_token_login(
                 expected_login=expected_login,
@@ -174,6 +209,9 @@ class IdentityProbe:
                 "remote_owner": owner,
                 "login": login,
                 "identity_mode": mode,
+                "credential_username": expected_login
+                if remote.stdout.strip().startswith("https://")
+                else None,
             },
         )
 

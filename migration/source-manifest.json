@@ -23,27 +23,27 @@
       "source_root": "shared",
       "source_path": "skills/cross-repo-wip-ownership/SKILL.md",
       "target_path": "skills/cross-repo-wip-ownership/SKILL.md",
-      "sha256": "2c342ebd844fa12bc7681075e0772dcd6a7f8a509f34c3ca6013ab0321139ef4",
-      "source_sha256": "2c342ebd844fa12bc7681075e0772dcd6a7f8a509f34c3ca6013ab0321139ef4",
-      "target_sha256": "2c342ebd844fa12bc7681075e0772dcd6a7f8a509f34c3ca6013ab0321139ef4",
+      "sha256": "1a8f14f61a5dd7c5ffeae28191b1679e05c17057bf81c64cd5aac7ff21b6dc5f",
+      "source_sha256": "1a8f14f61a5dd7c5ffeae28191b1679e05c17057bf81c64cd5aac7ff21b6dc5f",
+      "target_sha256": "1a8f14f61a5dd7c5ffeae28191b1679e05c17057bf81c64cd5aac7ff21b6dc5f",
       "normalized": false
     },
     {
       "source_root": "shared",
       "source_path": "skills/cross-repo-wip-ownership/manifest.yaml",
       "target_path": "skills/cross-repo-wip-ownership/manifest.yaml",
-      "sha256": "5055cb10c38ba426fd738df5efa567c6b59b38e4760285476fae3fb7546873d6",
-      "source_sha256": "5055cb10c38ba426fd738df5efa567c6b59b38e4760285476fae3fb7546873d6",
-      "target_sha256": "5055cb10c38ba426fd738df5efa567c6b59b38e4760285476fae3fb7546873d6",
+      "sha256": "4382813d53c02400e30bf03b4c41637a8dfa57040a7fcb4e6217b1cf7e69167d",
+      "source_sha256": "4382813d53c02400e30bf03b4c41637a8dfa57040a7fcb4e6217b1cf7e69167d",
+      "target_sha256": "4382813d53c02400e30bf03b4c41637a8dfa57040a7fcb4e6217b1cf7e69167d",
       "normalized": false
     },
     {
       "source_root": "shared",
       "source_path": "skills/cross-repo-wip-ownership/runtime/agents/openai.yaml",
       "target_path": "skills/cross-repo-wip-ownership/runtime/agents/openai.yaml",
-      "sha256": "abf90f4c72bab34e8f8ecb00f4ee47eca2007bcdf5c03ceecc3f65fffbe4ab90",
-      "source_sha256": "abf90f4c72bab34e8f8ecb00f4ee47eca2007bcdf5c03ceecc3f65fffbe4ab90",
-      "target_sha256": "abf90f4c72bab34e8f8ecb00f4ee47eca2007bcdf5c03ceecc3f65fffbe4ab90",
+      "sha256": "ea44152afcb4b7fcab0ea7cd536bf70053b18d19bfe8b1b0c35c263f997a09a7",
+      "source_sha256": "ea44152afcb4b7fcab0ea7cd536bf70053b18d19bfe8b1b0c35c263f997a09a7",
+      "target_sha256": "ea44152afcb4b7fcab0ea7cd536bf70053b18d19bfe8b1b0c35c263f997a09a7",
       "normalized": false
     },
     {

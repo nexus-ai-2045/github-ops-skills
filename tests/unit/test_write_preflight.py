@@ -179,3 +179,19 @@ def test_porcelain_arrow_text_is_preserved_as_filename(tmp_path: Path) -> None:
     )
     assert outcome.status is Status.BLOCKED
     assert outcome.evidence["unapproved_paths"] == ["secret -> approved"]
+
+
+def test_porcelain_rename_includes_source_and_target(tmp_path: Path) -> None:
+    runner = FakeRunner(_git_ok_responses(dirty="R  new.txt\0old.txt\0"))
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"login": "o"})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        approved_paths=("new.txt",),
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["unapproved_paths"] == ["old.txt"]
