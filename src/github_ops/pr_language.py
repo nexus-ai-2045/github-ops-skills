@@ -39,12 +39,13 @@ def _rendered_text(body: str) -> str:
 def check_pr_metadata(title: str, body: str) -> Outcome:
     visible_title = _rendered_text(title)
     rendered_body = _rendered_text(body)
-    headings = ATX_HEADING_RE.findall(rendered_body) + SETEXT_HEADING_RE.findall(
-        rendered_body
-    )
+    atx_headings = ATX_HEADING_RE.findall(rendered_body)
+    headings = atx_headings + SETEXT_HEADING_RE.findall(rendered_body)
     evidence = {
         "title_has_japanese": bool(JAPANESE_RE.search(visible_title)),
-        "body_has_japanese_heading": any(JAPANESE_RE.search(item) for item in headings),
+        "body_has_japanese_heading": any(
+            JAPANESE_RE.search(item) for item in atx_headings
+        ),
     }
     if MARKDOWN_LINK_RE.search(visible_title):
         return _blocked("title_markdown_link_not_allowed", "PR titleにMarkdown linkがあります", evidence)

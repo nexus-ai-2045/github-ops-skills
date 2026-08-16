@@ -115,3 +115,11 @@ def test_markdown_link_in_heading_is_blocked() -> None:
         "## [概要](https://example.com)\n説明です。",
     )
     assert result.code == "heading_markdown_link_not_allowed"
+
+
+def test_japanese_setext_heading_does_not_replace_required_atx_heading() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "概要\n====\n説明です。",
+    )
+    assert result.code == "japanese_heading_required"

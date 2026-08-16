@@ -60,9 +60,8 @@ jobs:
 
           rendered_body = rendered_text(body)
           visible_title = rendered_text(title)
-          headings = atx_headings.findall(rendered_body) + setext_headings.findall(
-              rendered_body
-          )
+          atx_matches = atx_headings.findall(rendered_body)
+          headings = atx_matches + setext_headings.findall(rendered_body)
           errors = []
           if markdown_links.search(visible_title):
               errors.append("PR titleにMarkdown linkがあります")
@@ -70,7 +69,7 @@ jobs:
               errors.append("PR titleに日本語がありません")
           if any(markdown_links.search(heading) for heading in headings):
               errors.append("見出しにMarkdown linkがあります")
-          if not any(japanese.search(heading) for heading in headings):
+          if not any(japanese.search(heading) for heading in atx_matches):
               errors.append("PR bodyに日本語の見出しがありません")
           for heading in headings:
               if re.search(r"[A-Za-z]", heading) and not japanese.search(heading):
