@@ -162,8 +162,10 @@ def test_create_uses_validated_body_snapshot_and_verifies_read_back(tmp_path: Pa
         "github.com/example-org/tooling"
     )
     assert create_call["input_text"] == body
+    assert create_call["scoped_env"] == {"GH_HOST": "github.com"}
     assert runner.calls[-1]["argv"][:4] == ["gh", "pr", "view", url]
     assert runner.calls[-1]["redact_stdout"] is False
+    assert runner.calls[-1]["scoped_env"] == {"GH_HOST": "github.com"}
     assert runner.calls[-1]["argv"][runner.calls[-1]["argv"].index("--repo") + 1] == (
         "github.com/example-org/tooling"
     )
@@ -332,6 +334,14 @@ def test_read_back_os_error_returns_unknown_with_url(tmp_path: Path) -> None:
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_read_back_execution_failed"
     assert outcome.evidence["url"] == url
+
+
+def test_create_os_error_returns_unknown_without_retry(tmp_path: Path) -> None:
+    runner = FakeRunner(_preflight_ready() + [OSError("spawn failed")])
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == "pr_create_execution_failed"
+    assert outcome.evidence["head"] == "codex/gate"
 
 
 def test_requested_draft_state_is_verified(tmp_path: Path) -> None:

@@ -110,13 +110,25 @@ def create_pr_with_japanese_gate(
     if draft:
         create_argv.append("--draft")
     try:
-        created = command_runner.run(create_argv, input_text=body, timeout=60)
+        created = command_runner.run(
+            create_argv,
+            input_text=body,
+            timeout=60,
+            scoped_env={"GH_HOST": "github.com"},
+        )
     except subprocess.TimeoutExpired:
         return _unknown(
             "pr_create_timeout",
             "gh pr createの完了状態を確認できません",
             "再作成せず、対象branchの既存PRをread-onlyで確認してください",
             {"repository": repo, "head": head},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _unknown(
+            "pr_create_execution_failed",
+            "gh pr createの完了状態を確認できません",
+            "再作成せず、対象branchの既存PRをread-onlyで確認してください",
+            {"repository": repo, "head": head, "error": str(exc)},
         )
     if created.returncode != 0:
         return _unknown(
@@ -148,6 +160,7 @@ def create_pr_with_japanese_gate(
                 "url,title,body,headRefName,baseRefName,headRefOid,baseRefOid,isDraft",
             ],
             redact_stdout=False,
+            scoped_env={"GH_HOST": "github.com"},
         )
     except subprocess.TimeoutExpired:
         return _unknown(
@@ -281,6 +294,7 @@ def _verify_preflight(
         expected_owner=resolution.expected_owner,
         expected_login=resolution.expected_login,
         token=token,
+        expected_host="github.com",
     )
     if identity.status is not Status.READY:
         return identity
@@ -316,6 +330,7 @@ def _verify_preflight(
                 "nameWithOwner,visibility,viewerPermission,defaultBranchRef",
             ],
             cwd=repo_root,
+            scoped_env={"GH_HOST": "github.com"},
         ),
     }
     if any(result.returncode != 0 for result in checks.values()):
