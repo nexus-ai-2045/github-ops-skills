@@ -6,8 +6,8 @@
   "claims": [
     {
       "classification": "fact",
-      "claim": "offline tests passed: 89",
-      "source": ".venv Python -m pytest -q",
+      "claim": "offline tests passed: 137",
+      "source": "py -3.13 -m pytest -q --basetemp <repo外temp>",
       "actor": "pytest",
       "event_time": "2026-08-06T12:00:00+09:00",
       "observed_at": "2026-08-06T12:00:00+09:00",
@@ -43,7 +43,7 @@
     {
       "classification": "fact",
       "claim": "skill_drift_check detects remaining runtime drift against local agents skills root",
-      "source": "scripts/skill_drift_check.py --local-root <runtime-skills-root>",
+      "source": "scripts/skill_drift_check.py --runtime <claude|codex|grok> --local-root <runtime-skills-root>",
       "actor": "skill_drift_check",
       "event_time": "2026-08-06T12:00:00+09:00",
       "observed_at": "2026-08-06T12:00:00+09:00",

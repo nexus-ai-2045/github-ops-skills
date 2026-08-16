@@ -70,7 +70,9 @@ def collect_location_facts(
             is_linked = git_dir != common_dir
 
     porcelain, dirty_err = _run_text(
-        command, ["git", "status", "--porcelain"], cwd=root_path
+        command,
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=root_path,
     )
     if dirty_err is not None and porcelain is None:
         return None, Outcome(
@@ -129,6 +131,16 @@ def evaluate_write_preflight(
     if location_error is not None:
         return location_error
     assert location is not None
+
+    if token and not expected_login:
+        return Outcome(
+            status=Status.BLOCKED,
+            code="token_identity_unconfirmed",
+            cause="token環境変数のGitHub loginを確認できません",
+            impact="stored credentialとは別accountで書き込む事故を止めています",
+            recovery="--expected-loginでtokenの想定loginを明示してください",
+            evidence={"repo_root": location.repo_root, "token_env_present": True},
+        )
 
     if location.dirty_paths and not allow_dirty:
         approved = {path.replace("\\", "/") for path in approved_paths}

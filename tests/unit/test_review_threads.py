@@ -113,3 +113,10 @@ def test_fetch_follows_all_review_thread_pages(monkeypatch) -> None:
 
 def test_query_requests_latest_comment_only() -> None:
     assert "comments(last:1)" in THREAD_QUERY
+
+
+def test_summarize_falls_back_to_original_line_for_outdated_comment() -> None:
+    thread = _thread(resolved=False, outdated=True)
+    thread["comments"]["nodes"][0]["line"] = None
+    result = summarize(_payload(thread))
+    assert result.threads[0].line == 10

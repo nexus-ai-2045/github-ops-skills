@@ -63,7 +63,14 @@ def main() -> int:
             "unresolved_current": current,
             "unresolved_outdated": outdated,
         }
-    except (OSError, subprocess.SubprocessError, ValueError, KeyError, json.JSONDecodeError) as exc:
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        ValueError,
+        KeyError,
+        TypeError,
+        json.JSONDecodeError,
+    ) as exc:
         result = {"decision": "error", "errors": [str(exc)]}
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

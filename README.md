@@ -38,7 +38,7 @@ PR review thread の read-only 監査:
 runtime skill との差分確認:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/skill_drift_check.py --repo . --local-root <runtime-skills-root> --json
+.\.venv\Scripts\python.exe scripts/skill_drift_check.py --repo . --runtime codex --local-root <runtime-skills-root> --json
 ```
 
 GitHub write 前の薄い接続ゲート（場所 + dirty + identity）:

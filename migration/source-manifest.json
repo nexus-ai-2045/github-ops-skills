@@ -5,10 +5,10 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/manifest.yaml",
       "target_path": "skills/github-cli-ops-guard/manifest.yaml",
-      "sha256": "d2b5bc27b6a26a525a13f85e33473645946ee7251f55b2fd3272996abdd0f47d",
+      "sha256": "dede20f5b69ffa404187b680da6b7997dc9eb06296916e5332d017f5d416fa72",
       "source_sha256": "d2b5bc27b6a26a525a13f85e33473645946ee7251f55b2fd3272996abdd0f47d",
-      "target_sha256": "d2b5bc27b6a26a525a13f85e33473645946ee7251f55b2fd3272996abdd0f47d",
-      "normalized": false
+      "target_sha256": "dede20f5b69ffa404187b680da6b7997dc9eb06296916e5332d017f5d416fa72",
+      "normalized": true
     },
     {
       "source_root": "shared",
@@ -50,10 +50,10 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/SKILL.md",
       "target_path": "skills/github-cli-ops-guard/SKILL.md",
-      "sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
+      "sha256": "dfd236c6cc40152595070943c38de407b7419db0db75aaa1d6b92b588bc164f8",
       "source_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
-      "target_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
-      "normalized": false
+      "target_sha256": "dfd236c6cc40152595070943c38de407b7419db0db75aaa1d6b92b588bc164f8",
+      "normalized": true
     },
     {
       "source_root": "shared",
@@ -77,10 +77,10 @@
       "source_root": "shared",
       "source_path": "skills/commit-push-pr/SKILL.md",
       "target_path": "skills/commit-push-pr/SKILL.md",
-      "sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
+      "sha256": "ffefa98c16aed8124f5119ffbe600eb1aa19f70216e4438dbb1d9ba3af355f61",
       "source_sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
-      "target_sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
-      "normalized": false
+      "target_sha256": "ffefa98c16aed8124f5119ffbe600eb1aa19f70216e4438dbb1d9ba3af355f61",
+      "normalized": true
     },
     {
       "source_root": "shared",
@@ -140,9 +140,9 @@
       "source_root": "agent-skills",
       "source_path": "public-repo-readiness/SKILL.md",
       "target_path": "skills/public-repo-readiness/SKILL.md",
-      "sha256": "3da7fe01084b15892d9e864d2e22e402407decbc0f20572566a74d44ab347aa0",
+      "sha256": "879261cb3e0ffede50ed9f74d57d6daf73f8319c7b477d4b96f5a80a107bc63d",
       "source_sha256": "abce52a292552656150cad5d45d2157b75614c2c1ee66b81a34f4fe894f2aa0b",
-      "target_sha256": "3da7fe01084b15892d9e864d2e22e402407decbc0f20572566a74d44ab347aa0",
+      "target_sha256": "879261cb3e0ffede50ed9f74d57d6daf73f8319c7b477d4b96f5a80a107bc63d",
       "normalized": true
     },
     {

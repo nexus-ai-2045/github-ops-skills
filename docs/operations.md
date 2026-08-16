@@ -22,7 +22,7 @@ python scripts/github_pr_review_thread_audit.py --repo owner/name --pr N --json
 runtime skill との差分確認:
 
 ```powershell
-python scripts/skill_drift_check.py --repo . --local-root <runtime-skills-root> --json
+python scripts/skill_drift_check.py --repo . --runtime codex --local-root <runtime-skills-root> --json
 ```
 
 ## L3 read-only E2E

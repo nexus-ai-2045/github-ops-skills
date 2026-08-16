@@ -38,6 +38,7 @@ def compare_skill_roots(
     *,
     ssot_skills_root: Path,
     local_skills_root: Path,
+    runtime: str,
 ) -> list[SkillFileDrift]:
     # Only SSOT skills are compared. Local-only skills outside this Core Suite
     # are ignored to avoid high-dimensional noise from large runtime roots.
@@ -45,7 +46,7 @@ def compare_skill_roots(
     rows: list[SkillFileDrift] = []
     for skill in skills:
         skill_root = ssot_skills_root / skill
-        mappings = _runtime_file_mappings(skill_root)
+        mappings = _runtime_file_mappings(skill_root, runtime=runtime)
         for relative, source_relative in mappings:
             ssot_path = ssot_skills_root / skill / source_relative
             local_path = local_skills_root / skill / relative
@@ -73,16 +74,23 @@ def compare_skill_roots(
     return rows
 
 
-def _runtime_file_mappings(skill_root: Path) -> list[tuple[str, str]]:
+def _runtime_file_mappings(
+    skill_root: Path, *, runtime: str
+) -> list[tuple[str, str]]:
     files = {("SKILL.md", "SKILL.md")}
     manifest = skill_root / "manifest.yaml"
     if not manifest.is_file():
         return sorted(files)
-    files.add(("manifest.yaml", "manifest.yaml"))
     payload = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
-    for runtime in (payload.get("runtimes") or {}).values():
-        files.update((item, item) for item in (runtime.get("files") or []))
-        files.update((target, source) for target, source in (runtime.get("extra") or {}).items())
+    runtime_config = (payload.get("runtimes") or {}).get(runtime)
+    if not runtime_config or runtime_config.get("mode") == "skip":
+        return []
+    files = set()
+    files.update((item, item) for item in (runtime_config.get("files") or []))
+    files.update(
+        (target, source)
+        for target, source in (runtime_config.get("extra") or {}).items()
+    )
     return sorted(files)
 
 

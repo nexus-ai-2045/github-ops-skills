@@ -116,7 +116,11 @@ def summarize(payload: dict[str, Any]) -> AuditResult:
                 id=thread["id"],
                 state=state,
                 path=latest_comment.get("path", ""),
-                line=latest_comment.get("line"),
+                line=(
+                    latest_comment.get("line")
+                    if latest_comment.get("line") is not None
+                    else latest_comment.get("originalLine")
+                ),
                 author=(latest_comment.get("author") or {}).get("login", ""),
                 title=comment_title(latest_comment.get("body", "")),
                 commit=(latest_comment.get("commit") or {}).get("oid", ""),

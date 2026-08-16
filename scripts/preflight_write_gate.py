@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -43,14 +44,26 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    outcome = evaluate_write_preflight(
-        args.repo,
-        expected_owner=args.expected_owner,
-        expected_login=args.expected_login,
-        token=token,
-        allow_dirty=args.allow_dirty,
-        approved_paths=tuple(args.approved_path),
-    )
+    try:
+        outcome = evaluate_write_preflight(
+            args.repo,
+            expected_owner=args.expected_owner,
+            expected_login=args.expected_login,
+            token=token,
+            allow_dirty=args.allow_dirty,
+            approved_paths=tuple(args.approved_path),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        from github_ops.result import Outcome
+
+        outcome = Outcome(
+            status=Status.BLOCKED,
+            code="preflight_command_failed",
+            cause="gitまたはghの実行に失敗しました",
+            impact="identityとdirty scopeを確認できないため書き込みを止めています",
+            recovery="git/ghの利用可否と応答を確認して再実行してください",
+            evidence={"repo": str(args.repo.resolve())},
+        )
     configure_utf8_stdout()
     if args.json:
         print(json.dumps(outcome.to_dict(), ensure_ascii=False, indent=2))

@@ -26,6 +26,12 @@ def main(argv: list[str] | None = None) -> int:
         default=[],
         help="Local skills root to compare (repeatable). Example: ~/.agents/skills",
     )
+    parser.add_argument(
+        "--runtime",
+        choices=("claude", "codex", "grok"),
+        required=True,
+        help="比較対象runtime。manifestの当該runtimeだけを使用します。",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -49,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         rows = compare_skill_roots(
             ssot_skills_root=ssot_root,
             local_skills_root=local_root,
+            runtime=args.runtime,
         )
         outcome = drift_outcome(rows, local_root=str(local_root))
         reports.append(outcome.to_dict())

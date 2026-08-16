@@ -38,7 +38,9 @@ def _git_ok_responses(
         ("git", "branch", "--show-current"): CommandResult(0, branch, ""),
         ("git", "rev-parse", "--git-dir"): CommandResult(0, git_dir, ""),
         ("git", "rev-parse", "--git-common-dir"): CommandResult(0, common_dir, ""),
-        ("git", "status", "--porcelain"): CommandResult(0, dirty, ""),
+        ("git", "status", "--porcelain", "--untracked-files=all"): CommandResult(
+            0, dirty, ""
+        ),
         ("git", "worktree", "list", "--porcelain"): CommandResult(
             0, "worktree C:/repo\nworktree C:/repo-wt\n", ""
         ),
@@ -143,3 +145,18 @@ def test_propagates_identity_block_with_location_evidence(tmp_path: Path) -> Non
     assert outcome.status is Status.BLOCKED
     assert outcome.code == "active_login_mismatch"
     assert outcome.evidence["location"]["is_linked_worktree"] is True
+
+
+def test_blocks_unconfirmed_environment_token(tmp_path: Path) -> None:
+    runner = FakeRunner(_git_ok_responses(dirty=""))
+    identity = FakeIdentity(
+        Outcome(Status.READY, "unexpected", "", "", "", {"unused": True})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        token="secret",
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.status is Status.BLOCKED
+    assert outcome.code == "token_identity_unconfirmed"
