@@ -62,3 +62,27 @@ def test_setext_english_heading_is_blocked() -> None:
         "## 概要\n説明は日本語です。\n\nSummary\n=======\nEnglish section.",
     )
     assert result.code == "english_only_heading"
+
+
+def test_japanese_only_in_reference_destination_does_not_pass() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "English body only.\n\n[id]: https://example.com/日本語",
+    )
+    assert result.code == "body_not_japanese"
+
+
+def test_japanese_only_in_inline_link_destination_does_not_pass() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "[English label](https://example.com/日本語)",
+    )
+    assert result.code == "body_not_japanese"
+
+
+def test_japanese_inline_link_label_is_visible_and_passes() -> None:
+    result = check_pr_metadata(
+        "日本語gateを追加",
+        "[日本語の説明](https://example.com/english)",
+    )
+    assert result.status.value == "READY"

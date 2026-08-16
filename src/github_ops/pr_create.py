@@ -70,6 +70,7 @@ def create_pr_with_japanese_gate(
         return language
 
     command_runner = runner or CommandRunner()
+    repo_selector = f"github.com/{repo}"
     try:
         preflight = _verify_preflight(
             repo=repo,
@@ -96,7 +97,7 @@ def create_pr_with_japanese_gate(
         "pr",
         "create",
         "--repo",
-        repo,
+        repo_selector,
         "--base",
         base,
         "--head",
@@ -142,9 +143,9 @@ def create_pr_with_japanese_gate(
                 "view",
                 url,
                 "--repo",
-                repo,
+                repo_selector,
                 "--json",
-                "url,title,body,headRefName,baseRefName,headRefOid,baseRefOid",
+                "url,title,body,headRefName,baseRefName,headRefOid,baseRefOid,isDraft",
             ],
             redact_stdout=False,
         )
@@ -154,6 +155,13 @@ def create_pr_with_japanese_gate(
             "作成後のPR表示面の再取得がtimeoutしました",
             "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
             {"url": url},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _unknown(
+            "pr_read_back_execution_failed",
+            "作成後のPR表示面を再取得できません",
+            "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
+            {"url": url, "error": str(exc)},
         )
     if read_back.returncode != 0:
         return _unknown(
@@ -185,6 +193,7 @@ def create_pr_with_japanese_gate(
     observed_head_sha = observed.get("headRefOid")
     observed_base = observed.get("baseRefName")
     observed_base_sha = observed.get("baseRefOid")
+    observed_draft = observed.get("isDraft")
     if not isinstance(observed_title, str) or not isinstance(observed_body, str):
         return _unknown(
             "pr_read_back_metadata_missing",
@@ -200,6 +209,7 @@ def create_pr_with_japanese_gate(
         and observed_head_sha == expected_head_sha
         and observed_base == base
         and observed_base_sha == expected_base_sha
+        and observed_draft is draft
     )
     evidence = {
         "url": url,
@@ -208,6 +218,7 @@ def create_pr_with_japanese_gate(
         "base_sha": observed_base_sha,
         "head": observed_head,
         "head_sha": observed_head_sha,
+        "is_draft": observed_draft,
         "title_body_exact_match": exact_match,
         "japanese_gate": observed_language.code,
     }
@@ -240,6 +251,14 @@ def _verify_preflight(
     expected_visibility: str,
     runner: Runner,
 ) -> Outcome:
+    gh_host = os.environ.get("GH_HOST")
+    if gh_host and gh_host.casefold() != "github.com":
+        return _blocked(
+            "github_host_mismatch",
+            "GH_HOSTがoriginのgithub.comと一致しません",
+            "GH_HOSTを解除し、github.com向けidentityを再確認してください",
+            {"expected_host": "github.com", "configured_host": gh_host},
+        )
     if ":" in head:
         return _blocked(
             "fork_head_unsupported",
@@ -292,7 +311,7 @@ def _verify_preflight(
                 "gh",
                 "repo",
                 "view",
-                repo,
+                f"github.com/{repo}",
                 "--json",
                 "nameWithOwner,visibility,viewerPermission,defaultBranchRef",
             ],

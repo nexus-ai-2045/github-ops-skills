@@ -79,6 +79,7 @@ def _read_back(title: str, body: str, url: str) -> CommandResult:
                 "headRefOid": HEAD_SHA,
                 "baseRefName": "main",
                 "baseRefOid": BASE_SHA,
+                "isDraft": False,
             },
             ensure_ascii=False,
         ),
@@ -157,9 +158,15 @@ def test_create_uses_validated_body_snapshot_and_verifies_read_back(tmp_path: Pa
     assert outcome.code == "pr_created_and_verified"
     create_call = runner.calls[-2]
     assert create_call["argv"][-2:] == ["--body-file", "-"]
+    assert create_call["argv"][create_call["argv"].index("--repo") + 1] == (
+        "github.com/example-org/tooling"
+    )
     assert create_call["input_text"] == body
     assert runner.calls[-1]["argv"][:4] == ["gh", "pr", "view", url]
     assert runner.calls[-1]["redact_stdout"] is False
+    assert runner.calls[-1]["argv"][runner.calls[-1]["argv"].index("--repo") + 1] == (
+        "github.com/example-org/tooling"
+    )
 
 
 def test_token_shaped_literal_compares_before_output_redaction(tmp_path: Path) -> None:
@@ -303,3 +310,39 @@ def test_non_default_base_branch_is_supported(tmp_path: Path) -> None:
         **_kwargs(tmp_path, base="develop"), runner=runner
     )
     assert outcome.status is Status.READY
+
+
+def test_conflicting_github_host_is_blocked_before_commands(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("GH_HOST", "enterprise.example.com")
+    runner = FakeRunner([])
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.code == "github_host_mismatch"
+    assert runner.calls == []
+
+
+def test_read_back_os_error_returns_unknown_with_url(tmp_path: Path) -> None:
+    url = "https://github.com/example-org/tooling/pull/12"
+    runner = FakeRunner(
+        _preflight_ready()
+        + [CommandResult(0, f"{url}\n", ""), OSError("spawn failed")]
+    )
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == "pr_read_back_execution_failed"
+    assert outcome.evidence["url"] == url
+
+
+def test_requested_draft_state_is_verified(tmp_path: Path) -> None:
+    body = _body_file(tmp_path).read_text(encoding="utf-8")
+    url = "https://github.com/example-org/tooling/pull/12"
+    runner = FakeRunner(
+        _preflight_ready()
+        + [CommandResult(0, f"{url}\n", ""), _read_back("PR日本語gateを追加", body, url)]
+    )
+    outcome = create_pr_with_japanese_gate(
+        **_kwargs(tmp_path, draft=True), runner=runner
+    )
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == "pr_read_back_mismatch"

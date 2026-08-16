@@ -12,6 +12,8 @@ SETEXT_HEADING_RE = re.compile(
 )
 FENCE_OPEN_RE = re.compile(r"^\s*(`{3,}|~{3,})")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+REFERENCE_DEFINITION_RE = re.compile(r"^[ \t]{0,3}\[[^\]]+\]:\s*\S+.*$", re.MULTILINE)
+INLINE_LINK_RE = re.compile(r"!?\[([^\]]*)\]\([^\n)]*\)")
 
 
 def _rendered_text(body: str) -> str:
@@ -29,7 +31,9 @@ def _rendered_text(body: str) -> str:
             fence_char, fence_length = marker[0], len(marker)
             continue
         visible.append(line)
-    return HTML_COMMENT_RE.sub("", "\n".join(visible))
+    rendered = HTML_COMMENT_RE.sub("", "\n".join(visible))
+    rendered = REFERENCE_DEFINITION_RE.sub("", rendered)
+    return INLINE_LINK_RE.sub(r"\1", rendered)
 
 
 def check_pr_metadata(title: str, body: str) -> Outcome:
