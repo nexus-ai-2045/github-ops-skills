@@ -57,15 +57,14 @@ def test_stdout_redaction_can_be_disabled_without_exposing_stderr() -> None:
     assert token not in result.stderr
 
 
-def test_runner_uses_no_window_flag_on_windows(monkeypatch) -> None:
+def test_runner_uses_no_window_flag_on_windows() -> None:
     captured = {}
 
     def fake_run(argv, **kwargs):
         captured.update(kwargs)
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("github_ops.command.os.name", "nt")
-    runner = CommandRunner(run_impl=fake_run)
+    runner = CommandRunner(run_impl=fake_run, os_name="nt")
     runner.run(["gh", "--version"])
     assert captured["creationflags"] != 0
 

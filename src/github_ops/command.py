@@ -22,8 +22,10 @@ class CommandRunner:
         self,
         *,
         run_impl: Callable[..., Any] = subprocess.run,
+        os_name: str = os.name,
     ) -> None:
         self._run_impl = run_impl
+        self._os_name = os_name
 
     def run(
         self,
@@ -42,7 +44,9 @@ class CommandRunner:
         if scoped_env:
             env.update(scoped_env)
         creationflags = (
-            getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+            getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            if self._os_name == "nt"
+            else 0
         )
         completed = self._run_impl(
             list(argv),
