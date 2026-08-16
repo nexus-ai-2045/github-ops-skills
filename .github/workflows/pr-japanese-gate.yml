@@ -1,0 +1,44 @@
+name: PR日本語gate
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    name: PR title/body日本語検査
+    runs-on: ubuntu-latest
+    steps:
+      - name: GitHub event metadataを検査
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
+              pull_request = json.load(source)["pull_request"]
+
+          title = pull_request.get("title") or ""
+          body = pull_request.get("body") or ""
+          japanese = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
+          headings = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+          errors = []
+          if not japanese.search(title):
+              errors.append("PR titleに日本語がありません")
+          if not japanese.search(body):
+              errors.append("PR bodyに日本語がありません")
+          for heading in headings.findall(body):
+              if re.search(r"[A-Za-z]", heading) and not japanese.search(heading):
+                  errors.append(f"英語だけの見出しがあります: {heading}")
+
+          if errors:
+              print("\n".join(errors), file=sys.stderr)
+              raise SystemExit(1)
+          print("PR title/bodyの日本語境界を確認しました")
+          PY

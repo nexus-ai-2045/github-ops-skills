@@ -1,0 +1,15 @@
+from pathlib import Path
+
+
+def test_workflow_is_metadata_only_and_read_only() -> None:
+    root = Path(__file__).resolve().parents[2]
+    workflow = (root / ".github" / "workflows" / "pr-japanese-gate.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "pull_request:" in workflow
+    assert "contents: read" in workflow
+    assert "GITHUB_EVENT_PATH" in workflow
+    assert "actions/checkout" not in workflow
+    assert "pull_request_target" not in workflow
+    assert "write" not in workflow
+    assert "secrets." not in workflow
