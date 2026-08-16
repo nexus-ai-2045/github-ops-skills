@@ -1,7 +1,7 @@
 # 人間レビュー判断材料
 
-対象 PR: この branch の GitHub PR（hardening + composition gate）  
-対象 repo: `nexus-ai-2045/github-ops-skills`（**private 維持**）  
+対象 PR: この branch の GitHub PR（hardening + composition gate）
+対象 repo: `nexus-ai-2045/github-ops-skills`（**private 維持**）
 レビュー目的: merge してよいか / 何をまだ止めるか
 
 ## 採用した方針
@@ -18,10 +18,10 @@
 
 ## 変更の中身（レビュー観点）
 
-1. **バグ修正**: legacy import の symlink 拒否  
-2. **既存吸収**: PR review-thread audit  
-3. **skill 更新**: github-cli-ops-guard / public-repo-readiness  
-4. **契約**: public-repo-readiness manifest / Grok adapter / skill drift  
+1. **バグ修正**: legacy import の symlink 拒否
+2. **既存吸収**: PR review-thread audit
+3. **skill 更新**: github-cli-ops-guard / public-repo-readiness
+4. **契約**: public-repo-readiness manifest / Grok adapter / skill drift
 5. **接続**: `docs/operating-card.md` + `scripts/preflight_write_gate.py`
 
 ## 検証証拠（再実行可能なもの）
@@ -46,18 +46,18 @@
 
 ## 人間が決めること（チェックリスト）
 
-- [ ] この private Core Suite 方針（ガードレール中心）でよいか  
-- [ ] operating-card の接続順を運用標準にしてよいか  
-- [ ] dirty scope を fail-closed にする挙動でよいか（`--allow-dirty` / `--approved-path` 例外）  
-- [ ] PR を merge するか  
-- [ ] L4 canary は引き続き保留か  
-- [ ] runtime 同期は別 PR にするか  
+- [ ] この private Core Suite 方針（ガードレール中心）でよいか
+- [ ] operating-card の接続順を運用標準にしてよいか
+- [ ] dirty scope を fail-closed にする挙動でよいか（`--allow-dirty` / `--approved-path` 例外）
+- [ ] PR を merge するか
+- [ ] L4 canary は引き続き保留か
+- [ ] runtime 同期は別 PR にするか
 
 ## 推奨（レビューア向け）
 
-1. **merge 可**にするなら: L1–L3 と preflight の証拠が揃っていることだけ確認  
-2. **merge 後すぐやらない**: public 化、Settings 一括、runtime 強制同期  
-3. **次の別作業**: agent 起動テンプレに operating-card を1行参照させる  
+1. **merge 可**にするなら: L1–L3 と preflight の証拠が揃っていることだけ確認
+2. **merge 後すぐやらない**: public 化、Settings 一括、runtime 強制同期
+3. **次の別作業**: agent 起動テンプレに operating-card を1行参照させる
 
 ## リスク
 

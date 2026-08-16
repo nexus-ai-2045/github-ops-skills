@@ -47,7 +47,7 @@ GitHub write 前の薄い接続ゲート（場所 + dirty + identity）:
 .\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --json
 ```
 
-既存 worktree skill/repo との接続順は `docs/operating-card.md`。  
+既存 worktree skill/repo との接続順は `docs/operating-card.md`。
 人間レビュー材料は `docs/human-review-packet.md`。
 
 並列作業中のsibling repositoryに未commit変更がある場合は、

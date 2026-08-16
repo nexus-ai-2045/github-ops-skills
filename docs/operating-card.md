@@ -1,6 +1,6 @@
 # 運用カード — GitHub write 前の接続順
 
-この repository は **フル orchestrator ではない**。  
+この repository は **フル orchestrator ではない**。
 既存 skill / sibling repo を **直列ゲート** でつなぐ。
 
 ## 接続図
@@ -47,7 +47,7 @@ python scripts/preflight_write_gate.py --repo . --allow-dirty --json
 
 ## 復旧の順番（account / credential / worktree）
 
-1. **場所** … 意図した repo / branch / worktree か  
-2. **identity** … `gh` login と remote owner  
-3. **credential username** … repo-local 修正を優先（global 雑いじり禁止）  
+1. **場所** … 意図した repo / branch / worktree か
+2. **identity** … `gh` login と remote owner
+3. **credential username** … repo-local 修正を優先（global 雑いじり禁止）
 4. **もう一度** `preflight_write_gate.py`
