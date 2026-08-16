@@ -9,6 +9,7 @@ def test_workflow_is_metadata_only_and_read_only() -> None:
     assert "pull_request:" in workflow
     assert "contents: read" in workflow
     assert "GITHUB_EVENT_PATH" in workflow
+    assert 'fenced_blocks.sub("", body)' in workflow
     assert "actions/checkout" not in workflow
     assert "pull_request_target" not in workflow
     assert "write" not in workflow

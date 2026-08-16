@@ -28,12 +28,15 @@ jobs:
           body = pull_request.get("body") or ""
           japanese = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
           headings = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+          fenced_blocks = re.compile(
+              r"^\s*(```|~~~).*?^\s*\1\s*$", re.MULTILINE | re.DOTALL
+          )
           errors = []
           if not japanese.search(title):
               errors.append("PR titleに日本語がありません")
           if not japanese.search(body):
               errors.append("PR bodyに日本語がありません")
-          for heading in headings.findall(body):
+          for heading in headings.findall(fenced_blocks.sub("", body)):
               if re.search(r"[A-Za-z]", heading) and not japanese.search(heading):
                   errors.append(f"英語だけの見出しがあります: {heading}")
 

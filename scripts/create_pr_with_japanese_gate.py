@@ -19,6 +19,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", required=True, help="owner/name")
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
+    parser.add_argument("--repo-root", required=True, type=Path)
+    parser.add_argument("--account-map", required=True, type=Path)
+    parser.add_argument("--expected-base-sha", required=True)
+    parser.add_argument("--expected-head-sha", required=True)
     parser.add_argument("--title", required=True)
     parser.add_argument("--body-file", required=True, type=Path)
     parser.add_argument("--draft", action="store_true")
@@ -39,6 +43,10 @@ def main(argv: list[str] | None = None) -> int:
         head=args.head,
         title=args.title,
         body_file=args.body_file,
+        repo_root=args.repo_root,
+        account_map_file=args.account_map,
+        expected_base_sha=args.expected_base_sha,
+        expected_head_sha=args.expected_head_sha,
         confirmed=args.confirm,
         draft=args.draft,
     )
@@ -47,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(outcome.to_dict(), ensure_ascii=False, indent=2))
     else:
         print(f"{outcome.status.value}: {outcome.cause}")
+        if url := outcome.evidence.get("url"):
+            print(f"PR: {url}")
     return 0 if outcome.status.value == "READY" else 1
 
 

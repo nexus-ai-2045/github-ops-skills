@@ -7,6 +7,7 @@ from .result import Outcome, Status
 
 JAPANESE_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
+FENCED_BLOCK_RE = re.compile(r"^\s*(```|~~~).*?^\s*\1\s*$", re.MULTILINE | re.DOTALL)
 
 
 def check_pr_metadata(title: str, body: str) -> Outcome:
@@ -26,9 +27,10 @@ def check_pr_metadata(title: str, body: str) -> Outcome:
             "PR bodyに日本語がありません",
             evidence,
         )
+    body_without_fenced_blocks = FENCED_BLOCK_RE.sub("", body)
     english_only = [
         heading
-        for heading in HEADING_RE.findall(body)
+        for heading in HEADING_RE.findall(body_without_fenced_blocks)
         if re.search(r"[A-Za-z]", heading) and not JAPANESE_RE.search(heading)
     ]
     if english_only:

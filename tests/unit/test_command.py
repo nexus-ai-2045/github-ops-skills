@@ -44,6 +44,19 @@ def test_result_output_is_redacted() -> None:
     assert "[REDACTED]" in result.stderr
 
 
+def test_stdout_redaction_can_be_disabled_without_exposing_stderr() -> None:
+    token = "gh" + "p_" + "a" * 36
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(returncode=1, stdout=token, stderr=token)
+
+    result = CommandRunner(run_impl=fake_run).run(
+        ["gh", "pr", "view"], redact_stdout=False
+    )
+    assert result.stdout == token
+    assert token not in result.stderr
+
+
 def test_runner_uses_no_window_flag_on_windows(monkeypatch) -> None:
     captured = {}
 

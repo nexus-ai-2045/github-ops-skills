@@ -30,6 +30,8 @@ class CommandRunner:
         argv: Sequence[str],
         *,
         cwd: Path | str | None = None,
+        input_text: str | None = None,
+        redact_stdout: bool = True,
         scoped_env: Mapping[str, str] | None = None,
         unset_env: set[str] | None = None,
         timeout: float = 15,
@@ -47,6 +49,7 @@ class CommandRunner:
             cwd=cwd,
             env=env,
             capture_output=True,
+            input=input_text,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -56,6 +59,10 @@ class CommandRunner:
         )
         return CommandResult(
             returncode=completed.returncode,
-            stdout=redact(completed.stdout or ""),
+            stdout=(
+                redact(completed.stdout or "")
+                if redact_stdout
+                else (completed.stdout or "")
+            ),
             stderr=redact(completed.stderr or ""),
         )

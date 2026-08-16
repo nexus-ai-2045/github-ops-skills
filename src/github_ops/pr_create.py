@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from pathlib import Path
 from typing import Protocol, Sequence
 
+from .account_map import AccountMapError, load_account_map
 from .command import CommandResult, CommandRunner
+from .identity import IdentityProbe
 from .pr_language import check_pr_metadata
 from .result import Outcome, Status
 
@@ -20,6 +24,10 @@ def create_pr_with_japanese_gate(
     head: str,
     title: str,
     body_file: Path,
+    repo_root: Path,
+    account_map_file: Path,
+    expected_base_sha: str,
+    expected_head_sha: str,
     confirmed: bool,
     draft: bool = False,
     runner: Runner | None = None,
@@ -54,6 +62,26 @@ def create_pr_with_japanese_gate(
         return language
 
     command_runner = runner or CommandRunner()
+    try:
+        preflight = _verify_preflight(
+            repo=repo,
+            base=base,
+            head=head,
+            repo_root=repo_root,
+            account_map_file=account_map_file,
+            expected_base_sha=expected_base_sha,
+            expected_head_sha=expected_head_sha,
+            runner=command_runner,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _unknown(
+            "pr_preflight_execution_failed",
+            "PR作成前preflightを完了できません",
+            "Git、GitHub認証、networkを確認してください",
+            {"repository": repo, "error": str(exc)},
+        )
+    if preflight.status is not Status.READY:
+        return preflight
     create_argv = [
         "gh",
         "pr",
@@ -67,11 +95,19 @@ def create_pr_with_japanese_gate(
         "--title",
         title,
         "--body-file",
-        str(body_file),
+        "-",
     ]
     if draft:
         create_argv.append("--draft")
-    created = command_runner.run(create_argv, timeout=60)
+    try:
+        created = command_runner.run(create_argv, input_text=body, timeout=60)
+    except subprocess.TimeoutExpired:
+        return _unknown(
+            "pr_create_timeout",
+            "gh pr createの完了状態を確認できません",
+            "再作成せず、対象branchの既存PRをread-onlyで確認してください",
+            {"repository": repo, "head": head},
+        )
     if created.returncode != 0:
         return _blocked(
             "pr_create_failed",
@@ -89,18 +125,27 @@ def create_pr_with_japanese_gate(
             {"repository": repo, "stdout": created.stdout},
         )
 
-    read_back = command_runner.run(
-        [
-            "gh",
-            "pr",
-            "view",
-            url,
-            "--repo",
-            repo,
-            "--json",
-            "url,title,body,headRefName,baseRefName",
-        ]
-    )
+    try:
+        read_back = command_runner.run(
+            [
+                "gh",
+                "pr",
+                "view",
+                url,
+                "--repo",
+                repo,
+                "--json",
+                "url,title,body,headRefName,baseRefName,headRefOid",
+            ],
+            redact_stdout=False,
+        )
+    except subprocess.TimeoutExpired:
+        return _unknown(
+            "pr_read_back_timeout",
+            "作成後のPR表示面の再取得がtimeoutしました",
+            "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
+            {"url": url},
+        )
     if read_back.returncode != 0:
         return _unknown(
             "pr_read_back_failed",
@@ -128,6 +173,7 @@ def create_pr_with_japanese_gate(
     observed_title = observed.get("title")
     observed_body = observed.get("body")
     observed_head = observed.get("headRefName")
+    observed_head_sha = observed.get("headRefOid")
     observed_base = observed.get("baseRefName")
     if not isinstance(observed_title, str) or not isinstance(observed_body, str):
         return _unknown(
@@ -141,6 +187,7 @@ def create_pr_with_japanese_gate(
         observed_title == title
         and observed_body == body
         and observed_head == head
+        and observed_head_sha == expected_head_sha
         and observed_base == base
     )
     evidence = {
@@ -148,6 +195,7 @@ def create_pr_with_japanese_gate(
         "repository": repo,
         "base": observed_base,
         "head": observed_head,
+        "head_sha": observed_head_sha,
         "title_body_exact_match": exact_match,
         "japanese_gate": observed_language.code,
     }
@@ -165,6 +213,135 @@ def create_pr_with_japanese_gate(
         impact="PR URLを人間レビューへ渡せます",
         recovery="none",
         evidence=evidence,
+    )
+
+
+def _verify_preflight(
+    *,
+    repo: str,
+    base: str,
+    head: str,
+    repo_root: Path,
+    account_map_file: Path,
+    expected_base_sha: str,
+    expected_head_sha: str,
+    runner: Runner,
+) -> Outcome:
+    if ":" in head:
+        return _blocked(
+            "fork_head_unsupported",
+            "fork修飾headは安全な照合対象外です",
+            "同一repositoryのbranchを使用してください",
+            {"head": head},
+        )
+    try:
+        resolution = load_account_map(account_map_file).resolve(repo)
+    except AccountMapError as exc:
+        return _blocked(
+            "account_map_invalid",
+            "account mapを解決できません",
+            "対象repositoryのaccount mapを確認してください",
+            {"error": str(exc)},
+        )
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    identity = IdentityProbe(runner).probe(
+        repo_root,
+        expected_owner=resolution.expected_owner,
+        expected_login=resolution.expected_login,
+        token=token,
+    )
+    if identity.status is not Status.READY:
+        return identity
+
+    checks = {
+        "status": runner.run(["git", "status", "--porcelain=v1"], cwd=repo_root),
+        "head": runner.run(["git", "rev-parse", "HEAD"], cwd=repo_root),
+        "base": runner.run(["git", "rev-parse", f"origin/{base}"], cwd=repo_root),
+        "remote_head": runner.run(
+            ["git", "ls-remote", "--heads", "origin", f"refs/heads/{head}"],
+            cwd=repo_root,
+        ),
+        "repo": runner.run(
+            [
+                "gh",
+                "repo",
+                "view",
+                repo,
+                "--json",
+                "nameWithOwner,visibility,viewerPermission,defaultBranchRef",
+            ],
+            cwd=repo_root,
+        ),
+    }
+    if any(result.returncode != 0 for result in checks.values()):
+        return _unknown(
+            "pr_preflight_command_failed",
+            "PR作成前の一次証拠を取得できません",
+            "Git、GitHub認証、networkを確認してください",
+            {"repository": repo},
+        )
+    if checks["status"].stdout:
+        return _blocked(
+            "worktree_not_clean",
+            "worktreeに未commit変更があります",
+            "PR対象をcommitし、clean状態を再確認してください",
+            {"repository": repo},
+        )
+    local_head = checks["head"].stdout.strip()
+    base_sha = checks["base"].stdout.strip()
+    remote_head_fields = checks["remote_head"].stdout.split()
+    remote_head_sha = remote_head_fields[0] if remote_head_fields else ""
+    try:
+        repo_info = json.loads(checks["repo"].stdout)
+    except json.JSONDecodeError:
+        return _unknown(
+            "repo_metadata_invalid",
+            "repository情報がJSONではありません",
+            "GitHub APIを再確認してください",
+            {"repository": repo},
+        )
+    if not isinstance(repo_info, dict):
+        return _unknown(
+            "repo_metadata_invalid_shape",
+            "repository情報がobjectではありません",
+            "GitHub APIを再確認してください",
+            {"repository": repo},
+        )
+    permission = repo_info.get("viewerPermission")
+    exact = (
+        repo_info.get("nameWithOwner") == repo
+        and repo_info.get("visibility") == "PRIVATE"
+        and (repo_info.get("defaultBranchRef") or {}).get("name") == base
+        and permission in {"WRITE", "MAINTAIN", "ADMIN"}
+        and local_head == expected_head_sha
+        and remote_head_sha == expected_head_sha
+        and base_sha == expected_base_sha
+    )
+    evidence = {
+        "repository": repo,
+        "login": identity.evidence.get("login"),
+        "visibility": repo_info.get("visibility"),
+        "permission": permission,
+        "base": base,
+        "base_sha": base_sha,
+        "head": head,
+        "local_head_sha": local_head,
+        "remote_head_sha": remote_head_sha,
+    }
+    if not exact:
+        return _blocked(
+            "pr_preflight_mismatch",
+            "PR作成前の対象、identity、権限、SHAが期待値と一致しません",
+            "差分を確認し、期待値を更新せず停止してください",
+            evidence,
+        )
+    return Outcome(
+        Status.READY,
+        "pr_preflight_ready",
+        "PR作成前のidentity、PRIVATE、権限、base/head SHAを確認しました",
+        "日本語gate通過後のPR作成へ進めます",
+        "none",
+        evidence,
     )
 
 
