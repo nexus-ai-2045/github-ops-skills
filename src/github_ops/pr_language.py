@@ -7,13 +7,33 @@ from .result import Outcome, Status
 
 JAPANESE_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
-FENCED_BLOCK_RE = re.compile(r"^\s*(```|~~~).*?^\s*\1\s*$", re.MULTILINE | re.DOTALL)
+FENCE_OPEN_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def _rendered_text(body: str) -> str:
+    visible: list[str] = []
+    fence_char: str | None = None
+    fence_length = 0
+    for line in body.splitlines():
+        if fence_char:
+            if re.fullmatch(rf"\s*{re.escape(fence_char)}{{{fence_length},}}\s*", line):
+                fence_char = None
+            continue
+        opening = FENCE_OPEN_RE.match(line)
+        if opening:
+            marker = opening.group(1)
+            fence_char, fence_length = marker[0], len(marker)
+            continue
+        visible.append(line)
+    return HTML_COMMENT_RE.sub("", "\n".join(visible))
 
 
 def check_pr_metadata(title: str, body: str) -> Outcome:
+    rendered_body = _rendered_text(body)
     evidence = {
         "title_has_japanese": bool(JAPANESE_RE.search(title)),
-        "body_has_japanese": bool(JAPANESE_RE.search(body)),
+        "body_has_japanese": bool(JAPANESE_RE.search(rendered_body)),
     }
     if not evidence["title_has_japanese"]:
         return _blocked(
@@ -27,10 +47,9 @@ def check_pr_metadata(title: str, body: str) -> Outcome:
             "PR bodyに日本語がありません",
             evidence,
         )
-    body_without_fenced_blocks = FENCED_BLOCK_RE.sub("", body)
     english_only = [
         heading
-        for heading in HEADING_RE.findall(body_without_fenced_blocks)
+        for heading in HEADING_RE.findall(rendered_body)
         if re.search(r"[A-Za-z]", heading) and not JAPANESE_RE.search(heading)
     ]
     if english_only:

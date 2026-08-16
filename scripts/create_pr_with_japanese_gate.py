@@ -23,6 +23,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--account-map", required=True, type=Path)
     parser.add_argument("--expected-base-sha", required=True)
     parser.add_argument("--expected-head-sha", required=True)
+    parser.add_argument(
+        "--expected-visibility",
+        choices=("PRIVATE", "PUBLIC", "INTERNAL"),
+        default="PRIVATE",
+        help="確認済みの期待visibility。既定はPRIVATEです",
+    )
     parser.add_argument("--title", required=True)
     parser.add_argument("--body-file", required=True, type=Path)
     parser.add_argument("--draft", action="store_true")
@@ -47,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         account_map_file=args.account_map,
         expected_base_sha=args.expected_base_sha,
         expected_head_sha=args.expected_head_sha,
+        expected_visibility=args.expected_visibility,
         confirmed=args.confirm,
         draft=args.draft,
     )

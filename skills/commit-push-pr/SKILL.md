@@ -35,7 +35,7 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
      `python scripts/check_pr_japanese.py --title "<日本語title>" --body-file <body-file> --json`
    - gateが`READY`のときだけ、現在の会話でPR作成承認を再確認する
    - 承認後、次のwrapperで`gh pr create --body-file`と作成後read-backを実行する
-     `python scripts/create_pr_with_japanese_gate.py --repo <owner/name> --base <base> --head <branch> --repo-root . --account-map <account-map> --expected-base-sha <base-sha> --expected-head-sha <head-sha> --title "<日本語title>" --body-file <body-file> --confirm --json`
+     `python scripts/create_pr_with_japanese_gate.py --repo <owner/name> --base <base> --head <branch> --repo-root . --account-map <account-map> --expected-base-sha <base-sha> --expected-head-sha <head-sha> --expected-visibility PRIVATE --title "<日本語title>" --body-file <body-file> --confirm --json`
    - wrapperが`UNKNOWN`または`BLOCKED`なら、PRを編集・再作成せず停止して報告する
 7. 結果を返す
 
@@ -45,7 +45,8 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 - コミットメッセージはユーザー確認後に実行
 - ユーザー向け文書とPR title/bodyは日本語を既定にする
 - `check_pr_japanese.py`を通さない直接の`gh pr create`は実行しない
-- wrapper内のidentity、PRIVATE、権限、clean、local/remote head SHA、base SHA preflightを省略しない
+- wrapper内のidentity、期待visibility、権限、clean、local/remote head SHA、live base SHA preflightを省略しない
+- visibilityは既定`PRIVATE`とし、公開repositoryでは人間承認後に限り`--expected-visibility PUBLIC`を明示する。visibility自体は変更しない
 - PR作成後はtitle/body/base/headをread-backし、承認済み入力との一致を確認する
 - `gh` CLIが使えない場合はgit push URLを表示して手動PR作成を案内
 - yuhitsu 等の公開協業 repo は push 前に local-verify-before-pr / yuhitsu-pr-local-identity-check (memory) を確認

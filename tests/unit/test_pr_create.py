@@ -78,6 +78,7 @@ def _read_back(title: str, body: str, url: str) -> CommandResult:
                 "headRefName": "codex/gate",
                 "headRefOid": HEAD_SHA,
                 "baseRefName": "main",
+                "baseRefOid": BASE_SHA,
             },
             ensure_ascii=False,
         ),
@@ -209,3 +210,78 @@ def test_read_back_mismatch_is_unknown_without_edit(tmp_path: Path) -> None:
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_read_back_mismatch"
     assert len(runner.calls) == 9
+
+
+def test_origin_repository_must_match_repo_argument(tmp_path: Path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/other.git\n", ""),
+            CommandResult(0, "example-user\n", ""),
+        ]
+    )
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.code == "remote_repository_mismatch"
+    assert all(call["argv"][:3] != ["gh", "pr", "create"] for call in runner.calls)
+
+
+def test_failed_create_is_unknown_and_must_not_be_retried(tmp_path: Path) -> None:
+    runner = FakeRunner(_preflight_ready() + [CommandResult(1, "", "network lost")])
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == "pr_create_indeterminate"
+    assert outcome.evidence["head"] == "codex/gate"
+
+
+def test_explicit_public_visibility_is_supported(tmp_path: Path) -> None:
+    responses = _preflight_ready()
+    repo_info = json.loads(responses[-1].stdout)
+    repo_info["visibility"] = "PUBLIC"
+    responses[-1] = CommandResult(0, json.dumps(repo_info), "")
+    body = _body_file(tmp_path).read_text(encoding="utf-8")
+    url = "https://github.com/example-org/tooling/pull/12"
+    runner = FakeRunner(
+        responses
+        + [
+            CommandResult(0, f"{url}\n", ""),
+            _read_back("PR日本語gateを追加", body, url),
+        ]
+    )
+    outcome = create_pr_with_japanese_gate(
+        **_kwargs(tmp_path, expected_visibility="PUBLIC"), runner=runner
+    )
+    assert outcome.status is Status.READY
+
+
+def test_invalid_expected_visibility_is_blocked_before_commands(tmp_path: Path) -> None:
+    runner = FakeRunner([])
+    outcome = create_pr_with_japanese_gate(
+        **_kwargs(tmp_path, expected_visibility="UNKNOWN"), runner=runner
+    )
+    assert outcome.code == "expected_visibility_invalid"
+    assert runner.calls == []
+
+
+def test_live_remote_base_mismatch_is_blocked(tmp_path: Path) -> None:
+    responses = _preflight_ready()
+    responses[4] = CommandResult(0, f"{'c' * 40}\trefs/heads/main\n", "")
+    runner = FakeRunner(responses)
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.code == "pr_preflight_mismatch"
+
+
+def test_read_back_base_sha_mismatch_is_unknown(tmp_path: Path) -> None:
+    body_file = _body_file(tmp_path)
+    body = body_file.read_text(encoding="utf-8")
+    url = "https://github.com/example-org/tooling/pull/12"
+    read_back = _read_back("PR日本語gateを追加", body, url)
+    payload = json.loads(read_back.stdout)
+    payload["baseRefOid"] = "c" * 40
+    runner = FakeRunner(
+        _preflight_ready()
+        + [CommandResult(0, f"{url}\n", ""), CommandResult(0, json.dumps(payload), "")]
+    )
+    outcome = create_pr_with_japanese_gate(
+        **_kwargs(tmp_path, body_file=body_file), runner=runner
+    )
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == "pr_read_back_mismatch"

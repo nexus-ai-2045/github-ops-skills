@@ -29,10 +29,18 @@ def create_pr_with_japanese_gate(
     expected_base_sha: str,
     expected_head_sha: str,
     confirmed: bool,
+    expected_visibility: str = "PRIVATE",
     draft: bool = False,
     runner: Runner | None = None,
 ) -> Outcome:
     """日本語gate通過後にPRを作成し、表示面をread-back検証する。"""
+    if expected_visibility not in {"PRIVATE", "PUBLIC", "INTERNAL"}:
+        return _blocked(
+            "expected_visibility_invalid",
+            "期待visibilityが許可値ではありません",
+            "PRIVATE、PUBLIC、INTERNALのいずれかを明示してください",
+            {"expected_visibility": expected_visibility},
+        )
     if not confirmed:
         return _blocked(
             "human_confirmation_required",
@@ -71,6 +79,7 @@ def create_pr_with_japanese_gate(
             account_map_file=account_map_file,
             expected_base_sha=expected_base_sha,
             expected_head_sha=expected_head_sha,
+            expected_visibility=expected_visibility,
             runner=command_runner,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -109,11 +118,11 @@ def create_pr_with_japanese_gate(
             {"repository": repo, "head": head},
         )
     if created.returncode != 0:
-        return _blocked(
-            "pr_create_failed",
-            "gh pr createが失敗しました",
-            "stderrを確認し、原因解消後に再実行してください",
-            {"repository": repo, "stderr": created.stderr},
+        return _unknown(
+            "pr_create_indeterminate",
+            "gh pr createの成否を確定できません",
+            "再作成せず、対象branchの既存PRをread-onlyで確認してください",
+            {"repository": repo, "head": head, "stderr": created.stderr},
         )
 
     url = created.stdout.strip().splitlines()[-1] if created.stdout.strip() else ""
@@ -135,7 +144,7 @@ def create_pr_with_japanese_gate(
                 "--repo",
                 repo,
                 "--json",
-                "url,title,body,headRefName,baseRefName,headRefOid",
+                "url,title,body,headRefName,baseRefName,headRefOid,baseRefOid",
             ],
             redact_stdout=False,
         )
@@ -175,6 +184,7 @@ def create_pr_with_japanese_gate(
     observed_head = observed.get("headRefName")
     observed_head_sha = observed.get("headRefOid")
     observed_base = observed.get("baseRefName")
+    observed_base_sha = observed.get("baseRefOid")
     if not isinstance(observed_title, str) or not isinstance(observed_body, str):
         return _unknown(
             "pr_read_back_metadata_missing",
@@ -189,11 +199,13 @@ def create_pr_with_japanese_gate(
         and observed_head == head
         and observed_head_sha == expected_head_sha
         and observed_base == base
+        and observed_base_sha == expected_base_sha
     )
     evidence = {
         "url": url,
         "repository": repo,
         "base": observed_base,
+        "base_sha": observed_base_sha,
         "head": observed_head,
         "head_sha": observed_head_sha,
         "title_body_exact_match": exact_match,
@@ -225,6 +237,7 @@ def _verify_preflight(
     account_map_file: Path,
     expected_base_sha: str,
     expected_head_sha: str,
+    expected_visibility: str,
     runner: Runner,
 ) -> Outcome:
     if ":" in head:
@@ -252,11 +265,24 @@ def _verify_preflight(
     )
     if identity.status is not Status.READY:
         return identity
+    if identity.evidence.get("repository") != repo:
+        return _blocked(
+            "remote_repository_mismatch",
+            "origin repositoryが--repoと一致しません",
+            "repo_root、origin、--repoを確認してください",
+            {
+                "expected_repository": repo,
+                "origin_repository": identity.evidence.get("repository"),
+            },
+        )
 
     checks = {
         "status": runner.run(["git", "status", "--porcelain=v1"], cwd=repo_root),
         "head": runner.run(["git", "rev-parse", "HEAD"], cwd=repo_root),
-        "base": runner.run(["git", "rev-parse", f"origin/{base}"], cwd=repo_root),
+        "base": runner.run(
+            ["git", "ls-remote", "--heads", "origin", f"refs/heads/{base}"],
+            cwd=repo_root,
+        ),
         "remote_head": runner.run(
             ["git", "ls-remote", "--heads", "origin", f"refs/heads/{head}"],
             cwd=repo_root,
@@ -288,7 +314,8 @@ def _verify_preflight(
             {"repository": repo},
         )
     local_head = checks["head"].stdout.strip()
-    base_sha = checks["base"].stdout.strip()
+    remote_base_fields = checks["base"].stdout.split()
+    base_sha = remote_base_fields[0] if remote_base_fields else ""
     remote_head_fields = checks["remote_head"].stdout.split()
     remote_head_sha = remote_head_fields[0] if remote_head_fields else ""
     try:
@@ -310,7 +337,7 @@ def _verify_preflight(
     permission = repo_info.get("viewerPermission")
     exact = (
         repo_info.get("nameWithOwner") == repo
-        and repo_info.get("visibility") == "PRIVATE"
+        and repo_info.get("visibility") == expected_visibility
         and (repo_info.get("defaultBranchRef") or {}).get("name") == base
         and permission in {"WRITE", "MAINTAIN", "ADMIN"}
         and local_head == expected_head_sha
@@ -338,7 +365,7 @@ def _verify_preflight(
     return Outcome(
         Status.READY,
         "pr_preflight_ready",
-        "PR作成前のidentity、PRIVATE、権限、base/head SHAを確認しました",
+        "PR作成前のidentity、visibility、権限、base/head SHAを確認しました",
         "日本語gate通過後のPR作成へ進めます",
         "none",
         evidence,

@@ -28,15 +28,35 @@ jobs:
           body = pull_request.get("body") or ""
           japanese = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
           headings = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
-          fenced_blocks = re.compile(
-              r"^\s*(```|~~~).*?^\s*\1\s*$", re.MULTILINE | re.DOTALL
-          )
+          fence_open = re.compile(r"^\s*(`{3,}|~{3,})")
+          html_comments = re.compile(r"<!--.*?-->", re.DOTALL)
+
+          def rendered_text(source):
+              visible = []
+              fence_char = None
+              fence_length = 0
+              for line in source.splitlines():
+                  if fence_char:
+                      if re.fullmatch(
+                          rf"\s*{re.escape(fence_char)}{{{fence_length},}}\s*", line
+                      ):
+                          fence_char = None
+                      continue
+                  opening = fence_open.match(line)
+                  if opening:
+                      marker = opening.group(1)
+                      fence_char, fence_length = marker[0], len(marker)
+                      continue
+                  visible.append(line)
+              return html_comments.sub("", "\n".join(visible))
+
+          rendered_body = rendered_text(body)
           errors = []
           if not japanese.search(title):
               errors.append("PR titleに日本語がありません")
-          if not japanese.search(body):
+          if not japanese.search(rendered_body):
               errors.append("PR bodyに日本語がありません")
-          for heading in headings.findall(fenced_blocks.sub("", body)):
+          for heading in headings.findall(rendered_body):
               if re.search(r"[A-Za-z]", heading) and not japanese.search(heading):
                   errors.append(f"英語だけの見出しがあります: {heading}")
 

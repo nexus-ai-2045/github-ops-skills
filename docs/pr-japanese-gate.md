@@ -10,8 +10,9 @@ PR作成は次の順序を崩しません。
 2. `scripts/check_pr_japanese.py`でローカルgateを実行する。
 3. 現在の会話でcommit、push、PR作成をそれぞれ確認する。
 4. local検証に対応するGitHub CIが不足していないか確認し、不足時は追加するか人間へ確認する。
-5. account mapと固定したbase/head SHAを渡し、`scripts/create_pr_with_japanese_gate.py --confirm`を実行する。
-6. ラッパーがidentity、PRIVATE、権限、clean、local/remote head、baseを再確認する。
+5. account map、期待visibility、固定したbase/head SHAを渡し、`scripts/create_pr_with_japanese_gate.py --confirm`を実行する。
+6. ラッパーがidentity、期待visibility、権限、clean、local/remote head、live baseを再確認する。
+   既定は`PRIVATE`であり、公開repositoryは人間承認後に`--expected-visibility PUBLIC`を明示する。ラッパーはvisibilityを変更しない。
 7. ラッパーが検査済みbody snapshotをstdinから`gh pr create --body-file -`へ渡し、作成後のtitle/body/base/headを再取得して確認する。
 
 `BLOCKED`ではPRを作成しません。`UNKNOWN`はPR作成後の確認失敗を含むため、
