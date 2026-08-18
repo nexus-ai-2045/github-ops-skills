@@ -95,12 +95,12 @@ def collect_location_facts(
         # original path as a second NUL field; the first path is the target.
         status = record[:2]
         path = record[3:] if len(record) >= 4 else record.strip()
-        dirty_paths.append(path.replace("\\", "/"))
+        dirty_paths.append(path)
         if any(marker in status for marker in ("R", "C")) and index < len(records):
             source_path = records[index]
             index += 1
             if source_path:
-                dirty_paths.append(source_path.replace("\\", "/"))
+                dirty_paths.append(source_path)
 
     worktree_count: int | None = None
     wt_out, _ = _run_text(
@@ -154,8 +154,8 @@ def evaluate_write_preflight(
             },
         )
 
-    if location.dirty_paths and not allow_dirty:
-        approved = {path.replace("\\", "/") for path in approved_paths}
+    if location.dirty_paths:
+        approved = set(approved_paths) if allow_dirty else set()
         unapproved = sorted(set(location.dirty_paths) - approved)
         if unapproved:
             return Outcome(

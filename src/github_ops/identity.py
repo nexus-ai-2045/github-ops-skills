@@ -126,6 +126,7 @@ class IdentityProbe:
             )
 
         credential_username: str | None = None
+        ssh_login: str | None = None
         if expected_login and remote.stdout.strip().startswith("https://"):
             credential = self.runner.run(
                 ["git", "credential", "fill"],
@@ -170,6 +171,48 @@ class IdentityProbe:
             )
             if credential_token_outcome.status is not Status.READY:
                 return credential_token_outcome
+        elif expected_login and remote.stdout.strip().startswith("git@github.com:"):
+            ssh_identity = self.runner.run(
+                [
+                    "ssh",
+                    "-T",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=10",
+                    "-o",
+                    "StrictHostKeyChecking=yes",
+                    "git@github.com",
+                ],
+                cwd=resolved_repo,
+            )
+            message = "\n".join((ssh_identity.stdout, ssh_identity.stderr))
+            match = re.search(
+                r"Hi (?P<login>[^!\r\n]+)! You've successfully authenticated",
+                message,
+            )
+            if not match:
+                return Outcome(
+                    status=Status.UNKNOWN,
+                    code="ssh_login_unverified",
+                    cause="SSH pushに使用するGitHub loginを確認できません",
+                    impact="git pushの認証accountを確定できないため書き込みを止めています",
+                    recovery="ssh -T git@github.com とSSH key設定を確認してください",
+                    evidence={"repository": f"{owner}/{name}"},
+                )
+            ssh_login = match.group("login")
+            if ssh_login != expected_login:
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="ssh_login_mismatch",
+                    cause="SSH push loginがexpected loginと一致しません",
+                    impact="git pushを別accountで実行する事故を止めています",
+                    recovery="対象account用のSSH keyまたはhost設定を使用してください",
+                    evidence={
+                        "expected_login": expected_login,
+                        "ssh_login": ssh_login,
+                    },
+                )
 
         if token and expected_login:
             token_outcome = self.validate_token_login(
@@ -222,6 +265,9 @@ class IdentityProbe:
                 "identity_mode": mode,
                 "credential_username": credential_username
                 if remote.stdout.strip().startswith("https://")
+                else None,
+                "ssh_login": ssh_login
+                if remote.stdout.strip().startswith("git@github.com:")
                 else None,
             },
         )

@@ -66,6 +66,7 @@ def test_blocks_unapproved_dirty_paths(tmp_path: Path) -> None:
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
+        allow_dirty=True,
         approved_paths=("src/a.py",),
     )
     assert outcome.status is Status.BLOCKED
@@ -117,6 +118,7 @@ def test_preserves_leading_space_in_porcelain_paths(tmp_path: Path) -> None:
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
         allow_dirty=True,
+        approved_paths=("README.md",),
     )
     assert outcome.status is Status.READY
     assert outcome.evidence["location"]["dirty_paths"] == ["README.md"]
@@ -189,9 +191,43 @@ def test_porcelain_rename_includes_source_and_target(tmp_path: Path) -> None:
     outcome = evaluate_write_preflight(
         tmp_path,
         expected_login="o",
+        allow_dirty=True,
         approved_paths=("new.txt",),
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
     )
     assert outcome.status is Status.BLOCKED
     assert outcome.evidence["unapproved_paths"] == ["old.txt"]
+
+
+def test_porcelain_preserves_literal_backslash_in_filename(tmp_path: Path) -> None:
+    runner = FakeRunner(_git_ok_responses(dirty=" M secret\\approved\0"))
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"login": "o"})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        allow_dirty=True,
+        approved_paths=("secret/approved",),
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["unapproved_paths"] == ["secret\\approved"]
+
+
+def test_allow_dirty_without_explicit_paths_still_blocks(tmp_path: Path) -> None:
+    runner = FakeRunner(_git_ok_responses(dirty=" M README.md\0"))
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"login": "o"})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        allow_dirty=True,
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["unapproved_paths"] == ["README.md"]

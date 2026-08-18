@@ -48,7 +48,7 @@
 
 - [ ] この private Core Suite 方針（ガードレール中心）でよいか
 - [ ] operating-card の接続順を運用標準にしてよいか
-- [ ] dirty scope を fail-closed にする挙動でよいか（`--allow-dirty` / `--approved-path` 例外）
+- [ ] dirty scope をfail-closedにし、`--allow-dirty`と全dirty pathの`--approved-path`を併用必須とする挙動でよいか
 - [ ] PR を merge するか
 - [ ] L4 canary は引き続き保留か
 - [ ] runtime 同期は別 PR にするか
@@ -63,6 +63,6 @@
 
 | リスク | 深刻度 | 緩和 |
 |---|---|---|
-| dirty fail-closed が日常で煩い | 中 | approved-path / allow-dirty を意図明示時だけ |
+| dirty fail-closed が日常で煩い | 中 | `--allow-dirty`と全対象の`--approved-path`を意図明示時だけ併用 |
 | worktree lifecycle と二重管理に見える | 低 | この repo は削除せず compose 参照のみ |
 | runtime skill と SSOT 差分が残る | 中 | skill_drift_check で可視化、同期は別判断 |

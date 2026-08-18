@@ -29,13 +29,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-dirty",
         action="store_true",
-        help="Allow dirty worktree when scope is intentionally included.",
+        help="Allow only dirty paths explicitly repeated with --approved-path.",
     )
     parser.add_argument(
         "--approved-path",
         action="append",
         default=[],
-        help="Dirty path allowed for this write (repeatable).",
+        help="Dirty path allowed for this write (repeatable; requires --allow-dirty).",
     )
     parser.add_argument("--json", action="store_true")
     return parser

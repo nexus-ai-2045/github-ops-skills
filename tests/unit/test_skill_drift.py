@@ -176,3 +176,38 @@ def test_manifest_rejects_unknown_mode_and_windows_traversal(tmp_path: Path) -> 
     assert drift_outcome(
         _compare(ssot, local), local_root=str(local)
     ).evidence["invalid_manifest_count"] == 1
+
+
+def test_manifest_rejects_falsey_present_runtime_values(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    for root in (ssot, local):
+        (root / "alpha").mkdir(parents=True)
+        (root / "alpha" / "SKILL.md").write_text("same\n", encoding="utf-8")
+    manifest = ssot / "alpha" / "manifest.yaml"
+    for content in ("runtimes: []\n", "runtimes:\n  codex: []\n"):
+        manifest.write_text(content, encoding="utf-8")
+        outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+        assert outcome.status is Status.BLOCKED
+        assert outcome.evidence["invalid_manifest_count"] == 1
+
+
+def test_unreadable_declared_file_is_a_blocked_outcome(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    for root in (ssot, local):
+        (root / "alpha").mkdir(parents=True)
+        (root / "alpha" / "SKILL.md").write_text("same\n", encoding="utf-8")
+
+    def unreadable(path: Path) -> str:
+        if path.is_relative_to(local):
+            raise PermissionError("denied")
+        return "same-hash"
+
+    monkeypatch.setattr("github_ops.skill_drift.sha256_file", unreadable)
+    outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["unreadable_count"] == 1
+    assert outcome.evidence["unreadable_files"][0]["error_type"] == "PermissionError"

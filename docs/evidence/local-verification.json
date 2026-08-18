@@ -6,7 +6,7 @@
   "claims": [
     {
       "classification": "fact",
-      "claim": "offline tests passed: 154",
+      "claim": "offline tests passed: 161",
       "source": "py -3.13 -m pytest -q --basetemp <repo外temp>",
       "actor": "pytest",
       "event_time": "2026-08-06T12:00:00+09:00",

@@ -110,3 +110,45 @@ def test_probe_stops_when_git_credential_has_no_token(tmp_path) -> None:
     )
     assert outcome.status.value == "UNKNOWN"
     assert outcome.code == "credential_token_unavailable"
+
+
+def test_probe_verifies_ssh_authenticated_login(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(
+                1,
+                "",
+                "Hi example-user! You've successfully authenticated, but GitHub does not provide shell access.\n",
+            ),
+            CommandResult(0, "example-user\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "READY"
+    assert outcome.evidence["ssh_login"] == "example-user"
+    assert runner.calls[1]["argv"][-1] == "git@github.com"
+
+
+def test_probe_blocks_mismatched_ssh_login(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(
+                1,
+                "",
+                "Hi other-user! You've successfully authenticated, but GitHub does not provide shell access.\n",
+            ),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "ssh_login_mismatch"

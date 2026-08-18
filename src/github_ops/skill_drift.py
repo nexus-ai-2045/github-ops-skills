@@ -65,8 +65,32 @@ def compare_skill_roots(
         for relative, source_relative in mappings:
             ssot_path = ssot_skills_root / skill / source_relative
             local_path = local_skills_root / skill / relative
-            ssot_hash = sha256_file(ssot_path) if ssot_path.is_file() else None
-            local_hash = sha256_file(local_path) if local_path.is_file() else None
+            try:
+                ssot_hash = sha256_file(ssot_path) if ssot_path.is_file() else None
+            except OSError as exc:
+                rows.append(
+                    SkillFileDrift(
+                        skill=skill,
+                        relative_path=relative,
+                        ssot_sha256=None,
+                        local_sha256=None,
+                        status=f"unreadable_ssot:{type(exc).__name__}",
+                    )
+                )
+                continue
+            try:
+                local_hash = sha256_file(local_path) if local_path.is_file() else None
+            except OSError as exc:
+                rows.append(
+                    SkillFileDrift(
+                        skill=skill,
+                        relative_path=relative,
+                        ssot_sha256=ssot_hash,
+                        local_sha256=None,
+                        status=f"unreadable_local:{type(exc).__name__}",
+                    )
+                )
+                continue
             if ssot_hash is None and local_hash is None:
                 continue
             if ssot_hash is None:
@@ -88,22 +112,48 @@ def compare_skill_roots(
             )
         local_skill_root = local_skills_root / skill
         if local_skill_root.is_dir():
-            for candidate in sorted(local_skill_root.rglob("*")):
+            try:
+                local_candidates = sorted(local_skill_root.rglob("*"))
+            except OSError as exc:
+                rows.append(
+                    SkillFileDrift(
+                        skill=skill,
+                        relative_path=".",
+                        ssot_sha256=None,
+                        local_sha256=None,
+                        status=f"unreadable_local:{type(exc).__name__}",
+                    )
+                )
+                continue
+            for candidate in local_candidates:
                 if not (candidate.is_file() or candidate.is_symlink()):
                     continue
                 relative = candidate.relative_to(local_skill_root).as_posix()
                 if relative in expected_local_paths:
+                    continue
+                try:
+                    local_hash = (
+                        sha256_file(candidate)
+                        if candidate.is_file() and not candidate.is_symlink()
+                        else None
+                    )
+                except OSError as exc:
+                    rows.append(
+                        SkillFileDrift(
+                            skill=skill,
+                            relative_path=relative,
+                            ssot_sha256=None,
+                            local_sha256=None,
+                            status=f"unreadable_local:{type(exc).__name__}",
+                        )
+                    )
                     continue
                 rows.append(
                     SkillFileDrift(
                         skill=skill,
                         relative_path=relative,
                         ssot_sha256=None,
-                        local_sha256=(
-                            sha256_file(candidate)
-                            if candidate.is_file() and not candidate.is_symlink()
-                            else None
-                        ),
+                        local_sha256=local_hash,
                         status="local_only",
                     )
                 )
@@ -120,12 +170,12 @@ def _runtime_file_mappings(
     payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("manifest root must be a mapping")
-    runtimes = payload.get("runtimes") or {}
+    runtimes = payload.get("runtimes", {})
     if not isinstance(runtimes, dict):
         raise ValueError("manifest runtimes must be a mapping")
-    runtime_config = runtimes.get(runtime)
-    if not runtime_config:
+    if runtime not in runtimes:
         return []
+    runtime_config = runtimes[runtime]
     if not isinstance(runtime_config, dict):
         raise ValueError("runtime config must be a mapping")
     mode = runtime_config.get("mode")
@@ -171,6 +221,7 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
     local_only = [row for row in rows if row.status == "local_only"]
     missing = [row for row in rows if row.status == "ssot_only"]
     invalid = [row for row in rows if row.status.startswith("invalid_manifest:")]
+    unreadable = [row for row in rows if row.status.startswith("unreadable_")]
     evidence = {
         "local_root": local_root,
         "compared_files": len(rows),
@@ -179,6 +230,7 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
         "local_only_count": len(local_only),
         "ssot_only_count": sum(1 for row in rows if row.status == "ssot_only"),
         "invalid_manifest_count": len(invalid),
+        "unreadable_count": len(unreadable),
         "drifts": [
             {
                 "skill": row.skill,
@@ -195,6 +247,15 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
             {"skill": row.skill, "error_type": row.status.split(":", 1)[1]}
             for row in invalid
         ],
+        "unreadable_files": [
+            {
+                "skill": row.skill,
+                "path": row.relative_path,
+                "side": row.status.split(":", 1)[0].removeprefix("unreadable_"),
+                "error_type": row.status.split(":", 1)[1],
+            }
+            for row in unreadable
+        ],
     }
     if not rows:
         return Outcome(
@@ -205,7 +266,7 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
             recovery="local rootとskills/を確認してください",
             evidence=evidence,
         )
-    if drifts or local_only or missing or invalid:
+    if drifts or local_only or missing or invalid or unreadable:
         return Outcome(
             status=Status.BLOCKED,
             code="skill_drift_detected",
