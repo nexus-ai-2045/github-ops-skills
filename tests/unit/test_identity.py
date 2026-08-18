@@ -120,6 +120,7 @@ def test_probe_verifies_ssh_authenticated_login(tmp_path) -> None:
         [
             CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
             CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(1, "", ""),
             CommandResult(
                 1,
                 "",
@@ -135,7 +136,7 @@ def test_probe_verifies_ssh_authenticated_login(tmp_path) -> None:
     )
     assert outcome.status.value == "READY"
     assert outcome.evidence["ssh_login"] == "example-user"
-    assert runner.calls[2]["argv"][-1] == "git@github.com"
+    assert runner.calls[3]["argv"][-1] == "git@github.com"
 
 
 def test_probe_blocks_mismatched_ssh_login(tmp_path) -> None:
@@ -143,6 +144,7 @@ def test_probe_blocks_mismatched_ssh_login(tmp_path) -> None:
         [
             CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
             CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(1, "", ""),
             CommandResult(
                 1,
                 "",
@@ -157,6 +159,44 @@ def test_probe_blocks_mismatched_ssh_login(tmp_path) -> None:
     )
     assert outcome.status.value == "BLOCKED"
     assert outcome.code == "ssh_login_mismatch"
+
+
+def test_probe_blocks_configured_ssh_command(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(0, "ssh -i alternate-key\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "ssh_transport_override_unsupported"
+    assert outcome.evidence["override_sources"] == ["core.sshCommand"]
+
+
+def test_probe_blocks_ssh_environment_overrides(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i command-key")
+    monkeypatch.setenv("GIT_SSH", "alternate-ssh")
+    runner = FakeRunner(
+        [
+            CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(1, "", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "ssh_transport_override_unsupported"
+    assert outcome.evidence["override_sources"] == ["GIT_SSH_COMMAND", "GIT_SSH"]
 
 
 def test_probe_blocks_divergent_push_repository(tmp_path) -> None:

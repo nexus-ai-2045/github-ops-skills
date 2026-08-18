@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -223,6 +224,34 @@ class IdentityProbe:
             if credential_token_outcome.status is not Status.READY:
                 return credential_token_outcome
         elif expected_login and push_is_ssh:
+            ssh_command = self.runner.run(
+                ["git", "config", "--get", "core.sshCommand"],
+                cwd=resolved_repo,
+            )
+            if ssh_command.returncode not in {0, 1}:
+                return Outcome(
+                    status=Status.UNKNOWN,
+                    code="ssh_transport_config_unverified",
+                    cause="GitのSSH transport設定を確認できません",
+                    impact="identity probeとgit pushの実効SSH commandを同一と証明できないため書き込みを止めています",
+                    recovery="core.sshCommandとGit設定を確認してください",
+                    evidence={"repository": f"{owner}/{name}"},
+                )
+            override_sources = []
+            if ssh_command.returncode == 0 and ssh_command.stdout.strip():
+                override_sources.append("core.sshCommand")
+            override_sources.extend(
+                key for key in ("GIT_SSH_COMMAND", "GIT_SSH") if os.environ.get(key)
+            )
+            if override_sources:
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="ssh_transport_override_unsupported",
+                    cause="git pushが標準ssh以外のtransport設定を使用します",
+                    impact="identity probeと実際のpushで別keyを使う事故を止めています",
+                    recovery="SSH overrideを解除するか、検証済みHTTPS token経路を使用してください",
+                    evidence={"override_sources": override_sources},
+                )
             ssh_identity = self.runner.run(
                 [
                     "ssh",

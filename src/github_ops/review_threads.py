@@ -195,7 +195,7 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
     return json.loads(completed.stdout)
 
 
-def fetch(repo: str, number: int) -> dict[str, Any]:
+def _fetch_snapshot(repo: str, number: int) -> dict[str, Any]:
     payload = graphql(repo, number)
     _validate_graphql_payload(payload)
     pull_request = payload["data"]["repository"]["pullRequest"]
@@ -223,15 +223,21 @@ def fetch(repo: str, number: int) -> dict[str, Any]:
         page_info = _page_info(pull_request_page)
         page_count += 1
 
-    final_payload = graphql(repo, number)
-    _validate_graphql_payload(final_payload)
-    final_pull_request = final_payload["data"]["repository"]["pullRequest"]
-    if final_pull_request["headRefOid"] != head_ref_oid:
-        raise ValueError("pull request head changed during review thread audit")
-
     pull_request["reviewThreads"]["nodes"] = all_threads
     pull_request["reviewThreads"]["pageInfo"] = page_info
     return payload
+
+
+def fetch(repo: str, number: int) -> dict[str, Any]:
+    first = _fetch_snapshot(repo, number)
+    second = _fetch_snapshot(repo, number)
+    first_pull = first["data"]["repository"]["pullRequest"]
+    second_pull = second["data"]["repository"]["pullRequest"]
+    if first_pull["headRefOid"] != second_pull["headRefOid"]:
+        raise ValueError("pull request head changed during review thread audit")
+    if first_pull["reviewThreads"]["nodes"] != second_pull["reviewThreads"]["nodes"]:
+        raise ValueError("review thread state changed during audit")
+    return second
 
 
 def _validate_graphql_payload(payload: dict[str, Any]) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from github_ops.review_threads import fetch, repo_parts, summarize
 from github_ops.review_threads import THREAD_QUERY
 
@@ -102,11 +104,11 @@ def test_fetch_follows_all_review_thread_pages(monkeypatch) -> None:
 
     def fake_graphql(repo: str, number: int, cursor: str | None = None) -> dict:
         calls.append(cursor)
-        return pages[1] if cursor else pages[0]
+        return deepcopy(pages[1] if cursor else pages[0])
 
     monkeypatch.setattr("github_ops.review_threads.graphql", fake_graphql)
     payload = fetch("owner/name", 123)
-    assert calls == [None, "cursor-1", None]
+    assert calls == [None, "cursor-1", None, "cursor-1"]
     nodes = payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
     assert len(nodes) == 2
 
@@ -188,6 +190,24 @@ def test_fetch_rejects_head_change_after_last_page(monkeypatch) -> None:
         assert "head changed" in str(exc)
     else:
         raise AssertionError("final head mutation must fail closed")
+
+
+def test_fetch_rejects_thread_change_between_snapshots(monkeypatch) -> None:
+    initial = _payload()
+    changed = _payload()
+    changed["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"].append(
+        _thread(resolved=False, outdated=False)
+    )
+    payloads = iter((initial, changed))
+    monkeypatch.setattr(
+        "github_ops.review_threads.graphql", lambda *args: next(payloads)
+    )
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "thread state changed" in str(exc)
+    else:
+        raise AssertionError("review thread mutation must fail closed")
 
 
 def test_query_requests_latest_comment_only() -> None:
