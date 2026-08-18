@@ -1,4 +1,7 @@
 from pathlib import Path
+import json
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,3 +47,34 @@ def test_pr_convergence_has_read_only_decision_cli() -> None:
     assert "ConvergenceSnapshot" in script
     assert "decide_next_step" in script
     assert "mergeは実行しません" in script
+
+
+def test_pr_convergence_cli_runs_from_checkout() -> None:
+    head = "a" * 40
+    payload = {
+        "repository": "nexus-ai-2045/github-ops-skills",
+        "pr_number": 3,
+        "visibility": "PRIVATE",
+        "actor": "nexus-ai-2045",
+        "base_ref": "main",
+        "base_sha": "b" * 40,
+        "head_ref": "codex/test",
+        "head_sha": head,
+        "default_branch": "main",
+        "checks_state": "success",
+        "checks_head_sha": head,
+        "unresolved_threads": 0,
+        "latest_review_head_sha": head,
+    }
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "pr_convergence_decide.py")],
+        input=json.dumps(payload),
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+        timeout=10,
+        cwd=ROOT,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["code"] == "ready_for_human_decision"
