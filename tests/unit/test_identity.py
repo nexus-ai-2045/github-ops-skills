@@ -60,6 +60,7 @@ def test_probe_blocks_mismatched_git_credential_token_owner(tmp_path) -> None:
     runner = FakeRunner(
         [
             CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
             CommandResult(0, "protocol=https\nhost=github.com\nusername=example-user\npassword=hidden\n", ""),
             CommandResult(0, "other-user\n", ""),
         ]
@@ -72,7 +73,7 @@ def test_probe_blocks_mismatched_git_credential_token_owner(tmp_path) -> None:
     assert outcome.status.value == "BLOCKED"
     assert outcome.code == "token_login_mismatch"
     assert outcome.evidence["token_login"] == "other-user"
-    assert runner.calls[2]["scoped_env"] == {
+    assert runner.calls[3]["scoped_env"] == {
         "GH_HOST": "github.com",
         "GH_TOKEN": "hidden",
     }
@@ -81,6 +82,7 @@ def test_probe_blocks_mismatched_git_credential_token_owner(tmp_path) -> None:
 def test_probe_accepts_x_access_token_username_when_token_owner_matches(tmp_path) -> None:
     runner = FakeRunner(
         [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
             CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
             CommandResult(0, "username=x-access-token\npassword=hidden\n", ""),
             CommandResult(0, "example-user\n", ""),
@@ -100,6 +102,7 @@ def test_probe_stops_when_git_credential_has_no_token(tmp_path) -> None:
     runner = FakeRunner(
         [
             CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
             CommandResult(0, "username=example-user\n", ""),
         ]
     )
@@ -116,6 +119,7 @@ def test_probe_verifies_ssh_authenticated_login(tmp_path) -> None:
     runner = FakeRunner(
         [
             CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
+            CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
             CommandResult(
                 1,
                 "",
@@ -131,12 +135,13 @@ def test_probe_verifies_ssh_authenticated_login(tmp_path) -> None:
     )
     assert outcome.status.value == "READY"
     assert outcome.evidence["ssh_login"] == "example-user"
-    assert runner.calls[1]["argv"][-1] == "git@github.com"
+    assert runner.calls[2]["argv"][-1] == "git@github.com"
 
 
 def test_probe_blocks_mismatched_ssh_login(tmp_path) -> None:
     runner = FakeRunner(
         [
+            CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
             CommandResult(0, "git@github.com:example-org/tooling.git\n", ""),
             CommandResult(
                 1,
@@ -152,3 +157,58 @@ def test_probe_blocks_mismatched_ssh_login(tmp_path) -> None:
     )
     assert outcome.status.value == "BLOCKED"
     assert outcome.code == "ssh_login_mismatch"
+
+
+def test_probe_blocks_divergent_push_repository(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "https://github.com/example-org/other.git\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "push_repository_mismatch"
+
+
+def test_probe_blocks_multiple_push_urls(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(
+                0,
+                "https://github.com/example-org/tooling.git\n"
+                "git@github.com:example-org/tooling.git\n",
+                "",
+            ),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "push_remote_count_unsupported"
+
+
+def test_probe_verifies_credential_for_uppercase_https_scheme(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "HTTPS://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "HTTPS://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "username=example-user\npassword=hidden\n", ""),
+            CommandResult(0, "other-user\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "token_login_mismatch"

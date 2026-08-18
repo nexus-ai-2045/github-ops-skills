@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -47,6 +48,17 @@ def compare_skill_roots(
     rows: list[SkillFileDrift] = []
     for skill in skills:
         skill_root = ssot_skills_root / skill
+        if _has_unsafe_component(ssot_skills_root, skill_root):
+            rows.append(
+                SkillFileDrift(
+                    skill=skill,
+                    relative_path=".",
+                    ssot_sha256=None,
+                    local_sha256=None,
+                    status="unsafe_ssot_symlink",
+                )
+            )
+            continue
         try:
             mappings = _runtime_file_mappings(skill_root, runtime=runtime)
         except (OSError, UnicodeError, yaml.YAMLError, ValueError) as exc:
@@ -66,8 +78,41 @@ def compare_skill_roots(
         for relative, source_relative in mappings:
             ssot_path = ssot_skills_root / skill / source_relative
             local_path = local_skills_root / skill / relative
+            if _has_unsafe_component(ssot_skills_root, ssot_path):
+                rows.append(
+                    SkillFileDrift(
+                        skill=skill,
+                        relative_path=relative,
+                        ssot_sha256=None,
+                        local_sha256=None,
+                        status="unsafe_ssot_symlink",
+                    )
+                )
+                continue
+            if _has_unsafe_component(local_skills_root, local_path):
+                rows.append(
+                    SkillFileDrift(
+                        skill=skill,
+                        relative_path=relative,
+                        ssot_sha256=None,
+                        local_sha256=None,
+                        status="unsafe_local_symlink",
+                    )
+                )
+                continue
+            if not ssot_path.is_file():
+                rows.append(
+                    SkillFileDrift(
+                        skill=skill,
+                        relative_path=relative,
+                        ssot_sha256=None,
+                        local_sha256=None,
+                        status="missing_declared_source",
+                    )
+                )
+                continue
             try:
-                ssot_hash = sha256_file(ssot_path) if ssot_path.is_file() else None
+                ssot_hash = sha256_file(ssot_path)
             except OSError as exc:
                 rows.append(
                     SkillFileDrift(
@@ -92,11 +137,7 @@ def compare_skill_roots(
                     )
                 )
                 continue
-            if ssot_hash is None and local_hash is None:
-                continue
-            if ssot_hash is None:
-                status = "local_only"
-            elif local_hash is None:
+            if local_hash is None:
                 status = "ssot_only"
             elif ssot_hash == local_hash:
                 status = "match"
@@ -166,6 +207,8 @@ def _runtime_file_mappings(
 ) -> list[tuple[str, str]]:
     files = {("SKILL.md", "SKILL.md")}
     manifest = skill_root / "manifest.yaml"
+    if _has_unsafe_component(skill_root, manifest):
+        raise ValueError("manifest path must not contain symlinks or reparse points")
     if not manifest.is_file():
         return sorted(files)
     payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
@@ -184,8 +227,8 @@ def _runtime_file_mappings(
         return []
     if mode != "copy":
         raise ValueError("runtime mode must be copy or skip")
-    declared_files = runtime_config.get("files") or []
-    extras = runtime_config.get("extra") or {}
+    declared_files = runtime_config.get("files", [])
+    extras = runtime_config.get("extra", {})
     if not isinstance(declared_files, list) or not all(
         isinstance(item, str) for item in declared_files
     ):
@@ -201,6 +244,8 @@ def _runtime_file_mappings(
         (target, source)
         for target, source in extras.items()
     )
+    if not files:
+        raise ValueError("copy runtime must declare at least one file")
     targets = [target for target, _ in files]
     if len(targets) != len(set(targets)):
         raise ValueError("runtime target paths must be unique")
@@ -217,12 +262,46 @@ def _safe_relative_path(value: str) -> bool:
     return not path.is_absolute() and ".." not in path.parts
 
 
+def _has_unsafe_component(root: Path, candidate: Path) -> bool:
+    root = root.absolute()
+    candidate = candidate.absolute()
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    for part in (Path(), *relative.parts):
+        if part != Path():
+            current = current / part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return True
+        attributes = getattr(metadata, "st_file_attributes", 0)
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        if stat.S_ISLNK(metadata.st_mode) or bool(attributes & reparse_flag):
+            return True
+    try:
+        candidate.resolve(strict=False).relative_to(root.resolve(strict=False))
+    except (OSError, ValueError):
+        return True
+    return False
+
+
 def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
     drifts = [row for row in rows if row.status == "drift"]
     local_only = [row for row in rows if row.status == "local_only"]
     missing = [row for row in rows if row.status == "ssot_only"]
     invalid = [row for row in rows if row.status.startswith("invalid_manifest:")]
     unreadable = [row for row in rows if row.status.startswith("unreadable_")]
+    invalid_paths = [
+        row
+        for row in rows
+        if row.status
+        in {"missing_declared_source", "unsafe_ssot_symlink", "unsafe_local_symlink"}
+    ]
     evidence = {
         "local_root": local_root,
         "compared_files": len(rows),
@@ -232,6 +311,7 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
         "ssot_only_count": sum(1 for row in rows if row.status == "ssot_only"),
         "invalid_manifest_count": len(invalid),
         "unreadable_count": len(unreadable),
+        "invalid_path_count": len(invalid_paths),
         "drifts": [
             {
                 "skill": row.skill,
@@ -257,6 +337,10 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
             }
             for row in unreadable
         ],
+        "invalid_paths": [
+            {"skill": row.skill, "path": row.relative_path, "reason": row.status}
+            for row in invalid_paths
+        ],
     }
     if not rows:
         return Outcome(
@@ -267,7 +351,7 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
             recovery="local rootとskills/を確認してください",
             evidence=evidence,
         )
-    if drifts or local_only or missing or invalid or unreadable:
+    if drifts or local_only or missing or invalid or unreadable or invalid_paths:
         return Outcome(
             status=Status.BLOCKED,
             code="skill_drift_detected",

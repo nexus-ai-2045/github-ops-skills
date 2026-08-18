@@ -85,3 +85,109 @@ def test_json_output_includes_unresolved_thread_details(
             "title": "Fix timeout",
         }
     ]
+
+
+def test_audit_rejects_head_change_during_pagination(monkeypatch, capsys) -> None:
+    module = _load_module()
+    first = {
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "abc123",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
+                "nodes": [],
+            },
+        }}}
+    }
+    second = {
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "changed",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [],
+            },
+        }}}
+    }
+    monkeypatch.setattr(
+        module, "graphql", lambda *args: second if len(args) == 4 else first
+    )
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", "owner/repo", "--pr", "3", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["decision"] == "error"
+    assert "head changed" in result["errors"][0]
+
+
+def test_audit_rejects_repeated_pagination_cursor(monkeypatch, capsys) -> None:
+    module = _load_module()
+    payload = {
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "abc123",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
+                "nodes": [],
+            },
+        }}}
+    }
+    monkeypatch.setattr(module, "graphql", lambda *args: payload)
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", "owner/repo", "--pr", "3", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["decision"] == "error"
+    assert "cursor did not advance" in result["errors"][0]
+
+
+def test_audit_rejects_graphql_errors(monkeypatch, capsys) -> None:
+    module = _load_module()
+    payload = {
+        "errors": [{"message": "partial response"}],
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "abc123",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [],
+            },
+        }}},
+    }
+    monkeypatch.setattr(module, "graphql", lambda *args: payload)
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", "owner/repo", "--pr", "3", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["decision"] == "error"
+    assert "GraphQL returned errors" in result["errors"][0]
+
+
+def test_audit_rejects_head_change_after_last_page(monkeypatch, capsys) -> None:
+    module = _load_module()
+    initial = {
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "abc123",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [],
+            },
+        }}}
+    }
+    changed = {
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "changed",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [],
+            },
+        }}}
+    }
+    payloads = iter((initial, changed))
+    monkeypatch.setattr(module, "graphql", lambda *args: next(payloads))
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", "owner/repo", "--pr", "3", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["decision"] == "error"
+    assert "head changed" in result["errors"][0]

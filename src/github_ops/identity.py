@@ -125,9 +125,60 @@ class IdentityProbe:
                 evidence={"expected_owner": expected_owner, "remote_owner": owner},
             )
 
+        push_url = remote.stdout.strip()
+        if expected_login:
+            push_remote = self.runner.run(
+                ["git", "remote", "get-url", "--all", "--push", "origin"],
+                cwd=resolved_repo,
+            )
+            if push_remote.returncode != 0:
+                return Outcome(
+                    status=Status.UNKNOWN,
+                    code="push_remote_unavailable",
+                    cause="originの実効push URLを確認できません",
+                    impact="実際のpush先を確定できないため書き込みを止めています",
+                    recovery="remote.origin.pushurlとorigin URLを確認してください",
+                    evidence={"repository": f"{owner}/{name}"},
+                )
+            push_urls = [line.strip() for line in push_remote.stdout.splitlines() if line.strip()]
+            if len(push_urls) != 1:
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="push_remote_count_unsupported",
+                    cause="originの実効push URLが1つに確定していません",
+                    impact="複数または空のpush先への書き込みを止めています",
+                    recovery="originのpush URLを対象repository 1件へ限定してください",
+                    evidence={"push_url_count": len(push_urls)},
+                )
+            push_url = push_urls[0]
+            push_owner, push_name = parse_github_remote(push_url)
+            if not push_owner or not push_name:
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="unsupported_push_remote",
+                    cause="push URLをGitHub owner/nameへ解決できません",
+                    impact="未検証のpush先への書き込みを止めています",
+                    recovery="HTTPSまたはSSHのGitHub push URLを使用してください",
+                    evidence={"push_remote_kind": "unsupported"},
+                )
+            if (push_owner, push_name) != (owner, name):
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="push_repository_mismatch",
+                    cause="push先repositoryがfetch先と一致しません",
+                    impact="別repositoryへの誤pushを止めています",
+                    recovery="remote.origin.pushurlをfetch先と同じrepositoryへ修正してください",
+                    evidence={
+                        "fetch_repository": f"{owner}/{name}",
+                        "push_repository": f"{push_owner}/{push_name}",
+                    },
+                )
+
         credential_username: str | None = None
         ssh_login: str | None = None
-        if expected_login and remote.stdout.strip().startswith("https://"):
+        push_is_https = urlparse(push_url).scheme.casefold() == "https"
+        push_is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url))
+        if expected_login and push_is_https:
             credential = self.runner.run(
                 ["git", "credential", "fill"],
                 cwd=resolved_repo,
@@ -171,7 +222,7 @@ class IdentityProbe:
             )
             if credential_token_outcome.status is not Status.READY:
                 return credential_token_outcome
-        elif expected_login and remote.stdout.strip().startswith("git@github.com:"):
+        elif expected_login and push_is_ssh:
             ssh_identity = self.runner.run(
                 [
                     "ssh",
@@ -264,11 +315,12 @@ class IdentityProbe:
                 "login": login,
                 "identity_mode": mode,
                 "credential_username": credential_username
-                if remote.stdout.strip().startswith("https://")
+                if push_is_https
                 else None,
                 "ssh_login": ssh_login
-                if remote.stdout.strip().startswith("git@github.com:")
+                if push_is_ssh
                 else None,
+                "push_repository": f"{owner}/{name}",
             },
         )
 

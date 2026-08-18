@@ -28,6 +28,7 @@ query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
 """
 
 GRAPHQL_TIMEOUT_SECONDS = 30
+MAX_GRAPHQL_PAGES = 100
 
 
 def comment_title(body: str) -> str:
@@ -70,14 +71,36 @@ def main() -> int:
         if not owner or not name:
             raise ValueError("repo must be in owner/name format")
         payload = graphql(owner, name, args.pr)
+        _validate_graphql_payload(payload)
         pull = payload["data"]["repository"]["pullRequest"]
+        if not isinstance(pull["headRefOid"], str) or not pull["headRefOid"]:
+            raise ValueError("pull request head oid is missing")
         threads = list(pull["reviewThreads"]["nodes"])
-        page = pull["reviewThreads"]["pageInfo"]
+        page = _page_info(pull)
+        head_ref_oid = pull["headRefOid"]
+        seen_cursors: set[str] = set()
+        page_count = 1
         while page["hasNextPage"]:
-            payload = graphql(owner, name, args.pr, page["endCursor"])
+            cursor = page.get("endCursor")
+            if not cursor or cursor in seen_cursors:
+                raise ValueError("review thread pagination cursor did not advance")
+            if page_count >= MAX_GRAPHQL_PAGES:
+                raise ValueError("review thread pagination exceeded safety limit")
+            seen_cursors.add(cursor)
+            payload = graphql(owner, name, args.pr, cursor)
+            _validate_graphql_payload(payload)
             connection = payload["data"]["repository"]["pullRequest"]["reviewThreads"]
+            page_pull = payload["data"]["repository"]["pullRequest"]
+            if page_pull["headRefOid"] != head_ref_oid:
+                raise ValueError("pull request head changed during review thread audit")
             threads.extend(connection["nodes"])
-            page = connection["pageInfo"]
+            page = _page_info(page_pull)
+            page_count += 1
+        final_payload = graphql(owner, name, args.pr)
+        _validate_graphql_payload(final_payload)
+        final_pull = final_payload["data"]["repository"]["pullRequest"]
+        if final_pull["headRefOid"] != head_ref_oid:
+            raise ValueError("pull request head changed during review thread audit")
         current = sum(not item["isResolved"] and not item["isOutdated"] for item in threads)
         outdated = sum(not item["isResolved"] and item["isOutdated"] for item in threads)
         unresolved = []
@@ -124,6 +147,20 @@ def main() -> int:
     else:
         print(" ".join(f"{key}={value}" for key, value in result.items()))
     return 0 if result["decision"] == "pass" else 1
+
+
+def _validate_graphql_payload(payload: dict) -> None:
+    if payload.get("errors"):
+        raise ValueError("GitHub GraphQL returned errors")
+
+
+def _page_info(pull: dict) -> dict:
+    page = pull["reviewThreads"]["pageInfo"]
+    if not isinstance(page, dict):
+        raise ValueError("review thread pageInfo is missing")
+    if not isinstance(page.get("hasNextPage"), bool):
+        raise ValueError("review thread hasNextPage is invalid")
+    return page
 
 
 if __name__ == "__main__":

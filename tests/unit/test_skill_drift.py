@@ -218,3 +218,92 @@ def test_unreadable_declared_file_is_a_blocked_outcome(
     assert outcome.status is Status.BLOCKED
     assert outcome.evidence["unreadable_count"] == 1
     assert outcome.evidence["unreadable_files"][0]["error_type"] == "PermissionError"
+
+
+def test_missing_declared_source_blocks_even_when_runtime_is_also_missing(
+    tmp_path: Path,
+) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    (ssot / "alpha").mkdir(parents=True)
+    local.mkdir()
+    (ssot / "alpha" / "manifest.yaml").write_text(
+        "runtimes:\n  codex:\n    mode: copy\n    files: [missing.md]\n",
+        encoding="utf-8",
+    )
+    outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["invalid_paths"][0]["reason"] == "missing_declared_source"
+
+
+def test_expected_runtime_symlink_blocks(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    (ssot / "alpha").mkdir(parents=True)
+    (local / "alpha").mkdir(parents=True)
+    source = ssot / "alpha" / "SKILL.md"
+    source.write_text("same\n", encoding="utf-8")
+    try:
+        (local / "alpha" / "SKILL.md").symlink_to(source)
+    except OSError:
+        return
+    outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["invalid_paths"][0]["reason"] == "unsafe_local_symlink"
+
+
+def test_declared_ssot_symlink_blocks(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    (ssot / "alpha").mkdir(parents=True)
+    (local / "alpha").mkdir(parents=True)
+    target = tmp_path / "source.md"
+    target.write_text("same\n", encoding="utf-8")
+    try:
+        (ssot / "alpha" / "SKILL.md").symlink_to(target)
+    except OSError:
+        return
+    (local / "alpha" / "SKILL.md").write_text("same\n", encoding="utf-8")
+    outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["invalid_paths"][0]["reason"] == "unsafe_ssot_symlink"
+
+
+def test_declared_ssot_parent_symlink_blocks(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    outside = tmp_path / "outside"
+    (ssot / "alpha").mkdir(parents=True)
+    (local / "alpha" / "scripts").mkdir(parents=True)
+    outside.mkdir()
+    (outside / "helper.py").write_text("same\n", encoding="utf-8")
+    try:
+        (ssot / "alpha" / "scripts").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        return
+    (local / "alpha" / "scripts" / "helper.py").write_text(
+        "same\n", encoding="utf-8"
+    )
+    (ssot / "alpha" / "manifest.yaml").write_text(
+        "runtimes:\n  codex:\n    mode: copy\n    files: [scripts/helper.py]\n",
+        encoding="utf-8",
+    )
+    outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["invalid_paths"][0]["reason"] == "unsafe_ssot_symlink"
+
+
+def test_manifest_rejects_falsey_files_and_extra(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    (ssot / "alpha").mkdir(parents=True)
+    (local / "alpha").mkdir(parents=True)
+    manifest = ssot / "alpha" / "manifest.yaml"
+    for field, value in (("files", "null"), ("extra", "false")):
+        manifest.write_text(
+            f"runtimes:\n  codex:\n    mode: copy\n    {field}: {value}\n",
+            encoding="utf-8",
+        )
+        outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+        assert outcome.status is Status.BLOCKED
+        assert outcome.evidence["invalid_manifest_count"] == 1

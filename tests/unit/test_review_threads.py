@@ -106,9 +106,88 @@ def test_fetch_follows_all_review_thread_pages(monkeypatch) -> None:
 
     monkeypatch.setattr("github_ops.review_threads.graphql", fake_graphql)
     payload = fetch("owner/name", 123)
-    assert calls == [None, "cursor-1"]
+    assert calls == [None, "cursor-1", None]
     nodes = payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
     assert len(nodes) == 2
+
+
+def test_fetch_rejects_head_change_during_pagination(monkeypatch) -> None:
+    first = _payload()
+    first["data"]["repository"]["pullRequest"]["reviewThreads"]["pageInfo"] = {
+        "hasNextPage": True,
+        "endCursor": "cursor-1",
+    }
+    second = _payload()
+    second["data"]["repository"]["pullRequest"]["headRefOid"] = "changed"
+    monkeypatch.setattr(
+        "github_ops.review_threads.graphql",
+        lambda repo, number, cursor=None: second if cursor else first,
+    )
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "head changed" in str(exc)
+    else:
+        raise AssertionError("head mutation must fail closed")
+
+
+def test_fetch_rejects_repeated_pagination_cursor(monkeypatch) -> None:
+    payload = _payload()
+    payload["data"]["repository"]["pullRequest"]["reviewThreads"]["pageInfo"] = {
+        "hasNextPage": True,
+        "endCursor": "cursor-1",
+    }
+    monkeypatch.setattr("github_ops.review_threads.graphql", lambda *args: payload)
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "cursor did not advance" in str(exc)
+    else:
+        raise AssertionError("repeated cursor must fail closed")
+
+
+def test_fetch_rejects_graphql_errors(monkeypatch) -> None:
+    payload = _payload()
+    payload["errors"] = [{"message": "partial response"}]
+    monkeypatch.setattr("github_ops.review_threads.graphql", lambda *args: payload)
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "GraphQL returned errors" in str(exc)
+    else:
+        raise AssertionError("partial GraphQL response must fail closed")
+
+
+def test_fetch_rejects_missing_page_info(monkeypatch) -> None:
+    payload = _payload()
+    payload["data"]["repository"]["pullRequest"]["reviewThreads"]["pageInfo"] = None
+    monkeypatch.setattr("github_ops.review_threads.graphql", lambda *args: payload)
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "pageInfo is missing" in str(exc)
+    else:
+        raise AssertionError("missing pageInfo must fail closed")
+
+
+def test_fetch_rejects_head_change_after_last_page(monkeypatch) -> None:
+    initial = _payload()
+    changed = _payload()
+    changed["data"]["repository"]["pullRequest"]["headRefOid"] = "changed"
+    calls = 0
+
+    def fake_graphql(*args) -> dict:
+        nonlocal calls
+        calls += 1
+        return initial if calls == 1 else changed
+
+    monkeypatch.setattr("github_ops.review_threads.graphql", fake_graphql)
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "head changed" in str(exc)
+    else:
+        raise AssertionError("final head mutation must fail closed")
 
 
 def test_query_requests_latest_comment_only() -> None:
