@@ -12,9 +12,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from github_ops.pr_convergence import ConvergenceSnapshot, decide_next_step
+from github_ops.output import configure_utf8_stdout
 
 
 def main() -> int:
+    configure_utf8_stdout()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("snapshot", nargs="?", help="JSON file。省略時はstdin")
     args = parser.parse_args()

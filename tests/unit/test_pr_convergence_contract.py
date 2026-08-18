@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import os
 import subprocess
 import sys
 
@@ -76,6 +77,11 @@ def test_pr_convergence_cli_runs_from_checkout() -> None:
         check=False,
         timeout=10,
         cwd=ROOT,
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"PYTHONUTF8", "PYTHONIOENCODING"}
+        },
     )
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout)["code"] == "ready_for_human_decision"
