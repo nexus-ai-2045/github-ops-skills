@@ -15,12 +15,27 @@ query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
       headRefOid
       reviewThreads(first:100, after:$cursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { id isResolved isOutdated comments(last:1) { nodes { body path line } } }
+        nodes {
+          id
+          isResolved
+          isOutdated
+          comments(last:1) { nodes { body path line originalLine } }
+        }
       }
     }
   }
 }
 """
+
+GRAPHQL_TIMEOUT_SECONDS = 30
+
+
+def comment_title(body: str) -> str:
+    first_line = next((line.strip() for line in body.splitlines() if line.strip()), "")
+    marker = "</sub></sub>"
+    if marker in first_line:
+        first_line = first_line.split(marker, 1)[1].strip()
+    return first_line.strip("* ")
 
 
 def graphql(owner: str, name: str, number: int, cursor: str | None = None) -> dict:
@@ -37,6 +52,7 @@ def graphql(owner: str, name: str, number: int, cursor: str | None = None) -> di
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=GRAPHQL_TIMEOUT_SECONDS,
     )
     return json.loads(completed.stdout)
 
@@ -48,7 +64,11 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
+        if args.repo.count("/") != 1:
+            raise ValueError("repo must be in owner/name format")
         owner, name = args.repo.split("/", 1)
+        if not owner or not name:
+            raise ValueError("repo must be in owner/name format")
         payload = graphql(owner, name, args.pr)
         pull = payload["data"]["repository"]["pullRequest"]
         threads = list(pull["reviewThreads"]["nodes"])
@@ -60,11 +80,35 @@ def main() -> int:
             page = connection["pageInfo"]
         current = sum(not item["isResolved"] and not item["isOutdated"] for item in threads)
         outdated = sum(not item["isResolved"] and item["isOutdated"] for item in threads)
+        unresolved = []
+        for item in threads:
+            if item["isResolved"]:
+                continue
+            comments = item["comments"]["nodes"]
+            latest = comments[-1] if comments else {}
+            unresolved.append(
+                {
+                    "id": item["id"],
+                    "state": (
+                        "unresolved_outdated"
+                        if item["isOutdated"]
+                        else "unresolved_current"
+                    ),
+                    "path": latest.get("path", ""),
+                    "line": (
+                        latest.get("line")
+                        if latest.get("line") is not None
+                        else latest.get("originalLine")
+                    ),
+                    "title": comment_title(latest.get("body", "")),
+                }
+            )
         result = {
             "decision": "pass" if current == 0 and outdated == 0 else "warn",
             "head_ref_oid": pull["headRefOid"],
             "unresolved_current": current,
             "unresolved_outdated": outdated,
+            "threads": unresolved,
         }
     except (
         OSError,

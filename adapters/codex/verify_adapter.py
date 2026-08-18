@@ -37,14 +37,24 @@ def verify(repo: Path) -> dict[str, object]:
     )
     missing_skills = sorted(REQUIRED_SKILLS - set(skills))
     unexpected_skills = sorted(set(skills) - REQUIRED_SKILLS)
-    missing_entrypoints = sorted(
-        name for name in REQUIRED_SKILLS if not (root / name / "SKILL.md").is_file()
-    )
+    missing_entrypoints = []
+    invalid_entrypoints = []
+    for name in sorted(REQUIRED_SKILLS):
+        entrypoint = root / name / "SKILL.md"
+        if not entrypoint.is_file():
+            missing_entrypoints.append(name)
+            continue
+        try:
+            if not entrypoint.read_text(encoding="utf-8").strip():
+                invalid_entrypoints.append(name)
+        except (OSError, UnicodeError):
+            invalid_entrypoints.append(name)
     return {
         "status": "READY"
         if not missing_skills
         and not unexpected_skills
         and not missing_entrypoints
+        and not invalid_entrypoints
         and manifest_valid
         else "BLOCKED",
         "skill_root": str(root),
@@ -53,6 +63,7 @@ def verify(repo: Path) -> dict[str, object]:
         "missing_skills": missing_skills,
         "unexpected_skills": unexpected_skills,
         "missing_entrypoints": missing_entrypoints,
+        "invalid_entrypoints": invalid_entrypoints,
         "manifest_valid": manifest_valid,
         "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest()
         if manifest.is_file()

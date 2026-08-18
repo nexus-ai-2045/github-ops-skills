@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -46,7 +46,22 @@ def compare_skill_roots(
     rows: list[SkillFileDrift] = []
     for skill in skills:
         skill_root = ssot_skills_root / skill
-        mappings = _runtime_file_mappings(skill_root, runtime=runtime)
+        try:
+            mappings = _runtime_file_mappings(skill_root, runtime=runtime)
+        except (OSError, UnicodeError, yaml.YAMLError, ValueError) as exc:
+            rows.append(
+                SkillFileDrift(
+                    skill=skill,
+                    relative_path="manifest.yaml",
+                    ssot_sha256=None,
+                    local_sha256=None,
+                    status=f"invalid_manifest:{type(exc).__name__}",
+                )
+            )
+            continue
+        if not mappings:
+            continue
+        expected_local_paths = {relative for relative, _ in mappings}
         for relative, source_relative in mappings:
             ssot_path = ssot_skills_root / skill / source_relative
             local_path = local_skills_root / skill / relative
@@ -71,6 +86,27 @@ def compare_skill_roots(
                     status=status,
                 )
             )
+        local_skill_root = local_skills_root / skill
+        if local_skill_root.is_dir():
+            for candidate in sorted(local_skill_root.rglob("*")):
+                if not (candidate.is_file() or candidate.is_symlink()):
+                    continue
+                relative = candidate.relative_to(local_skill_root).as_posix()
+                if relative in expected_local_paths:
+                    continue
+                rows.append(
+                    SkillFileDrift(
+                        skill=skill,
+                        relative_path=relative,
+                        ssot_sha256=None,
+                        local_sha256=(
+                            sha256_file(candidate)
+                            if candidate.is_file() and not candidate.is_symlink()
+                            else None
+                        ),
+                        status="local_only",
+                    )
+                )
     return rows
 
 
@@ -81,23 +117,60 @@ def _runtime_file_mappings(
     manifest = skill_root / "manifest.yaml"
     if not manifest.is_file():
         return sorted(files)
-    payload = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
-    runtime_config = (payload.get("runtimes") or {}).get(runtime)
-    if not runtime_config or runtime_config.get("mode") == "skip":
+    payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("manifest root must be a mapping")
+    runtimes = payload.get("runtimes") or {}
+    if not isinstance(runtimes, dict):
+        raise ValueError("manifest runtimes must be a mapping")
+    runtime_config = runtimes.get(runtime)
+    if not runtime_config:
         return []
+    if not isinstance(runtime_config, dict):
+        raise ValueError("runtime config must be a mapping")
+    mode = runtime_config.get("mode")
+    if mode == "skip":
+        return []
+    if mode != "copy":
+        raise ValueError("runtime mode must be copy or skip")
+    declared_files = runtime_config.get("files") or []
+    extras = runtime_config.get("extra") or {}
+    if not isinstance(declared_files, list) or not all(
+        isinstance(item, str) for item in declared_files
+    ):
+        raise ValueError("runtime files must be a list of paths")
+    if not isinstance(extras, dict) or not all(
+        isinstance(target, str) and isinstance(source, str)
+        for target, source in extras.items()
+    ):
+        raise ValueError("runtime extra must map target paths to source paths")
     files = set()
-    files.update((item, item) for item in (runtime_config.get("files") or []))
+    files.update((item, item) for item in declared_files)
     files.update(
         (target, source)
-        for target, source in (runtime_config.get("extra") or {}).items()
+        for target, source in extras.items()
     )
+    targets = [target for target, _ in files]
+    if len(targets) != len(set(targets)):
+        raise ValueError("runtime target paths must be unique")
+    for target, source in files:
+        if not _safe_relative_path(target) or not _safe_relative_path(source):
+            raise ValueError("runtime paths must stay inside their skill roots")
     return sorted(files)
+
+
+def _safe_relative_path(value: str) -> bool:
+    if not value or "\\" in value:
+        return False
+    path = PurePosixPath(value)
+    return not path.is_absolute() and ".." not in path.parts
 
 
 def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
     drifts = [row for row in rows if row.status == "drift"]
     local_only = [row for row in rows if row.status == "local_only"]
     missing = [row for row in rows if row.status == "ssot_only"]
+    invalid = [row for row in rows if row.status.startswith("invalid_manifest:")]
     evidence = {
         "local_root": local_root,
         "compared_files": len(rows),
@@ -105,6 +178,7 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
         "drift_count": len(drifts),
         "local_only_count": len(local_only),
         "ssot_only_count": sum(1 for row in rows if row.status == "ssot_only"),
+        "invalid_manifest_count": len(invalid),
         "drifts": [
             {
                 "skill": row.skill,
@@ -117,6 +191,10 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
         "local_only": [
             {"skill": row.skill, "path": row.relative_path} for row in local_only
         ],
+        "invalid_manifests": [
+            {"skill": row.skill, "error_type": row.status.split(":", 1)[1]}
+            for row in invalid
+        ],
     }
     if not rows:
         return Outcome(
@@ -127,7 +205,7 @@ def drift_outcome(rows: list[SkillFileDrift], *, local_root: str) -> Outcome:
             recovery="local rootとskills/を確認してください",
             evidence=evidence,
         )
-    if drifts or local_only or missing:
+    if drifts or local_only or missing or invalid:
         return Outcome(
             status=Status.BLOCKED,
             code="skill_drift_detected",

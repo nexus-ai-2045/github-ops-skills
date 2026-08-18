@@ -56,11 +56,12 @@ def test_parse_https_and_ssh_remotes() -> None:
     )
 
 
-def test_probe_blocks_mismatched_git_credential_username(tmp_path) -> None:
+def test_probe_blocks_mismatched_git_credential_token_owner(tmp_path) -> None:
     runner = FakeRunner(
         [
             CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
-            CommandResult(0, "protocol=https\nhost=github.com\nusername=other-user\npassword=hidden\n", ""),
+            CommandResult(0, "protocol=https\nhost=github.com\nusername=example-user\npassword=hidden\n", ""),
+            CommandResult(0, "other-user\n", ""),
         ]
     )
     outcome = IdentityProbe(runner).probe(
@@ -69,5 +70,43 @@ def test_probe_blocks_mismatched_git_credential_username(tmp_path) -> None:
         expected_login="example-user",
     )
     assert outcome.status.value == "BLOCKED"
-    assert outcome.code == "credential_username_mismatch"
-    assert outcome.evidence["credential_username"] == "other-user"
+    assert outcome.code == "token_login_mismatch"
+    assert outcome.evidence["token_login"] == "other-user"
+    assert runner.calls[2]["scoped_env"] == {
+        "GH_HOST": "github.com",
+        "GH_TOKEN": "hidden",
+    }
+
+
+def test_probe_accepts_x_access_token_username_when_token_owner_matches(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "username=x-access-token\npassword=hidden\n", ""),
+            CommandResult(0, "example-user\n", ""),
+            CommandResult(0, "example-user\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "READY"
+    assert outcome.evidence["credential_username"] == "x-access-token"
+
+
+def test_probe_stops_when_git_credential_has_no_token(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "username=example-user\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "UNKNOWN"
+    assert outcome.code == "credential_token_unavailable"

@@ -104,3 +104,75 @@ def test_runtime_selection_honors_runtime_and_skip(tmp_path: Path) -> None:
         for row in _compare(ssot, local, "claude")
     )
     assert _compare(ssot, local, "grok") == []
+
+
+def test_compare_detects_extra_file_inside_managed_skill(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    for root in (ssot, local):
+        (root / "alpha").mkdir(parents=True)
+        (root / "alpha" / "SKILL.md").write_text("same\n", encoding="utf-8")
+    (local / "alpha" / "obsolete.py").write_text("old\n", encoding="utf-8")
+    rows = _compare(ssot, local)
+    assert ("obsolete.py", "local_only") in {
+        (row.relative_path, row.status) for row in rows
+    }
+    assert drift_outcome(rows, local_root=str(local)).status is Status.BLOCKED
+
+
+def test_invalid_manifest_is_a_blocked_outcome(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    for root in (ssot, local):
+        (root / "alpha").mkdir(parents=True)
+        (root / "alpha" / "SKILL.md").write_text("same\n", encoding="utf-8")
+    (ssot / "alpha" / "manifest.yaml").write_text("[]\n", encoding="utf-8")
+    outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["invalid_manifest_count"] == 1
+    (ssot / "alpha" / "manifest.yaml").write_text(
+        "runtimes: [\n", encoding="utf-8"
+    )
+    malformed = drift_outcome(_compare(ssot, local), local_root=str(local))
+    assert malformed.status is Status.BLOCKED
+    assert malformed.evidence["invalid_manifests"][0]["error_type"].endswith(
+        "Error"
+    )
+
+
+def test_manifest_rejects_paths_outside_skill_root(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    for root in (ssot, local):
+        (root / "alpha").mkdir(parents=True)
+        (root / "alpha" / "SKILL.md").write_text("same\n", encoding="utf-8")
+    (ssot / "alpha" / "manifest.yaml").write_text(
+        "runtimes:\n  codex:\n    mode: copy\n    files: [../outside]\n",
+        encoding="utf-8",
+    )
+    outcome = drift_outcome(_compare(ssot, local), local_root=str(local))
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["invalid_manifest_count"] == 1
+
+
+def test_manifest_rejects_unknown_mode_and_windows_traversal(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    for root in (ssot, local):
+        (root / "alpha").mkdir(parents=True)
+        (root / "alpha" / "SKILL.md").write_text("same\n", encoding="utf-8")
+    manifest = ssot / "alpha" / "manifest.yaml"
+    manifest.write_text(
+        "runtimes:\n  codex:\n    mode: unknown\n    files: [SKILL.md]\n",
+        encoding="utf-8",
+    )
+    assert drift_outcome(
+        _compare(ssot, local), local_root=str(local)
+    ).evidence["invalid_manifest_count"] == 1
+    manifest.write_text(
+        "runtimes:\n  codex:\n    mode: copy\n    files: ['..\\outside']\n",
+        encoding="utf-8",
+    )
+    assert drift_outcome(
+        _compare(ssot, local), local_root=str(local)
+    ).evidence["invalid_manifest_count"] == 1

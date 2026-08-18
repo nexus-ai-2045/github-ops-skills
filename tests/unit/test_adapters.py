@@ -57,6 +57,27 @@ def test_adapter_blocks_empty_required_skill_directories(tmp_path: Path) -> None
     assert result["missing_entrypoints"]
 
 
+def test_adapter_blocks_blank_and_non_utf8_entrypoints(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            target = tmp_path / "skills" / source.name
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    (tmp_path / "skills" / "commit-push-pr" / "SKILL.md").write_text(
+        "  \n", encoding="utf-8"
+    )
+    (tmp_path / "skills" / "review-pr" / "SKILL.md").write_bytes(b"\xff")
+    (tmp_path / "migration").mkdir()
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        '{"schema_version":"github-ops/source-manifest/v1","sources":[{}]}',
+        encoding="utf-8",
+    )
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["invalid_entrypoints"] == ["commit-push-pr", "review-pr"]
+
+
 def test_adapter_blocks_invalid_source_manifest(tmp_path: Path) -> None:
     repo = Path(__file__).resolve().parents[2]
     for source in (repo / "skills").iterdir():

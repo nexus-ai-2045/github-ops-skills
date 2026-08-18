@@ -125,6 +125,7 @@ def test_graphql_omits_cursor_on_initial_request(monkeypatch) -> None:
 
     def fake_run(command, **kwargs):  # noqa: ANN001, ANN003
         captured["command"] = command
+        captured.update(kwargs)
         return Completed()
 
     monkeypatch.setattr("github_ops.review_threads.subprocess.run", fake_run)
@@ -132,6 +133,7 @@ def test_graphql_omits_cursor_on_initial_request(monkeypatch) -> None:
 
     graphql("owner/name", 3)
     assert not any(str(item).startswith("cursor=") for item in captured["command"])
+    assert captured.get("timeout") == 30
 
 
 def test_summarize_falls_back_to_original_line_for_outdated_comment() -> None:

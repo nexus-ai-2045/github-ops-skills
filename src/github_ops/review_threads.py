@@ -45,6 +45,8 @@ query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
 }
 """
 
+GRAPHQL_TIMEOUT_SECONDS = 30
+
 
 @dataclass(frozen=True)
 class ThreadSummary:
@@ -184,6 +186,7 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=GRAPHQL_TIMEOUT_SECONDS,
     )
     return json.loads(completed.stdout)
 
