@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -210,7 +211,7 @@ def _runtime_file_mappings(
 
 
 def _safe_relative_path(value: str) -> bool:
-    if not value or "\\" in value:
+    if not value or "\\" in value or re.match(r"^[A-Za-z]:", value):
         return False
     path = PurePosixPath(value)
     return not path.is_absolute() and ".." not in path.parts

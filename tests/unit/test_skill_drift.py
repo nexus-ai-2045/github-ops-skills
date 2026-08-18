@@ -170,6 +170,13 @@ def test_manifest_rejects_unknown_mode_and_windows_traversal(tmp_path: Path) -> 
         _compare(ssot, local), local_root=str(local)
     ).evidence["invalid_manifest_count"] == 1
     manifest.write_text(
+        "runtimes:\n  codex:\n    mode: copy\n    files: ['C:/outside']\n",
+        encoding="utf-8",
+    )
+    assert drift_outcome(
+        _compare(ssot, local), local_root=str(local)
+    ).evidence["invalid_manifest_count"] == 1
+    manifest.write_text(
         "runtimes:\n  codex:\n    mode: copy\n    files: ['..\\outside']\n",
         encoding="utf-8",
     )

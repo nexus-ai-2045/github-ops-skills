@@ -92,6 +92,33 @@ def test_adapter_blocks_invalid_source_manifest(tmp_path: Path) -> None:
     assert result["manifest_valid"] is False
 
 
+def test_adapter_blocks_unreadable_source_manifest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            target = tmp_path / "skills" / source.name
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    migration = tmp_path / "migration"
+    migration.mkdir()
+    manifest = migration / "source-manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    original = Path.read_bytes
+
+    def unreadable(path: Path) -> bytes:
+        if path == manifest:
+            raise PermissionError("denied")
+        return original(path)
+
+    monkeypatch.setattr(Path, "read_bytes", unreadable)
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["manifest_valid"] is False
+    assert result["manifest_sha256"] is None
+
+
 def test_claude_adapter_supports_direct_script_execution() -> None:
     repo = Path(__file__).resolve().parents[2]
     completed = subprocess.run(

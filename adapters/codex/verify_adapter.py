@@ -22,12 +22,15 @@ def verify(repo: Path) -> dict[str, object]:
     manifest = (repo / "migration" / "source-manifest.json").resolve()
     skills = sorted(path.name for path in root.iterdir() if path.is_dir()) if root.is_dir() else []
     manifest_payload: dict[str, object] | None = None
+    manifest_sha256: str | None = None
     if manifest.is_file():
         try:
-            candidate = json.loads(manifest.read_text(encoding="utf-8"))
+            manifest_bytes = manifest.read_bytes()
+            candidate = json.loads(manifest_bytes.decode("utf-8"))
             if isinstance(candidate, dict):
                 manifest_payload = candidate
-        except (OSError, json.JSONDecodeError):
+            manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+        except (OSError, UnicodeError, json.JSONDecodeError):
             pass
     manifest_valid = bool(
         manifest_payload
@@ -65,9 +68,7 @@ def verify(repo: Path) -> dict[str, object]:
         "missing_entrypoints": missing_entrypoints,
         "invalid_entrypoints": invalid_entrypoints,
         "manifest_valid": manifest_valid,
-        "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest()
-        if manifest.is_file()
-        else None,
+        "manifest_sha256": manifest_sha256,
     }
 
 
