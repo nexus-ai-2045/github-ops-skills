@@ -198,6 +198,18 @@ def test_audit_rejects_graphql_errors(monkeypatch, capsys) -> None:
     assert "GraphQL returned errors" in result["errors"][0]
 
 
+def test_audit_rejects_non_object_graphql_payload(monkeypatch, capsys) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "graphql", lambda *args: [])
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", "owner/repo", "--pr", "3", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["decision"] == "error"
+    assert "not an object" in result["errors"][0]
+
+
 def test_audit_rejects_head_change_after_last_page(monkeypatch, capsys) -> None:
     module = _load_module()
     initial = {

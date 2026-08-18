@@ -13,6 +13,14 @@ def ready_input(**overrides):
         "worktree_paths": ("src/github_ops/preflight.py",),
         "approved_paths": ("src/github_ops/preflight.py",),
         "approval_ref": "current-conversation:approved",
+        "operation": "push",
+        "expected_visibility": "PRIVATE",
+        "branch": "codex/safe-change",
+        "default_branch": "main",
+        "expected_head_sha": "a" * 40,
+        "local_head_sha": "a" * 40,
+        "remote_head_sha": "b" * 40,
+        "fast_forward_verified": True,
     }
     values.update(overrides)
     return PreflightInput(**values)
@@ -46,3 +54,35 @@ def test_org_owner_and_user_login_are_independent() -> None:
     assert result.status.value == "READY"
     assert result.evidence["expected_owner"] == "example-org"
     assert result.evidence["expected_login"] == "example-user"
+
+
+def test_public_visibility_is_blocked_for_private_write_contract() -> None:
+    result = run_preflight(ready_input(visibility="PUBLIC"))
+    assert result.code == "visibility_mismatch"
+    assert result.status.value == "BLOCKED"
+
+
+def test_default_branch_write_is_blocked() -> None:
+    result = run_preflight(ready_input(branch="main"))
+    assert result.code == "default_branch_write_forbidden"
+
+
+def test_missing_branch_evidence_is_unknown() -> None:
+    result = run_preflight(ready_input(branch=None))
+    assert result.code == "branch_evidence_unknown"
+    assert result.status.value == "UNKNOWN"
+
+
+def test_push_requires_exact_local_head() -> None:
+    result = run_preflight(ready_input(local_head_sha="c" * 40))
+    assert result.code == "local_head_mismatch"
+
+
+def test_push_requires_fast_forward_proof() -> None:
+    result = run_preflight(ready_input(fast_forward_verified=False))
+    assert result.code == "fast_forward_unverified"
+
+
+def test_visibility_requires_dedicated_human_gate() -> None:
+    result = run_preflight(ready_input(operation="visibility"))
+    assert result.code == "operation_requires_dedicated_gate"

@@ -241,6 +241,8 @@ def fetch(repo: str, number: int) -> dict[str, Any]:
 
 
 def _validate_graphql_payload(payload: dict[str, Any]) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("GitHub GraphQL payload is not an object")
     if payload.get("errors"):
         raise ValueError("GitHub GraphQL returned errors")
 

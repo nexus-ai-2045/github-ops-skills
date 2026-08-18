@@ -44,7 +44,18 @@ def compare_skill_roots(
 ) -> list[SkillFileDrift]:
     # Only SSOT skills are compared. Local-only skills outside this Core Suite
     # are ignored to avoid high-dimensional noise from large runtime roots.
-    skills = list_skill_names(ssot_skills_root)
+    try:
+        skills = list_skill_names(ssot_skills_root)
+    except (OSError, UnicodeError) as exc:
+        return [
+            SkillFileDrift(
+                skill=".",
+                relative_path=".",
+                ssot_sha256=None,
+                local_sha256=None,
+                status=f"unreadable_ssot_root:{type(exc).__name__}",
+            )
+        ]
     rows: list[SkillFileDrift] = []
     for skill in skills:
         skill_root = ssot_skills_root / skill

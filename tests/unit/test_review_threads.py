@@ -160,6 +160,16 @@ def test_fetch_rejects_graphql_errors(monkeypatch) -> None:
         raise AssertionError("partial GraphQL response must fail closed")
 
 
+def test_fetch_rejects_non_object_graphql_payload(monkeypatch) -> None:
+    monkeypatch.setattr("github_ops.review_threads.graphql", lambda *args: [])
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "not an object" in str(exc)
+    else:
+        raise AssertionError("non-object GraphQL payload must fail closed")
+
+
 def test_fetch_rejects_missing_page_info(monkeypatch) -> None:
     payload = _payload()
     payload["data"]["repository"]["pullRequest"]["reviewThreads"]["pageInfo"] = None

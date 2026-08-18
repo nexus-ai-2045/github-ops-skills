@@ -252,3 +252,24 @@ def test_probe_verifies_credential_for_uppercase_https_scheme(tmp_path) -> None:
     )
     assert outcome.status.value == "BLOCKED"
     assert outcome.code == "token_login_mismatch"
+
+
+def test_probe_uses_exact_push_url_path_for_https_credential(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "https://github.com/example-org/tooling\n", ""),
+            CommandResult(0, "username=example-user\npassword=hidden\n", ""),
+            CommandResult(0, "example-user\n", ""),
+            CommandResult(0, "example-user\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "READY"
+    assert runner.calls[2]["input_text"] == (
+        "protocol=https\nhost=github.com\npath=example-org/tooling\n\n"
+    )

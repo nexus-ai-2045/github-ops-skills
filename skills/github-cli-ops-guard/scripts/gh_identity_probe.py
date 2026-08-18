@@ -10,10 +10,33 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
+
+
+COMMAND_TIMEOUT_SECONDS = 30
 
 
 def run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
-    proc = subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, shell=False)
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            shell=False,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+        return (
+            124,
+            stdout.strip(),
+            f"command timed out after {COMMAND_TIMEOUT_SECONDS}s",
+        )
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        return 127, "", f"command failed: {exc}"
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
@@ -33,14 +56,46 @@ def git_value_with_origin(cwd: Path, key: str) -> tuple[str | None, str | None]:
 def parse_remote_owner(remote_url: str | None) -> tuple[str | None, str | None]:
     if not remote_url:
         return None, None
-    patterns = [
-        r"github\.com[:/](?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?$",
-        r"https://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?$",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, remote_url)
-        if match:
-            return match.group("owner"), match.group("repo")
+
+    def owner_repo(path: str) -> tuple[str | None, str | None]:
+        if path.startswith("/"):
+            path = path[1:]
+        if path.endswith("/"):
+            return None, None
+        parts = path.split("/")
+        if len(parts) != 2 or any(
+            not part or any(char.isspace() for char in part) for part in parts
+        ):
+            return None, None
+        owner, repo = parts
+        if repo.endswith(".git"):
+            repo = repo[:-4]
+        return (owner, repo) if owner and repo else (None, None)
+
+    # The scp-like SSH form is not a URL, so parse it with a strict full match.
+    scp_match = re.fullmatch(r"git@github\.com:(?P<path>[^\s?#]+)", remote_url)
+    if scp_match:
+        return owner_repo(scp_match.group("path"))
+
+    try:
+        parsed = urlparse(remote_url)
+        hostname = parsed.hostname
+    except ValueError:
+        return None, None
+    if hostname != "github.com" or parsed.query or parsed.fragment:
+        return None, None
+    if (
+        parsed.scheme.lower() == "https"
+        and not parsed.username
+        and not parsed.password
+    ):
+        return owner_repo(parsed.path)
+    if (
+        parsed.scheme.lower() == "ssh"
+        and parsed.username == "git"
+        and not parsed.password
+    ):
+        return owner_repo(parsed.path)
     return None, None
 
 

@@ -17,6 +17,16 @@ class FakeRunner:
         return self.responses[key]
 
 
+class TrackingRunner(FakeRunner):
+    def __init__(self, responses):  # noqa: ANN001
+        super().__init__(responses)
+        self.calls = []
+
+    def run(self, argv, **kwargs):  # noqa: ANN001, ANN003
+        self.calls.append((tuple(argv), kwargs))
+        return super().run(argv, **kwargs)
+
+
 class FakeIdentity:
     def __init__(self, outcome: Outcome) -> None:
         self.outcome = outcome
@@ -122,6 +132,28 @@ def test_preserves_leading_space_in_porcelain_paths(tmp_path: Path) -> None:
     )
     assert outcome.status is Status.READY
     assert outcome.evidence["location"]["dirty_paths"] == ["README.md"]
+
+
+def test_authorization_uses_raw_porcelain_paths_but_redacts_evidence(tmp_path: Path) -> None:
+    secret_like_path = "ghp_" + ("A" * 24)
+    runner = TrackingRunner(
+        _git_ok_responses(dirty=f"?? {secret_like_path}\0")
+    )
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"login": "o"})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+        allow_dirty=True,
+        approved_paths=(secret_like_path,),
+    )
+    assert outcome.status is Status.READY
+    assert outcome.evidence["location"]["dirty_paths"] == ["[REDACTED]"]
+    status_call = next(call for call in runner.calls if call[0][:2] == ("git", "status"))
+    assert status_call[1]["redact_stdout"] is False
 
 
 def test_propagates_identity_block_with_location_evidence(tmp_path: Path) -> None:

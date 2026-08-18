@@ -26,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--map-file", type=Path)
     parser.add_argument("--approval-ref")
+    parser.add_argument("--expected-head-sha")
     parser.add_argument("--approved-path", action="append", default=[])
     parser.add_argument("--json", action="store_true")
     return parser
@@ -78,13 +79,43 @@ def _run(args: argparse.Namespace) -> dict:
         if view.returncode != 0:
             return _unknown("repo_view_unverified", "GitHub repository情報を確認できません")
         repo_info = json.loads(view.stdout)
+        default_view = runner.run(
+            ["gh", "repo", "view", repository, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
+            cwd=args.repo,
+            scoped_env={"GH_TOKEN": token} if token else None,
+        )
+        if default_view.returncode != 0 or not default_view.stdout.strip():
+            return _unknown("default_branch_unverified", "GitHub default branchを確認できません")
+        branch = runner.run(["git", "branch", "--show-current"], cwd=args.repo)
+        if branch.returncode != 0 or not branch.stdout.strip():
+            return _unknown("local_branch_unverified", "local branchを確認できません")
+        branch_name = branch.stdout.strip()
+        local_head = runner.run(["git", "rev-parse", "HEAD"], cwd=args.repo)
+        if local_head.returncode != 0 or not local_head.stdout.strip():
+            return _unknown("local_head_unverified", "local HEADを確認できません")
+        remote_ref = f"refs/heads/{branch_name}"
+        remote = runner.run(["git", "ls-remote", "--heads", "origin", remote_ref], cwd=args.repo)
+        if remote.returncode != 0:
+            return _unknown("remote_head_unverified", "remote branchを確認できません")
+        remote_head = remote.stdout.split("\t", 1)[0] if remote.stdout else None
+        fast_forward_verified = remote_head is None
+        if remote_head:
+            fetch = runner.run(
+                ["git", "fetch", "origin", f"+{remote_ref}:refs/remotes/origin/{branch_name}"],
+                cwd=args.repo,
+            )
+            if fetch.returncode != 0:
+                return _unknown("remote_fetch_failed", "remote branchをfetchできません")
+            ancestor = runner.run(
+                ["git", "merge-base", "--is-ancestor", remote_head, local_head.stdout.strip()],
+                cwd=args.repo,
+            )
+            fast_forward_verified = ancestor.returncode == 0
         dirty = runner.run(
-            ["git", "status", "--porcelain=v1"],
+            ["git", "status", "--porcelain=v1", "-z"],
             cwd=args.repo,
         )
-        worktree_paths = tuple(
-            line[3:].strip() for line in dirty.stdout.splitlines() if len(line) >= 4
-        )
+        worktree_paths = _porcelain_paths(dirty.stdout)
         return run_preflight(
             PreflightInput(
                 expected_repo=repository,
@@ -97,10 +128,38 @@ def _run(args: argparse.Namespace) -> dict:
                 worktree_paths=worktree_paths,
                 approved_paths=tuple(args.approved_path),
                 approval_ref=args.approval_ref,
+                operation=args.operation,
+                expected_visibility="PRIVATE",
+                branch=branch_name,
+                default_branch=default_view.stdout.strip(),
+                expected_head_sha=args.expected_head_sha,
+                local_head_sha=local_head.stdout.strip(),
+                remote_head_sha=remote_head,
+                fast_forward_verified=fast_forward_verified,
             )
         ).to_dict()
     except (AccountMapError, json.JSONDecodeError) as exc:
         return _blocked("preflight_input_invalid", str(exc))
+
+
+def _porcelain_paths(output: str) -> tuple[str, ...]:
+    records = output.split("\0")
+    paths: list[str] = []
+    index = 0
+    while index < len(records):
+        record = records[index]
+        if not record:
+            index += 1
+            continue
+        if len(record) < 4 or record[2] != " ":
+            raise ValueError("git status porcelain record is invalid")
+        paths.append(record[3:])
+        if ("R" in record[:2] or "C" in record[:2]) and index + 1 < len(records):
+            index += 1
+            if records[index]:
+                paths.append(records[index])
+        index += 1
+    return tuple(paths)
 
 
 def _blocked(code: str, cause: str) -> dict:

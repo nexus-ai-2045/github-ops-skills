@@ -180,13 +180,17 @@ class IdentityProbe:
         push_is_https = urlparse(push_url).scheme.casefold() == "https"
         push_is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url))
         if expected_login and push_is_https:
+            parsed_push_url = urlparse(push_url)
+            credential_protocol = parsed_push_url.scheme.casefold()
+            credential_host = parsed_push_url.hostname or "github.com"
+            credential_path = parsed_push_url.path.lstrip("/")
             credential = self.runner.run(
                 ["git", "credential", "fill"],
                 cwd=resolved_repo,
                 input_text=(
-                    "protocol=https\n"
-                    "host=github.com\n"
-                    f"path={owner}/{name}.git\n\n"
+                    f"protocol={credential_protocol}\n"
+                    f"host={credential_host}\n"
+                    f"path={credential_path}\n\n"
                 ),
                 redact_stdout=False,
             )

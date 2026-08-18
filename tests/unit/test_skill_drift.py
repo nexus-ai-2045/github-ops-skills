@@ -220,6 +220,26 @@ def test_unreadable_declared_file_is_a_blocked_outcome(
     assert outcome.evidence["unreadable_files"][0]["error_type"] == "PermissionError"
 
 
+def test_unreadable_ssot_root_is_a_structured_blocked_outcome(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def denied(_root: Path) -> list[str]:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("github_ops.skill_drift.list_skill_names", denied)
+    rows = _compare(tmp_path / "ssot", tmp_path / "local")
+    outcome = drift_outcome(rows, local_root=str(tmp_path / "local"))
+    assert outcome.status is Status.BLOCKED
+    assert outcome.evidence["unreadable_files"] == [
+        {
+            "skill": ".",
+            "path": ".",
+            "side": "ssot_root",
+            "error_type": "PermissionError",
+        }
+    ]
+
+
 def test_missing_declared_source_blocks_even_when_runtime_is_also_missing(
     tmp_path: Path,
 ) -> None:

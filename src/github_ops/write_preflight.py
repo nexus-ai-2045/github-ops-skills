@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .command import CommandRunner
 from .identity import IdentityProbe
+from .redaction import redact
 from .result import Outcome, Status
 
 
@@ -30,8 +31,9 @@ def _run_text(
     argv: list[str],
     *,
     cwd: Path,
+    redact_stdout: bool = True,
 ) -> tuple[str | None, str | None]:
-    result = runner.run(argv, cwd=cwd)
+    result = runner.run(argv, cwd=cwd, redact_stdout=redact_stdout)
     if result.returncode != 0:
         return None, result.stderr.strip() or result.stdout.strip() or "command failed"
     # Do not strip leading spaces: git status --porcelain uses a leading space
@@ -73,6 +75,7 @@ def collect_location_facts(
         command,
         ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
         cwd=root_path,
+        redact_stdout=False,
     )
     if dirty_err is not None and porcelain is None:
         return None, Outcome(
@@ -172,8 +175,8 @@ def evaluate_write_preflight(
                     "repo_root": location.repo_root,
                     "branch": location.branch,
                     "is_linked_worktree": location.is_linked_worktree,
-                    "dirty_paths": list(location.dirty_paths),
-                    "unapproved_paths": unapproved,
+                    "dirty_paths": [redact(path) for path in location.dirty_paths],
+                    "unapproved_paths": [redact(path) for path in unapproved],
                     "worktree_count": location.worktree_count,
                     "compose": {
                         "identity": "github-ops-skills",
@@ -197,7 +200,7 @@ def evaluate_write_preflight(
             "branch": location.branch,
             "is_linked_worktree": location.is_linked_worktree,
             "common_dir": location.common_dir,
-            "dirty_paths": list(location.dirty_paths),
+            "dirty_paths": [redact(path) for path in location.dirty_paths],
             "worktree_count": location.worktree_count,
             "allow_dirty": allow_dirty,
         },

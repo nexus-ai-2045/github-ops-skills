@@ -14,10 +14,10 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/scripts/github_pr_review_thread_audit.py",
       "target_path": "skills/github-cli-ops-guard/scripts/github_pr_review_thread_audit.py",
-      "sha256": "f147a7c95241887244886477d2aae8206df7d6b8476ac2cf13b66bf1c8abab2c",
+      "sha256": "30e9928cc5fdc2fb261ec0fff954c8dd250f81de32780f8710fe5094d4f53f07",
       "source_sha256": "f147a7c95241887244886477d2aae8206df7d6b8476ac2cf13b66bf1c8abab2c",
-      "target_sha256": "f147a7c95241887244886477d2aae8206df7d6b8476ac2cf13b66bf1c8abab2c",
-      "normalized": false
+      "target_sha256": "30e9928cc5fdc2fb261ec0fff954c8dd250f81de32780f8710fe5094d4f53f07",
+      "normalized": true
     },
     {
       "source_root": "shared",
@@ -77,10 +77,10 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
       "target_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
-      "sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
+      "sha256": "c5e8646702e0285ed217bf6b21ba6e3c1663ba07c7e28a3e666449cddaa7e261",
       "source_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
-      "target_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
-      "normalized": false
+      "target_sha256": "c5e8646702e0285ed217bf6b21ba6e3c1663ba07c7e28a3e666449cddaa7e261",
+      "normalized": true
     },
     {
       "source_root": "shared",
@@ -230,9 +230,9 @@
       "source_root": "shared",
       "source_path": "skills/pr-convergence-loop/SKILL.md",
       "target_path": "skills/pr-convergence-loop/SKILL.md",
-      "sha256": "7551b19283cc95eb422d55d0c5cac08c317170531ae0b905a791aa3f19a20975",
+      "sha256": "b2144bbab705d7c8387cc9f5bc8e08b48e0e913675b21332bbd4fbfc6073ed2c",
       "source_sha256": "a691ab04c0a439c59490b28fa697dfccf59e82fba3d34037043ba28c86a547da",
-      "target_sha256": "7551b19283cc95eb422d55d0c5cac08c317170531ae0b905a791aa3f19a20975",
+      "target_sha256": "b2144bbab705d7c8387cc9f5bc8e08b48e0e913675b21332bbd4fbfc6073ed2c",
       "normalized": true
     }
   ]
