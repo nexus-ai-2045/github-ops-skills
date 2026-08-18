@@ -160,6 +160,11 @@ def run_preflight(data: PreflightInput) -> Outcome:
             "fast_forward_unverified", "remote refからのfast-forwardを確認できません",
             "pushは実行しません", "fetch後にremote refとmerge-baseを再検証してください", evidence,
         )
+    if data.operation in {"draft-pr", "pr"} and data.remote_head_sha != data.expected_head_sha:
+        return _blocked(
+            "remote_head_mismatch", "remote PR headが期待SHAと一致しません",
+            "PR作成・更新は実行しません", "branchを安全にpushしremote SHAを再取得してください", evidence,
+        )
     unapproved = sorted(set(data.worktree_paths) - set(data.approved_paths))
     if unapproved:
         evidence["unapproved_paths"] = unapproved

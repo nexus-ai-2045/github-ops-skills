@@ -86,3 +86,15 @@ def test_push_requires_fast_forward_proof() -> None:
 def test_visibility_requires_dedicated_human_gate() -> None:
     result = run_preflight(ready_input(operation="visibility"))
     assert result.code == "operation_requires_dedicated_gate"
+
+
+def test_pr_creation_requires_exact_remote_head() -> None:
+    result = run_preflight(ready_input(operation="pr", remote_head_sha="c" * 40))
+    assert result.code == "remote_head_mismatch"
+
+
+def test_pr_creation_accepts_remote_head_equal_to_expected() -> None:
+    result = run_preflight(
+        ready_input(operation="pr", remote_head_sha="a" * 40, fast_forward_verified=None)
+    )
+    assert result.status.value == "READY"

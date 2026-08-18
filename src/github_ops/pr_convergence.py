@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import re
 
 from .result import Outcome, Status
 
@@ -30,6 +31,7 @@ class ConvergenceSnapshot:
     checks_head_sha: str
     unresolved_threads: int
     latest_review_head_sha: str | None
+    latest_review_outcome: str | None
     repair_cycles: int = 0
     same_failure_count: int = 0
 
@@ -49,6 +51,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "checks_head_sha": snapshot.checks_head_sha,
         "unresolved_threads": snapshot.unresolved_threads,
         "latest_review_head_sha": snapshot.latest_review_head_sha,
+        "latest_review_outcome": snapshot.latest_review_outcome,
         "repair_cycles": snapshot.repair_cycles,
         "same_failure_count": snapshot.same_failure_count,
         "operation": "pr_convergence",
@@ -67,6 +70,21 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     if missing:
         return _outcome(Status.UNKNOWN, "snapshot_incomplete", ConvergencePhase.PREFLIGHT,
                         f"必須snapshotが欠落しています: {', '.join(missing)}", evidence)
+    sha_values = {
+        "base_sha": snapshot.base_sha,
+        "head_sha": snapshot.head_sha,
+        "checks_head_sha": snapshot.checks_head_sha,
+    }
+    if snapshot.latest_review_head_sha is not None:
+        sha_values["latest_review_head_sha"] = snapshot.latest_review_head_sha
+    invalid = [name for name, value in sha_values.items() if not re.fullmatch(r"[0-9a-f]{40}", value)]
+    if (
+        snapshot.pr_number <= 0
+        or not re.fullmatch(r"[^/\s]+/[^/\s]+", snapshot.repository)
+        or invalid
+    ):
+        return _outcome(Status.UNKNOWN, "snapshot_invalid", ConvergencePhase.PREFLIGHT,
+                        "PR番号、repository、またはexact SHAが不正です", evidence)
     if snapshot.visibility != "PRIVATE":
         return _outcome(Status.BLOCKED, "private_boundary_failed", ConvergencePhase.PREFLIGHT,
                         "repositoryがPRIVATEであることを確認できません", evidence)
@@ -95,6 +113,14 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         return _outcome(Status.UNKNOWN, "latest_head_review_pending",
                         ConvergencePhase.EXTERNAL_REVIEW_PENDING,
                         "latest-head reviewを同一head SHAへ束縛できません", evidence)
+    if snapshot.latest_review_outcome is None:
+        return _outcome(Status.UNKNOWN, "latest_review_outcome_unknown",
+                        ConvergencePhase.EXTERNAL_REVIEW_PENDING,
+                        "latest-head reviewの判定結果を確認できません", evidence)
+    if snapshot.latest_review_outcome != "clean":
+        return _outcome(Status.BLOCKED, "latest_review_blocking",
+                        ConvergencePhase.NEEDS_REPAIR,
+                        "latest-head reviewにblocking findingがあります", evidence)
     return _outcome(Status.READY, "ready_for_human_decision",
                     ConvergencePhase.READY_FOR_HUMAN_DECISION,
                     "機械検証は完了しました。mergeは人間判断で停止します", evidence)

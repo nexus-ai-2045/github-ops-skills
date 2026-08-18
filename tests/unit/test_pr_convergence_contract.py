@@ -65,6 +65,7 @@ def test_pr_convergence_cli_runs_from_checkout() -> None:
         "checks_head_sha": head,
         "unresolved_threads": 0,
         "latest_review_head_sha": head,
+        "latest_review_outcome": "clean",
     }
     completed = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "pr_convergence_decide.py")],

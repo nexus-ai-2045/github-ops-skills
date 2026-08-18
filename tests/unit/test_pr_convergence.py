@@ -19,6 +19,7 @@ def snapshot(**overrides) -> ConvergenceSnapshot:
         "checks_head_sha": HEAD,
         "unresolved_threads": 0,
         "latest_review_head_sha": HEAD,
+        "latest_review_outcome": "clean",
     }
     values.update(overrides)
     return ConvergenceSnapshot(**values)
@@ -71,3 +72,23 @@ def test_repeated_failure_exhausts_repair_budget() -> None:
     result = decide_next_step(snapshot(same_failure_count=2))
     assert result.code == "repair_budget_exhausted"
     assert result.status.value == "BLOCKED"
+
+
+def test_review_blocking_finding_prevents_false_ready() -> None:
+    result = decide_next_step(snapshot(latest_review_outcome="blocking"))
+    assert result.code == "latest_review_blocking"
+    assert result.evidence["phase"] == "NEEDS_REPAIR"
+
+
+def test_missing_review_outcome_is_unknown() -> None:
+    result = decide_next_step(snapshot(latest_review_outcome=None))
+    assert result.code == "latest_review_outcome_unknown"
+
+
+def test_invalid_pr_number_and_short_sha_are_rejected() -> None:
+    assert decide_next_step(snapshot(pr_number=0)).code == "snapshot_invalid"
+    assert decide_next_step(snapshot(head_sha="abc", checks_head_sha="abc", latest_review_head_sha="abc")).code == "snapshot_invalid"
+
+
+def test_invalid_repository_shape_is_rejected() -> None:
+    assert decide_next_step(snapshot(repository="missing-owner-separator")).code == "snapshot_invalid"
