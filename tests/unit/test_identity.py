@@ -54,6 +54,10 @@ def test_parse_https_and_ssh_remotes() -> None:
         "example-org",
         "tooling",
     )
+    assert parse_github_remote("ssh://git@github.com/example-org/tooling.git") == (
+        "example-org",
+        "tooling",
+    )
 
 
 def test_probe_blocks_mismatched_git_credential_token_owner(tmp_path) -> None:
@@ -137,6 +141,30 @@ def test_probe_verifies_ssh_authenticated_login(tmp_path) -> None:
     assert outcome.status.value == "READY"
     assert outcome.evidence["ssh_login"] == "example-user"
     assert runner.calls[3]["argv"][-1] == "git@github.com"
+
+
+def test_probe_accepts_standard_ssh_push_url(tmp_path) -> None:
+    ssh_url = "ssh://git@github.com/example-org/tooling.git"
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, f"{ssh_url}\n", ""),
+            CommandResult(1, "", ""),
+            CommandResult(
+                1,
+                "",
+                "Hi example-user! You've successfully authenticated, but GitHub does not provide shell access.\n",
+            ),
+            CommandResult(0, "example-user\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "READY"
+    assert outcome.evidence["ssh_login"] == "example-user"
 
 
 def test_probe_blocks_mismatched_ssh_login(tmp_path) -> None:

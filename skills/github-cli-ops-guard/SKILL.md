@@ -20,6 +20,7 @@ entry: GitHub CLI operation
 operation: push | pr_create | pr_edit | pr_merge | release | issue | discussion | visibility | read_only
 repo: owner/name or local checkout
 expected_owner:
+expected_login:
 active_gh_login:
 remote_owner:
 credential_username:
@@ -39,7 +40,7 @@ If `operation` mutates GitHub state, apply the publication/human-review gate fir
 ```powershell
 python scripts/gh_identity_probe.py --repo <repo-root> --json
 # or skill-local copy:
-python skills/github-cli-ops-guard/scripts/gh_identity_probe.py --repo <repo-root> --json
+python skills/github-cli-ops-guard/scripts/gh_identity_probe.py --repo <repo-root> --expected-owner <owner> --expected-login <login> --json
 ```
 
 3. If the repo has a stronger local preflight, run it too. Prefer repo-local or shared scripts over ad hoc parsing.
@@ -47,7 +48,7 @@ python skills/github-cli-ops-guard/scripts/gh_identity_probe.py --repo <repo-roo
 5. If the only problem is active-account drift and the expected account is already authenticated, run the exact switch command shown by the probe, then rerun the probe:
 
 ```powershell
-gh auth switch --hostname github.com --user <expected_owner>
+gh auth switch --hostname github.com --user <expected_login>
 ```
 
 6. After any GitHub write, verify the result with a read command and rerun the identity check if additional GitHub writes remain.
@@ -76,8 +77,9 @@ GitHub Settings の `Require conversation resolution` と required checks は lo
 
 Stop and explain in human language when any of these are true:
 
-- `gh_active_login` differs from the remote owner or expected owner.
-- `credential_username` differs from the remote owner or expected owner before a GitHub write.
+- `remote_owner` differs from `expected_owner`.
+- `gh_active_login` differs from `expected_login` when a login is specified.
+- HTTPS credential usernameはidentity証拠として扱わない。`x-access-token`を含め、APIが返すloginで検証する。
 - `gh repo view owner/name` cannot resolve a repo that Git remote says should exist.
 - `GITHUB_TOKEN` or `GH_TOKEN` is present and its identity has not been confirmed.
 - Repo visibility is public or unknown and the user did not explicitly approve that target and operation.
@@ -93,7 +95,7 @@ Use proportional recovery, not broad reset:
 | --- | --- | --- |
 | `GraphQL: Could not resolve to a Repository` | active `gh` account cannot see target repo | `gh auth status --hostname github.com`, switch to expected account, rerun probe |
 | push works but `gh pr view` fails | Git credential and `gh` active account differ | align `gh auth switch`, then verify repo view |
-| `gh` is correct but `git clone` or push asks for another account | `credential.https://github.com.username` is fixed globally or locally | prefer repo-local correction: `git config --local credential.https://github.com.username <expected_owner>`, then rerun probe |
+| `gh` is correct but `git clone` or push asks for another account | credential helperまたはtoken identityが異なる | token/API loginを検証し、repo-localな認証設定だけを修正して再実行 |
 | `gh auth switch` succeeds but repo still fails | token scope/session may be stale | run `gh auth status`, consider `gh auth refresh` only after approval if scopes change |
 | wrong owner in remote | checkout is not the intended repo | stop; do not switch accounts to fit the wrong remote |
 | multiple possible expected owners | target is ambiguous | ask one short question before write |

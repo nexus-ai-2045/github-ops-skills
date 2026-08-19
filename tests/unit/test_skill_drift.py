@@ -103,7 +103,26 @@ def test_runtime_selection_honors_runtime_and_skip(tmp_path: Path) -> None:
         row.relative_path == "agents/openai.yaml"
         for row in _compare(ssot, local, "claude")
     )
-    assert _compare(ssot, local, "grok") == []
+    assert ("SKILL.md", "local_only") in {
+        (row.relative_path, row.status) for row in _compare(ssot, local, "grok")
+    }
+
+
+def test_skipped_runtime_detects_complete_stale_deployment(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    (ssot / "alpha").mkdir(parents=True)
+    (local / "alpha").mkdir(parents=True)
+    (ssot / "alpha" / "SKILL.md").write_text("current\n", encoding="utf-8")
+    (local / "alpha" / "SKILL.md").write_text("stale\n", encoding="utf-8")
+    (ssot / "alpha" / "manifest.yaml").write_text(
+        "runtimes:\n  codex:\n    mode: skip\n", encoding="utf-8"
+    )
+    rows = _compare(ssot, local)
+    assert ("SKILL.md", "local_only") in {
+        (row.relative_path, row.status) for row in rows
+    }
+    assert drift_outcome(rows, local_root=str(local)).status is Status.BLOCKED
 
 
 def test_compare_detects_extra_file_inside_managed_skill(tmp_path: Path) -> None:

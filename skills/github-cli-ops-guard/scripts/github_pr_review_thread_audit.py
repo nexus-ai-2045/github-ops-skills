@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 
@@ -13,6 +14,7 @@ query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
   repository(owner:$owner, name:$name) {
     pullRequest(number:$number) {
       headRefOid
+      baseRefOid
       reviewThreads(first:100, after:$cursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -29,6 +31,22 @@ query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
 
 GRAPHQL_TIMEOUT_SECONDS = 30
 MAX_GRAPHQL_PAGES = 100
+TOKEN_PATTERNS = (
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+    re.compile(r"(?i)(Authorization:\s*Bearer\s+)\S+"),
+    re.compile(r"(?i)(GH_TOKEN\s*=\s*)\S+"),
+)
+
+
+def redact(text: str) -> str:
+    result = text
+    for pattern in TOKEN_PATTERNS:
+        result = pattern.sub(
+            lambda match: f"{match.group(1) if match.lastindex else ''}[REDACTED]",
+            result,
+        )
+    return result
 
 
 def comment_title(body: str) -> str:
@@ -64,9 +82,12 @@ def fetch_snapshot(owner: str, name: str, number: int) -> dict:
     pull = payload["data"]["repository"]["pullRequest"]
     if not isinstance(pull["headRefOid"], str) or not pull["headRefOid"]:
         raise ValueError("pull request head oid is missing")
+    if not isinstance(pull["baseRefOid"], str) or not pull["baseRefOid"]:
+        raise ValueError("pull request base oid is missing")
     threads = list(pull["reviewThreads"]["nodes"])
     page = _page_info(pull)
     head_ref_oid = pull["headRefOid"]
+    base_ref_oid = pull["baseRefOid"]
     seen_cursors: set[str] = set()
     page_count = 1
     while page["hasNextPage"]:
@@ -81,6 +102,8 @@ def fetch_snapshot(owner: str, name: str, number: int) -> dict:
         page_pull = page_payload["data"]["repository"]["pullRequest"]
         if page_pull["headRefOid"] != head_ref_oid:
             raise ValueError("pull request head changed during review thread audit")
+        if page_pull["baseRefOid"] != base_ref_oid:
+            raise ValueError("pull request base changed during review thread audit")
         threads.extend(page_pull["reviewThreads"]["nodes"])
         page = _page_info(page_pull)
         page_count += 1
@@ -105,10 +128,13 @@ def main() -> int:
         pull = payload["data"]["repository"]["pullRequest"]
         threads = list(pull["reviewThreads"]["nodes"])
         head_ref_oid = pull["headRefOid"]
+        base_ref_oid = pull["baseRefOid"]
         final_payload = fetch_snapshot(owner, name, args.pr)
         final_pull = final_payload["data"]["repository"]["pullRequest"]
         if final_pull["headRefOid"] != head_ref_oid:
             raise ValueError("pull request head changed during review thread audit")
+        if final_pull["baseRefOid"] != base_ref_oid:
+            raise ValueError("pull request base changed during review thread audit")
         if final_pull["reviewThreads"]["nodes"] != threads:
             raise ValueError("review thread state changed during audit")
         if any(
@@ -133,18 +159,19 @@ def main() -> int:
                         if item["isOutdated"]
                         else "unresolved_current"
                     ),
-                    "path": latest.get("path", ""),
+                    "path": redact(latest.get("path", "")),
                     "line": (
                         latest.get("line")
                         if latest.get("line") is not None
                         else latest.get("originalLine")
                     ),
-                    "title": comment_title(latest.get("body", "")),
+                    "title": redact(comment_title(latest.get("body", ""))),
                 }
             )
         result = {
             "decision": "pass" if current == 0 and outdated == 0 else "warn",
             "head_ref_oid": pull["headRefOid"],
+            "base_ref_oid": pull["baseRefOid"],
             "unresolved_current": current,
             "unresolved_outdated": outdated,
             "threads": unresolved,

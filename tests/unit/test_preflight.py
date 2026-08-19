@@ -13,6 +13,7 @@ def ready_input(**overrides):
         "worktree_paths": ("src/github_ops/preflight.py",),
         "approved_paths": ("src/github_ops/preflight.py",),
         "approval_ref": "current-conversation:approved",
+        "approval_verified": True,
         "operation": "push",
         "expected_visibility": "PRIVATE",
         "branch": "codex/safe-change",
@@ -33,7 +34,13 @@ def test_write_preflight_is_ready_only_when_all_proofs_match() -> None:
 
 def test_missing_current_approval_is_blocked() -> None:
     result = run_preflight(ready_input(approval_ref=None))
-    assert result.code == "approval_missing"
+    assert result.code == "approval_unverified"
+    assert result.status.value == "BLOCKED"
+
+
+def test_untrusted_approval_string_cannot_authorize_a_write() -> None:
+    result = run_preflight(ready_input(approval_ref="approved", approval_verified=False))
+    assert result.code == "approval_unverified"
     assert result.status.value == "BLOCKED"
 
 

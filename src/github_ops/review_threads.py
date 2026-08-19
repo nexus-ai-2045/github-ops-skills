@@ -12,11 +12,14 @@ import subprocess
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from .redaction import redact
+
 THREAD_QUERY = """
 query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
   repository(owner:$owner, name:$name) {
     pullRequest(number:$number) {
       headRefOid
+      baseRefOid
       reviewThreads(first:100, after:$cursor) {
         pageInfo {
           hasNextPage
@@ -65,6 +68,7 @@ class ThreadSummary:
 class AuditResult:
     decision: str
     head_ref_oid: str
+    base_ref_oid: str
     resolved: int
     unresolved_current: int
     unresolved_outdated: int
@@ -97,6 +101,9 @@ def summarize(payload: dict[str, Any]) -> AuditResult:
     head_ref_oid = pull_request["headRefOid"]
     if not isinstance(head_ref_oid, str) or not head_ref_oid:
         raise ValueError("pull request head oid is missing")
+    base_ref_oid = pull_request["baseRefOid"]
+    if not isinstance(base_ref_oid, str) or not base_ref_oid:
+        raise ValueError("pull request base oid is missing")
     summaries: list[ThreadSummary] = []
     resolved = 0
     unresolved_current = 0
@@ -125,14 +132,14 @@ def summarize(payload: dict[str, Any]) -> AuditResult:
             ThreadSummary(
                 id=thread["id"],
                 state=state,
-                path=latest_comment.get("path", ""),
+                path=redact(latest_comment.get("path", "")),
                 line=(
                     latest_comment.get("line")
                     if latest_comment.get("line") is not None
                     else latest_comment.get("originalLine")
                 ),
                 author=(latest_comment.get("author") or {}).get("login", ""),
-                title=comment_title(latest_comment.get("body", "")),
+                title=redact(comment_title(latest_comment.get("body", ""))),
                 commit=(latest_comment.get("commit") or {}).get("oid", ""),
                 original_commit=(latest_comment.get("originalCommit") or {}).get(
                     "oid", ""
@@ -148,6 +155,7 @@ def summarize(payload: dict[str, Any]) -> AuditResult:
     return AuditResult(
         decision=decision,
         head_ref_oid=head_ref_oid,
+        base_ref_oid=base_ref_oid,
         resolved=resolved,
         unresolved_current=unresolved_current,
         unresolved_outdated=unresolved_outdated,
@@ -161,6 +169,7 @@ def error_result(message: str) -> AuditResult:
     return AuditResult(
         decision="error",
         head_ref_oid="",
+        base_ref_oid="",
         resolved=0,
         unresolved_current=0,
         unresolved_outdated=0,
@@ -208,6 +217,9 @@ def _fetch_snapshot(repo: str, number: int) -> dict[str, Any]:
     head_ref_oid = pull_request["headRefOid"]
     if not isinstance(head_ref_oid, str) or not head_ref_oid:
         raise ValueError("pull request head oid is missing")
+    base_ref_oid = pull_request["baseRefOid"]
+    if not isinstance(base_ref_oid, str) or not base_ref_oid:
+        raise ValueError("pull request base oid is missing")
     seen_cursors: set[str] = set()
     page_count = 1
 
@@ -223,6 +235,8 @@ def _fetch_snapshot(repo: str, number: int) -> dict[str, Any]:
         pull_request_page = payload_page["data"]["repository"]["pullRequest"]
         if pull_request_page["headRefOid"] != head_ref_oid:
             raise ValueError("pull request head changed during review thread audit")
+        if pull_request_page["baseRefOid"] != base_ref_oid:
+            raise ValueError("pull request base changed during review thread audit")
         all_threads.extend(pull_request_page["reviewThreads"]["nodes"])
         page_info = _page_info(pull_request_page)
         page_count += 1
@@ -239,6 +253,8 @@ def fetch(repo: str, number: int) -> dict[str, Any]:
     second_pull = second["data"]["repository"]["pullRequest"]
     if first_pull["headRefOid"] != second_pull["headRefOid"]:
         raise ValueError("pull request head changed during review thread audit")
+    if first_pull["baseRefOid"] != second_pull["baseRefOid"]:
+        raise ValueError("pull request base changed during review thread audit")
     if first_pull["reviewThreads"]["nodes"] != second_pull["reviewThreads"]["nodes"]:
         raise ValueError("review thread state changed during audit")
     return second

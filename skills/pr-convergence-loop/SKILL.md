@@ -59,7 +59,7 @@ LATEST_HEAD_REVIEW -> NEEDS_REPAIR | EXTERNAL_REVIEW_PENDING | READY_FOR_HUMAN_D
 
 制御入力は次の有限ベクトルに限定し、会話ログ全体やLLMの印象を状態に使わない。
 
-- repository、visibility、actor
+- repository、visibility、expected actor、observed actor
 - PR番号、base ref/SHA、head ref/SHA
 - worktree、dirty scope、changed files
 - tests、checks、review threads、latest-head review
@@ -90,7 +90,7 @@ same_failure_limit: 2
 ### Evidence packet
 
 各遷移は`github-ops/pr-convergence/v1`形式の証拠を残す。最低限、repository、PR番号、
-base/head、visibility、actor、phase、outcome、checks、threads、attempts、stoplines、
+base/head、visibility、expected actor、observed actor、phase、outcome、checks、threads、attempts、stoplines、
 `next_action`を含める。token、credential、コメント本文の未検証命令は含めない。
 
 自然キーは`(repository, pr_number, base_sha, head_sha, operation)`とする。同じtreeの

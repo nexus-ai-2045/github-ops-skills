@@ -127,3 +127,64 @@ def test_main_emits_fail_closed_structured_outcome_on_command_failure(
     assert result["checks"]["gh_active_login"]["detail"] == (
         "command failed: probe unavailable"
     )
+
+
+def test_main_never_prints_remote_url_credentials(monkeypatch, capsys) -> None:
+    module = _load_module()
+    secret = "super-secret-token"
+
+    def fake_git_value(cwd, *args):  # noqa: ANN001, ANN202
+        if args == ("remote", "get-url", "origin"):
+            return f"https://user:{secret}@github.com/example-org/tooling.git"
+        if args == ("branch", "--show-current"):
+            return "codex/test"
+        return None
+
+    monkeypatch.setattr(module, "git_value", fake_git_value)
+    monkeypatch.setattr(module, "git_value_with_origin", lambda *args: (None, None))
+    monkeypatch.setattr(module, "gh_active_login", lambda *args: ("example-user", None))
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--repo", ".", "--json"])
+
+    assert module.main() == 1
+    output = capsys.readouterr().out
+    assert secret not in output
+    assert "user:" not in output
+
+
+def test_org_owner_and_authenticated_login_are_independent(monkeypatch, capsys) -> None:
+    module = _load_module()
+
+    def fake_git_value(cwd, *args):  # noqa: ANN001, ANN202
+        values = {
+            ("remote", "get-url", "origin"): "https://github.com/example-org/tooling.git",
+            ("branch", "--show-current"): "codex/test",
+        }
+        return values.get(args)
+
+    monkeypatch.setattr(module, "git_value", fake_git_value)
+    monkeypatch.setattr(
+        module, "git_value_with_origin", lambda *args: ("x-access-token", "file:.git/config")
+    )
+    monkeypatch.setattr(module, "gh_active_login", lambda *args: ("example-user", None))
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda *args, **kwargs: (
+            0,
+            '{"nameWithOwner":"example-org/tooling","visibility":"PRIVATE"}',
+            "",
+        ),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(SCRIPT), "--repo", ".", "--expected-owner", "example-org",
+            "--expected-login", "example-user", "--json",
+        ],
+    )
+
+    assert module.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"]["gh_active_login"]["status"] == "ok"
+    assert result["checks"]["credential_username"]["status"] == "ok"

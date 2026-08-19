@@ -21,6 +21,7 @@ class PreflightInput:
     worktree_paths: tuple[str, ...]
     approved_paths: tuple[str, ...]
     approval_ref: str | None
+    approval_verified: bool = False
     operation: str = "push"
     expected_visibility: str = "PRIVATE"
     branch: str | None = None
@@ -43,6 +44,7 @@ def run_preflight(data: PreflightInput) -> Outcome:
         "worktree_paths": [redact(path) for path in data.worktree_paths],
         "approved_paths": [redact(path) for path in data.approved_paths],
         "approval_present": bool(data.approval_ref),
+        "approval_verified": data.approval_verified,
         "operation": data.operation,
         "expected_visibility": data.expected_visibility,
         "branch": data.branch,
@@ -52,12 +54,12 @@ def run_preflight(data: PreflightInput) -> Outcome:
         "remote_head_sha": data.remote_head_sha,
         "fast_forward_verified": data.fast_forward_verified,
     }
-    if not data.approval_ref:
+    if not data.approval_ref or data.approval_verified is not True:
         return _blocked(
-            "approval_missing",
-            "現在会話の承認参照がありません",
+            "approval_unverified",
+            "現在会話の承認を信頼できる呼出元で検証できません",
             "GitHub書き込みは実行しません",
-            "対象操作の承認を取得し、approval referenceを渡してください",
+            "対象repository・operation・branch・HEADへ束縛した承認をオーケストレーターで検証してください",
             evidence,
         )
     unknown_fields = [

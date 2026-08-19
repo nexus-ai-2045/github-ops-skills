@@ -22,6 +22,7 @@ class ConvergenceSnapshot:
     pr_number: int
     visibility: str
     actor: str
+    expected_actor: str
     base_ref: str
     base_sha: str
     head_ref: str
@@ -44,6 +45,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "pr_number": snapshot.pr_number,
         "visibility": snapshot.visibility,
         "actor": snapshot.actor,
+        "expected_actor": snapshot.expected_actor,
         "base_ref": snapshot.base_ref,
         "base_sha": snapshot.base_sha,
         "head_ref": snapshot.head_ref,
@@ -62,6 +64,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     required = {
         "repository": snapshot.repository,
         "actor": snapshot.actor,
+        "expected_actor": snapshot.expected_actor,
         "base_ref": snapshot.base_ref,
         "base_sha": snapshot.base_sha,
         "head_ref": snapshot.head_ref,
@@ -98,6 +101,9 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     if snapshot.visibility != "PRIVATE":
         return _outcome(Status.BLOCKED, "private_boundary_failed", ConvergencePhase.PREFLIGHT,
                         "repositoryがPRIVATEであることを確認できません", evidence)
+    if snapshot.actor != snapshot.expected_actor:
+        return _outcome(Status.BLOCKED, "actor_mismatch", ConvergencePhase.PREFLIGHT,
+                        "GitHub actorがexpected actorと一致しません", evidence)
     if snapshot.head_ref == snapshot.default_branch:
         return _outcome(Status.BLOCKED, "default_branch_write_forbidden", ConvergencePhase.PREFLIGHT,
                         "PR headがdefault branchです", evidence)
@@ -113,7 +119,11 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     if snapshot.checks_head_sha != snapshot.head_sha:
         return _outcome(Status.UNKNOWN, "checks_head_mismatch", ConvergencePhase.CI_WAIT,
                         "CI証拠を同一head SHAへ束縛できません", evidence)
-    if snapshot.unresolved_threads < 0:
+    if (
+        not isinstance(snapshot.unresolved_threads, int)
+        or isinstance(snapshot.unresolved_threads, bool)
+        or snapshot.unresolved_threads < 0
+    ):
         return _outcome(Status.UNKNOWN, "thread_count_invalid", ConvergencePhase.LATEST_HEAD_REVIEW,
                         "review thread件数が不正です", evidence)
     if snapshot.unresolved_threads:

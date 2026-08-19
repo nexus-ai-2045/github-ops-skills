@@ -46,6 +46,7 @@ def test_json_output_includes_unresolved_thread_details(
             "repository": {
                 "pullRequest": {
                     "headRefOid": "abc123",
+                    "baseRefOid": "base123",
                     "reviewThreads": {
                         "pageInfo": {"hasNextPage": False, "endCursor": None},
                         "nodes": [
@@ -77,6 +78,7 @@ def test_json_output_includes_unresolved_thread_details(
     )
     assert module.main() == 1
     result = json.loads(capsys.readouterr().out)
+    assert result["base_ref_oid"] == "base123"
     assert result["threads"] == [
         {
             "id": "thread-1",
@@ -93,6 +95,7 @@ def test_audit_fetches_every_page_in_both_snapshots(monkeypatch, capsys) -> None
     first = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "abc123",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
                 "nodes": [],
@@ -102,6 +105,7 @@ def test_audit_fetches_every_page_in_both_snapshots(monkeypatch, capsys) -> None
     second = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "abc123",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": False, "endCursor": None},
                 "nodes": [],
@@ -128,6 +132,7 @@ def test_audit_rejects_head_change_during_pagination(monkeypatch, capsys) -> Non
     first = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "abc123",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
                 "nodes": [],
@@ -137,6 +142,7 @@ def test_audit_rejects_head_change_during_pagination(monkeypatch, capsys) -> Non
     second = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "changed",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": False, "endCursor": None},
                 "nodes": [],
@@ -160,6 +166,7 @@ def test_audit_rejects_repeated_pagination_cursor(monkeypatch, capsys) -> None:
     payload = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "abc123",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
                 "nodes": [],
@@ -215,6 +222,7 @@ def test_audit_rejects_non_boolean_thread_state(monkeypatch, capsys) -> None:
     payload = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "abc123",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": False, "endCursor": None},
                 "nodes": [{
@@ -241,6 +249,7 @@ def test_audit_rejects_head_change_after_last_page(monkeypatch, capsys) -> None:
     initial = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "abc123",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": False, "endCursor": None},
                 "nodes": [],
@@ -250,6 +259,7 @@ def test_audit_rejects_head_change_after_last_page(monkeypatch, capsys) -> None:
     changed = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "changed",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": False, "endCursor": None},
                 "nodes": [],
@@ -272,6 +282,7 @@ def test_audit_rejects_thread_change_between_snapshots(monkeypatch, capsys) -> N
     initial = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "abc123",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": False, "endCursor": None},
                 "nodes": [],
@@ -281,6 +292,7 @@ def test_audit_rejects_thread_change_between_snapshots(monkeypatch, capsys) -> N
     changed = {
         "data": {"repository": {"pullRequest": {
             "headRefOid": "abc123",
+            "baseRefOid": "base123",
             "reviewThreads": {
                 "pageInfo": {"hasNextPage": False, "endCursor": None},
                 "nodes": [{
@@ -301,3 +313,59 @@ def test_audit_rejects_thread_change_between_snapshots(monkeypatch, capsys) -> N
     result = json.loads(capsys.readouterr().out)
     assert result["decision"] == "error"
     assert "thread state changed" in result["errors"][0]
+
+
+def test_audit_rejects_base_change_between_snapshots(monkeypatch, capsys) -> None:
+    module = _load_module()
+    initial = {
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "abc123",
+            "baseRefOid": "base123",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [],
+            },
+        }}}
+    }
+    changed = deepcopy(initial)
+    changed["data"]["repository"]["pullRequest"]["baseRefOid"] = "changed"
+    payloads = iter((initial, changed))
+    monkeypatch.setattr(module, "graphql", lambda *args: next(payloads))
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", "owner/repo", "--pr", "3", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert "base changed" in result["errors"][0]
+
+
+def test_json_output_redacts_secrets_in_thread_details(monkeypatch, capsys) -> None:
+    module = _load_module()
+    token = "ghp_" + ("A" * 24)
+    payload = {
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "abc123",
+            "baseRefOid": "base123",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [{
+                    "id": "thread-1",
+                    "isResolved": False,
+                    "isOutdated": False,
+                    "comments": {"nodes": [{
+                        "body": f"Do not print {token}",
+                        "path": f"logs/{token}.txt",
+                        "line": 1,
+                    }]},
+                }],
+            },
+        }}}
+    }
+    monkeypatch.setattr(module, "graphql", lambda *args: deepcopy(payload))
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", "owner/repo", "--pr", "3", "--json"]
+    )
+    assert module.main() == 1
+    output = capsys.readouterr().out
+    assert token not in output
+    assert "[REDACTED]" in output

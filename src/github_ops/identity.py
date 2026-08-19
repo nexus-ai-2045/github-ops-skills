@@ -178,7 +178,12 @@ class IdentityProbe:
         credential_username: str | None = None
         ssh_login: str | None = None
         push_is_https = urlparse(push_url).scheme.casefold() == "https"
-        push_is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url))
+        parsed_push_transport = urlparse(push_url)
+        push_is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url)) or (
+            parsed_push_transport.scheme.casefold() == "ssh"
+            and parsed_push_transport.hostname == "github.com"
+            and parsed_push_transport.username == "git"
+        )
         if expected_login and push_is_https:
             parsed_push_url = urlparse(push_url)
             credential_protocol = parsed_push_url.scheme.casefold()
@@ -367,7 +372,18 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
         return ssh_match.group("owner"), ssh_match.group("name")
     parsed = urlparse(remote_url)
     if (
-        parsed.scheme != "https"
+        parsed.scheme.casefold() == "ssh"
+        and parsed.hostname == "github.com"
+        and parsed.username == "git"
+        and not parsed.password
+        and not parsed.query
+        and not parsed.fragment
+    ):
+        parts = [part for part in parsed.path.strip("/").split("/") if part]
+        if len(parts) == 2:
+            return parts[0], parts[1].removesuffix(".git")
+    if (
+        parsed.scheme.casefold() != "https"
         or parsed.hostname != "github.com"
         or parsed.username
         or parsed.password

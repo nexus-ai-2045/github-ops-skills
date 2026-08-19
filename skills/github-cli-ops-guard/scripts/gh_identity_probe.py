@@ -122,7 +122,8 @@ def gh_active_login(cwd: Path) -> tuple[str | None, str | None]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe gh active identity against a local GitHub repo.")
     parser.add_argument("--repo", default=".", help="local repository root")
-    parser.add_argument("--expected-owner", help="expected GitHub owner/login; defaults to remote owner")
+    parser.add_argument("--expected-owner", help="expected GitHub repository owner; defaults to remote owner")
+    parser.add_argument("--expected-login", help="expected authenticated GitHub login")
     parser.add_argument("--json", action="store_true", help="emit JSON")
     args = parser.parse_args()
 
@@ -130,6 +131,7 @@ def main() -> int:
     remote_url = git_value(cwd, "remote", "get-url", "origin")
     remote_owner, remote_repo = parse_remote_owner(remote_url)
     expected_owner = args.expected_owner or remote_owner
+    expected_login = args.expected_login
     credential_username, credential_origin = git_value_with_origin(cwd, "credential.https://github.com.username")
     branch = git_value(cwd, "branch", "--show-current")
     git_author_name = git_value(cwd, "config", "--get", "user.name")
@@ -154,16 +156,20 @@ def main() -> int:
 
     token_env_present = any(os.environ.get(name) for name in ["GITHUB_TOKEN", "GH_TOKEN"])
     checks = {
-        "remote_url": {"status": "ok" if remote_url else "error", "value": remote_url},
+        # Never expose URL userinfo, query, or fragments. The strict parser
+        # already reduced a supported remote to owner/repository.
+        "remote_url": {"status": "ok" if remote_url else "error", "value": repo_full_name},
         "remote_owner": {"status": "ok" if remote_owner else "error", "value": remote_owner},
         "expected_owner": {"status": "ok" if expected_owner else "error", "value": expected_owner},
         "gh_active_login": {
-            "status": "ok" if active_login and (not expected_owner or active_login == expected_owner) else "error",
+            "status": "ok" if active_login and (not expected_login or active_login == expected_login) else "error",
             "value": active_login,
             "detail": active_error,
         },
         "credential_username": {
-            "status": "ok" if not credential_username or not expected_owner or credential_username == expected_owner else "error",
+            # HTTPS usernames (including x-access-token) are not identities.
+            # gh_active_login is the authenticated API identity evidence.
+            "status": "ok",
             "value": credential_username,
             "detail": credential_origin,
         },
@@ -186,12 +192,10 @@ def main() -> int:
         status = "warning"
 
     next_command = None
-    if expected_owner and active_login and active_login != expected_owner:
-        next_command = f"gh auth switch --hostname github.com --user {expected_owner}"
-    elif expected_owner and credential_username and credential_username != expected_owner:
-        next_command = f"git config --local credential.https://github.com.username {expected_owner}"
-    elif expected_owner and not active_login:
-        next_command = f"gh auth login --hostname github.com --git-protocol https  # then select/login {expected_owner}"
+    if expected_login and active_login and active_login != expected_login:
+        next_command = f"gh auth switch --hostname github.com --user {expected_login}"
+    elif expected_login and not active_login:
+        next_command = f"gh auth login --hostname github.com --git-protocol https  # then select/login {expected_login}"
 
     result = {
         "status": status,

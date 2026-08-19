@@ -57,6 +57,7 @@ def test_pr_convergence_cli_runs_from_checkout() -> None:
         "pr_number": 3,
         "visibility": "PRIVATE",
         "actor": "nexus-ai-2045",
+        "expected_actor": "nexus-ai-2045",
         "base_ref": "main",
         "base_sha": "b" * 40,
         "head_ref": "codex/test",

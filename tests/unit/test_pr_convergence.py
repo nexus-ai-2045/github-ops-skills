@@ -10,6 +10,7 @@ def snapshot(**overrides) -> ConvergenceSnapshot:
         "pr_number": 3,
         "visibility": "PRIVATE",
         "actor": "nexus-ai-2045",
+        "expected_actor": "nexus-ai-2045",
         "base_ref": "main",
         "base_sha": "b" * 40,
         "head_ref": "codex/ops-hardening-drift-absorb",
@@ -55,6 +56,17 @@ def test_unresolved_review_requires_verified_repair() -> None:
     result = decide_next_step(snapshot(unresolved_threads=1))
     assert result.code == "review_threads_unresolved"
     assert result.evidence["phase"] == "NEEDS_REPAIR"
+
+
+def test_non_integer_thread_count_is_rejected() -> None:
+    assert decide_next_step(snapshot(unresolved_threads=False)).code == "thread_count_invalid"
+    assert decide_next_step(snapshot(unresolved_threads=0.0)).code == "thread_count_invalid"
+
+
+def test_actor_must_match_expected_actor() -> None:
+    result = decide_next_step(snapshot(actor="other-user"))
+    assert result.code == "actor_mismatch"
+    assert result.status.value == "BLOCKED"
 
 
 def test_review_must_match_exact_head() -> None:

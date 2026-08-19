@@ -14,9 +14,9 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/scripts/github_pr_review_thread_audit.py",
       "target_path": "skills/github-cli-ops-guard/scripts/github_pr_review_thread_audit.py",
-      "sha256": "46f2a971441e57db172a62ebac6a6f785392f7c3fe8afffdf109fb7bb0dfdc79",
+      "sha256": "bcf28a321c48d11a70d445a602f294af84b856e365048546f94322778e02b507",
       "source_sha256": "f147a7c95241887244886477d2aae8206df7d6b8476ac2cf13b66bf1c8abab2c",
-      "target_sha256": "46f2a971441e57db172a62ebac6a6f785392f7c3fe8afffdf109fb7bb0dfdc79",
+      "target_sha256": "bcf28a321c48d11a70d445a602f294af84b856e365048546f94322778e02b507",
       "normalized": true
     },
     {
@@ -77,18 +77,18 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
       "target_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
-      "sha256": "c5e8646702e0285ed217bf6b21ba6e3c1663ba07c7e28a3e666449cddaa7e261",
+      "sha256": "014d70b15610ed662cea3d74c7f4193d439a3de1aa95ded81f75657f376a51d4",
       "source_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
-      "target_sha256": "c5e8646702e0285ed217bf6b21ba6e3c1663ba07c7e28a3e666449cddaa7e261",
+      "target_sha256": "014d70b15610ed662cea3d74c7f4193d439a3de1aa95ded81f75657f376a51d4",
       "normalized": true
     },
     {
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/SKILL.md",
       "target_path": "skills/github-cli-ops-guard/SKILL.md",
-      "sha256": "dfd236c6cc40152595070943c38de407b7419db0db75aaa1d6b92b588bc164f8",
+      "sha256": "9c55e12c24080b6eafea2819cee13db162ebbf817e7f17c716cc4d5e1cb0df5f",
       "source_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
-      "target_sha256": "dfd236c6cc40152595070943c38de407b7419db0db75aaa1d6b92b588bc164f8",
+      "target_sha256": "9c55e12c24080b6eafea2819cee13db162ebbf817e7f17c716cc4d5e1cb0df5f",
       "normalized": true
     },
     {
@@ -230,9 +230,9 @@
       "source_root": "shared",
       "source_path": "skills/pr-convergence-loop/SKILL.md",
       "target_path": "skills/pr-convergence-loop/SKILL.md",
-      "sha256": "b2144bbab705d7c8387cc9f5bc8e08b48e0e913675b21332bbd4fbfc6073ed2c",
+      "sha256": "ccafde31899941560bcfb924c8d6a88864f838adf469135df8dd1c9ee035e80f",
       "source_sha256": "a691ab04c0a439c59490b28fa697dfccf59e82fba3d34037043ba28c86a547da",
-      "target_sha256": "b2144bbab705d7c8387cc9f5bc8e08b48e0e913675b21332bbd4fbfc6073ed2c",
+      "target_sha256": "ccafde31899941560bcfb924c8d6a88864f838adf469135df8dd1c9ee035e80f",
       "normalized": true
     }
   ]

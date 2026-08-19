@@ -126,6 +126,9 @@ def _run(args: argparse.Namespace) -> dict:
                 worktree_paths=worktree_paths,
                 approved_paths=tuple(args.approved_path),
                 approval_ref=args.approval_ref,
+                # An arbitrary CLI string cannot prove a current-conversation
+                # approval. Trusted orchestration must verify it in-process.
+                approval_verified=False,
                 operation=args.operation,
                 expected_visibility="PRIVATE",
                 branch=branch_name,

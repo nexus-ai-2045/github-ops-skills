@@ -12,6 +12,7 @@ def _payload(*threads: dict) -> dict:
             "repository": {
                 "pullRequest": {
                     "headRefOid": "abc123",
+                    "baseRefOid": "base123",
                     "reviewThreads": {
                         "pageInfo": {
                             "hasNextPage": False,
@@ -50,6 +51,7 @@ def _thread(*, resolved: bool, outdated: bool, title: str = "Use token matching"
 def test_summarize_passes_when_all_threads_are_resolved() -> None:
     result = summarize(_payload(_thread(resolved=True, outdated=False)))
     assert result.decision == "pass"
+    assert result.base_ref_oid == "base123"
     assert result.resolved == 1
     assert result.unresolved_current == 0
     assert result.unresolved_outdated == 0
@@ -233,8 +235,25 @@ def test_fetch_rejects_thread_change_between_snapshots(monkeypatch) -> None:
         raise AssertionError("review thread mutation must fail closed")
 
 
+def test_fetch_rejects_base_change_between_snapshots(monkeypatch) -> None:
+    initial = _payload()
+    changed = _payload()
+    changed["data"]["repository"]["pullRequest"]["baseRefOid"] = "changed"
+    payloads = iter((initial, changed))
+    monkeypatch.setattr(
+        "github_ops.review_threads.graphql", lambda *args: next(payloads)
+    )
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "base changed" in str(exc)
+    else:
+        raise AssertionError("base mutation must fail closed")
+
+
 def test_query_requests_latest_comment_only() -> None:
     assert "comments(last:1)" in THREAD_QUERY
+    assert "baseRefOid" in THREAD_QUERY
 
 
 def test_graphql_omits_cursor_on_initial_request(monkeypatch) -> None:
@@ -263,3 +282,13 @@ def test_summarize_falls_back_to_original_line_for_outdated_comment() -> None:
     thread["comments"]["nodes"][0]["line"] = None
     result = summarize(_payload(thread))
     assert result.threads[0].line == 10
+
+
+def test_summarize_redacts_secrets_from_emitted_path_and_title() -> None:
+    token = "ghp_" + ("A" * 24)
+    thread = _thread(resolved=False, outdated=False, title=f"Do not log {token}")
+    thread["comments"]["nodes"][0]["path"] = f"logs/{token}.txt"
+    result = summarize(_payload(thread))
+    assert token not in result.threads[0].title
+    assert token not in result.threads[0].path
+    assert "[REDACTED]" in result.threads[0].title

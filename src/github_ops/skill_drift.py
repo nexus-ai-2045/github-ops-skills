@@ -83,8 +83,6 @@ def compare_skill_roots(
                 )
             )
             continue
-        if not mappings:
-            continue
         expected_local_paths = {relative for relative, _ in mappings}
         for relative, source_relative in mappings:
             ssot_path = ssot_skills_root / skill / source_relative
