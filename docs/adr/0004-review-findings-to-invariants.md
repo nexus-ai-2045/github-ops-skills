@@ -21,4 +21,3 @@ PRごとのreviewコメントだけでは、同型不具合を別機能や別rep
 
 同型findingは新しいコメント知識ではなく、既存IDのtestまたはenforcement強化として扱える。
 CIは再発を機械的に止めるが、GitHub Settings変更やconsumer配布を暗黙には実行しない。
-
