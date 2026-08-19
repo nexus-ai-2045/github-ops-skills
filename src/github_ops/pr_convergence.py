@@ -86,7 +86,9 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         sha_values["latest_review_base_sha"] = snapshot.latest_review_base_sha
     invalid = [name for name, value in sha_values.items() if not re.fullmatch(r"[0-9a-f]{40}", value)]
     if (
-        snapshot.pr_number <= 0
+        not isinstance(snapshot.pr_number, int)
+        or isinstance(snapshot.pr_number, bool)
+        or snapshot.pr_number <= 0
         or not re.fullmatch(r"[^/\s]+/[^/\s]+", snapshot.repository)
         or invalid
         or not isinstance(snapshot.repair_cycles, int)

@@ -159,7 +159,10 @@ def main() -> int:
         # Never expose URL userinfo, query, or fragments. The strict parser
         # already reduced a supported remote to owner/repository.
         "remote_url": {"status": "ok" if remote_url else "error", "value": repo_full_name},
-        "remote_owner": {"status": "ok" if remote_owner else "error", "value": remote_owner},
+        "remote_owner": {
+            "status": "ok" if remote_owner and remote_owner == expected_owner else "error",
+            "value": remote_owner,
+        },
         "expected_owner": {"status": "ok" if expected_owner else "error", "value": expected_owner},
         "gh_active_login": {
             "status": "ok" if active_login and (not expected_login or active_login == expected_login) else "error",

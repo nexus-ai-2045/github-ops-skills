@@ -58,5 +58,9 @@ jobs:
           fi
       - name: Codex adapterを検証
         run: python adapters/codex/verify_adapter.py
+      - name: source manifest target hashを検証
+        run: python scripts/verify_source_manifest_targets.py
+      - name: review invariant registryを検証
+        run: python scripts/verify_invariant_registry.py
       - name: Claude adapterを検証
         run: python adapters/claude/verify_adapter.py

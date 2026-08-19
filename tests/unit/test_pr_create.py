@@ -59,6 +59,7 @@ def _preflight_ready() -> list[CommandResult]:
     return [
         CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
         CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+        CommandResult(1, "", ""),
         CommandResult(
             0,
             "protocol=https\nhost=github.com\nusername=example-user\npassword=hidden\n",
@@ -133,6 +134,7 @@ def test_blocks_when_identity_preflight_fails(tmp_path: Path) -> None:
         [
             CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
             CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(1, "", ""),
             CommandResult(
                 0,
                 "protocol=https\nhost=github.com\nusername=example-user\npassword=hidden\n",
@@ -232,7 +234,7 @@ def test_read_back_mismatch_is_unknown_without_edit(tmp_path: Path) -> None:
     )
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_read_back_mismatch"
-    assert len(runner.calls) == 12
+    assert len(runner.calls) == 13
 
 
 def test_origin_repository_must_match_repo_argument(tmp_path: Path) -> None:
@@ -240,6 +242,7 @@ def test_origin_repository_must_match_repo_argument(tmp_path: Path) -> None:
         [
             CommandResult(0, "https://github.com/example-org/other.git\n", ""),
             CommandResult(0, "https://github.com/example-org/other.git\n", ""),
+            CommandResult(1, "", ""),
             CommandResult(
                 0,
                 "protocol=https\nhost=github.com\nusername=example-user\npassword=hidden\n",
@@ -293,7 +296,7 @@ def test_invalid_expected_visibility_is_blocked_before_commands(tmp_path: Path) 
 
 def test_live_remote_base_mismatch_is_blocked(tmp_path: Path) -> None:
     responses = _preflight_ready()
-    responses[7] = CommandResult(0, f"{'c' * 40}\trefs/heads/main\n", "")
+    responses[8] = CommandResult(0, f"{'c' * 40}\trefs/heads/main\n", "")
     runner = FakeRunner(responses)
     outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
     assert outcome.code == "pr_preflight_mismatch"
@@ -319,7 +322,7 @@ def test_read_back_base_sha_mismatch_is_unknown(tmp_path: Path) -> None:
 
 def test_non_default_base_branch_is_supported(tmp_path: Path) -> None:
     responses = _preflight_ready()
-    responses[7] = CommandResult(0, f"{BASE_SHA}\trefs/heads/develop\n", "")
+    responses[8] = CommandResult(0, f"{BASE_SHA}\trefs/heads/develop\n", "")
     body = _body_file(tmp_path).read_text(encoding="utf-8")
     url = "https://github.com/example-org/tooling/pull/12"
     read_back = _read_back("PR日本語gateを追加", body, url)

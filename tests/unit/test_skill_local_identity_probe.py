@@ -188,3 +188,31 @@ def test_org_owner_and_authenticated_login_are_independent(monkeypatch, capsys) 
     result = json.loads(capsys.readouterr().out)
     assert result["checks"]["gh_active_login"]["status"] == "ok"
     assert result["checks"]["credential_username"]["status"] == "ok"
+
+
+def test_expected_owner_mismatch_is_an_error(monkeypatch, capsys) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "git_value",
+        lambda cwd, *args: (
+            "https://github.com/actual-org/tooling.git"
+            if args == ("remote", "get-url", "origin")
+            else "codex/test"
+            if args == ("branch", "--show-current")
+            else None
+        ),
+    )
+    monkeypatch.setattr(module, "git_value_with_origin", lambda *args: (None, None))
+    monkeypatch.setattr(module, "gh_active_login", lambda *args: ("example-user", None))
+    monkeypatch.setattr(
+        module, "run", lambda *args, **kwargs: (
+            0, '{"nameWithOwner":"actual-org/tooling","visibility":"PRIVATE"}', ""
+        )
+    )
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", ".", "--expected-owner", "other-org", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"]["remote_owner"]["status"] == "error"

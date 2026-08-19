@@ -10,9 +10,12 @@ from github_ops.identity import IdentityProbe, parse_github_remote
 class FakeRunner:
     results: list[CommandResult]
     calls: list[dict] = field(default_factory=list)
+    http_extra_headers: CommandResult | None = None
 
     def run(self, argv, **kwargs):
         self.calls.append({"argv": list(argv), **kwargs})
+        if list(argv[:3]) == ["git", "config", "--get-regexp"]:
+            return self.http_extra_headers or CommandResult(1, "", "")
         return self.results.pop(0)
 
 
@@ -77,7 +80,7 @@ def test_probe_blocks_mismatched_git_credential_token_owner(tmp_path) -> None:
     assert outcome.status.value == "BLOCKED"
     assert outcome.code == "token_login_mismatch"
     assert outcome.evidence["token_login"] == "other-user"
-    assert runner.calls[3]["scoped_env"] == {
+    assert runner.calls[4]["scoped_env"] == {
         "GH_HOST": "github.com",
         "GH_TOKEN": "hidden",
     }
@@ -100,6 +103,27 @@ def test_probe_accepts_x_access_token_username_when_token_owner_matches(tmp_path
     )
     assert outcome.status.value == "READY"
     assert outcome.evidence["credential_username"] == "x-access-token"
+
+
+def test_probe_blocks_http_authorization_header_override(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+        ],
+        http_extra_headers=CommandResult(
+            0,
+            "http.https://github.com/.extraHeader Authorization: Basic hidden\n",
+            "",
+        ),
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "http_auth_override_unsupported"
 
 
 def test_probe_stops_when_git_credential_has_no_token(tmp_path) -> None:
@@ -298,6 +322,6 @@ def test_probe_uses_exact_push_url_path_for_https_credential(tmp_path) -> None:
         expected_login="example-user",
     )
     assert outcome.status.value == "READY"
-    assert runner.calls[2]["input_text"] == (
+    assert runner.calls[3]["input_text"] == (
         "protocol=https\nhost=github.com\npath=example-org/tooling\n\n"
     )

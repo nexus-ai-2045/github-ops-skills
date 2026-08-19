@@ -162,6 +162,17 @@ def compare_skill_roots(
                 )
             )
         local_skill_root = local_skills_root / skill
+        if _has_unsafe_component(local_skills_root, local_skill_root):
+            rows.append(
+                SkillFileDrift(
+                    skill=skill,
+                    relative_path=".",
+                    ssot_sha256=None,
+                    local_sha256=None,
+                    status="unsafe_local_symlink",
+                )
+            )
+            continue
         if local_skill_root.is_dir():
             try:
                 local_candidates = sorted(local_skill_root.rglob("*"))

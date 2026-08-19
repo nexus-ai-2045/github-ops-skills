@@ -100,6 +100,7 @@ def test_missing_review_outcome_is_unknown() -> None:
 
 def test_invalid_pr_number_and_short_sha_are_rejected() -> None:
     assert decide_next_step(snapshot(pr_number=0)).code == "snapshot_invalid"
+    assert decide_next_step(snapshot(pr_number=True)).code == "snapshot_invalid"
     assert decide_next_step(snapshot(head_sha="abc", checks_head_sha="abc", latest_review_head_sha="abc")).code == "snapshot_invalid"
 
 

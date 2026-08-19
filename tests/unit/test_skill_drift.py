@@ -125,6 +125,24 @@ def test_skipped_runtime_detects_complete_stale_deployment(tmp_path: Path) -> No
     assert drift_outcome(rows, local_root=str(local)).status is Status.BLOCKED
 
 
+def test_symlinked_local_skill_root_is_rejected_before_recursive_scan(tmp_path: Path) -> None:
+    ssot = tmp_path / "ssot"
+    local = tmp_path / "local"
+    outside = tmp_path / "outside"
+    (ssot / "alpha").mkdir(parents=True)
+    local.mkdir()
+    outside.mkdir()
+    (ssot / "alpha" / "SKILL.md").write_text("same\n", encoding="utf-8")
+    (outside / "secret.txt").write_text("do not scan\n", encoding="utf-8")
+    try:
+        (local / "alpha").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        return
+    rows = _compare(ssot, local)
+    assert any(row.status == "unsafe_local_symlink" for row in rows)
+    assert not any(row.relative_path == "secret.txt" for row in rows)
+
+
 def test_compare_detects_extra_file_inside_managed_skill(tmp_path: Path) -> None:
     ssot = tmp_path / "ssot"
     local = tmp_path / "local"

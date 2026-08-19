@@ -185,6 +185,33 @@ class IdentityProbe:
             and parsed_push_transport.username == "git"
         )
         if expected_login and push_is_https:
+            extra_headers = self.runner.run(
+                [
+                    "git",
+                    "config",
+                    "--get-regexp",
+                    r"^http\..*\.extraHeader$|^http\.extraHeader$",
+                ],
+                cwd=resolved_repo,
+            )
+            if extra_headers.returncode not in {0, 1}:
+                return Outcome(
+                    status=Status.UNKNOWN,
+                    code="http_auth_override_unverified",
+                    cause="Git HTTP header overrideを確認できません",
+                    impact="HTTPS pushの実効identityを確定できないため書き込みを止めています",
+                    recovery="Git HTTP設定を確認してください",
+                    evidence={"repository": f"{owner}/{name}"},
+                )
+            if extra_headers.returncode == 0 and "authorization:" in extra_headers.stdout.casefold():
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="http_auth_override_unsupported",
+                    cause="Git HTTP Authorization header overrideが設定されています",
+                    impact="credential probeと実際のpushで別identityを使う事故を止めています",
+                    recovery="対象scopeのhttp.extraHeaderを解除し、検証済みcredential経路を使用してください",
+                    evidence={"repository": f"{owner}/{name}"},
+                )
             parsed_push_url = urlparse(push_url)
             credential_protocol = parsed_push_url.scheme.casefold()
             credential_host = parsed_push_url.hostname or "github.com"
