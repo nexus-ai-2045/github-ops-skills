@@ -1,5 +1,6 @@
 import hashlib
 import json
+from unittest.mock import patch
 from pathlib import Path
 
 from github_ops.source_manifest import refresh_target_hashes, verify_target_hashes
@@ -60,3 +61,20 @@ def test_line_endings_have_one_portable_digest(tmp_path: Path) -> None:
         "sources": [{"target_path": "skills/x/SKILL.md", "target_sha256": digest}],
     }), encoding="utf-8")
     assert verify_target_hashes(tmp_path) == []
+
+
+def test_unverifiable_path_component_fails_closed(tmp_path: Path) -> None:
+    target = tmp_path / "skills" / "x" / "SKILL.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("current\n", encoding="utf-8")
+    manifest = tmp_path / "migration" / "source-manifest.json"
+    manifest.parent.mkdir()
+    manifest.write_text(json.dumps({
+        "schema_version": "github-ops/source-manifest/v1",
+        "sources": [{
+            "target_path": "skills/x/SKILL.md",
+            "target_sha256": hashlib.sha256(b"current\n").hexdigest(),
+        }],
+    }), encoding="utf-8")
+    with patch("github_ops.source_manifest.os.lstat", side_effect=PermissionError):
+        assert verify_target_hashes(tmp_path) == ["unsafe target path: skills/x/SKILL.md"]

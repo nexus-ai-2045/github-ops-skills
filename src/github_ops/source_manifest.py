@@ -23,7 +23,7 @@ def _unsafe_component(repo: Path, target: Path) -> bool:
         try:
             info = os.lstat(current)
         except OSError:
-            continue
+            return True
         attributes = getattr(info, "st_file_attributes", 0)
         if stat.S_ISLNK(info.st_mode) or attributes & getattr(
             stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0
