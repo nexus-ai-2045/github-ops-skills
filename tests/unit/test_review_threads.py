@@ -170,6 +170,19 @@ def test_fetch_rejects_non_object_graphql_payload(monkeypatch) -> None:
         raise AssertionError("non-object GraphQL payload must fail closed")
 
 
+def test_summarize_rejects_non_boolean_thread_state() -> None:
+    payload = _payload(_thread(resolved=False, outdated=False))
+    payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0][
+        "isResolved"
+    ] = "false"
+    try:
+        summarize(payload)
+    except ValueError as exc:
+        assert "not boolean" in str(exc)
+    else:
+        raise AssertionError("non-boolean review state must fail closed")
+
+
 def test_fetch_rejects_missing_page_info(monkeypatch) -> None:
     payload = _payload()
     payload["data"]["repository"]["pullRequest"]["reviewThreads"]["pageInfo"] = None

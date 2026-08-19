@@ -111,11 +111,9 @@ def _run(args: argparse.Namespace) -> dict:
                 cwd=args.repo,
             )
             fast_forward_verified = ancestor.returncode == 0
-        dirty = runner.run(
-            ["git", "status", "--porcelain=v1", "-z"],
-            cwd=args.repo,
-        )
-        worktree_paths = _porcelain_paths(dirty.stdout)
+        worktree_paths = _read_worktree_paths(runner, args.repo)
+        if worktree_paths is None:
+            return _unknown("dirty_scope_unverified", "worktreeのdirty scopeを確認できません")
         return run_preflight(
             PreflightInput(
                 expected_repo=repository,
@@ -160,6 +158,17 @@ def _porcelain_paths(output: str) -> tuple[str, ...]:
                 paths.append(records[index])
         index += 1
     return tuple(paths)
+
+
+def _read_worktree_paths(runner: CommandRunner, repo: Path) -> tuple[str, ...] | None:
+    dirty = runner.run(
+        ["git", "status", "--porcelain=v1", "-z"],
+        cwd=repo,
+        redact_stdout=False,
+    )
+    if dirty.returncode != 0:
+        return None
+    return _porcelain_paths(dirty.stdout)
 
 
 def _blocked(code: str, cause: str) -> dict:

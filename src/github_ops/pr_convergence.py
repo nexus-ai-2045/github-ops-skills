@@ -31,6 +31,7 @@ class ConvergenceSnapshot:
     checks_head_sha: str
     unresolved_threads: int
     latest_review_head_sha: str | None
+    latest_review_base_sha: str | None
     latest_review_outcome: str | None
     repair_cycles: int = 0
     same_failure_count: int = 0
@@ -51,6 +52,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "checks_head_sha": snapshot.checks_head_sha,
         "unresolved_threads": snapshot.unresolved_threads,
         "latest_review_head_sha": snapshot.latest_review_head_sha,
+        "latest_review_base_sha": snapshot.latest_review_base_sha,
         "latest_review_outcome": snapshot.latest_review_outcome,
         "repair_cycles": snapshot.repair_cycles,
         "same_failure_count": snapshot.same_failure_count,
@@ -77,11 +79,19 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     }
     if snapshot.latest_review_head_sha is not None:
         sha_values["latest_review_head_sha"] = snapshot.latest_review_head_sha
+    if snapshot.latest_review_base_sha is not None:
+        sha_values["latest_review_base_sha"] = snapshot.latest_review_base_sha
     invalid = [name for name, value in sha_values.items() if not re.fullmatch(r"[0-9a-f]{40}", value)]
     if (
         snapshot.pr_number <= 0
         or not re.fullmatch(r"[^/\s]+/[^/\s]+", snapshot.repository)
         or invalid
+        or not isinstance(snapshot.repair_cycles, int)
+        or isinstance(snapshot.repair_cycles, bool)
+        or snapshot.repair_cycles < 0
+        or not isinstance(snapshot.same_failure_count, int)
+        or isinstance(snapshot.same_failure_count, bool)
+        or snapshot.same_failure_count < 0
     ):
         return _outcome(Status.UNKNOWN, "snapshot_invalid", ConvergencePhase.PREFLIGHT,
                         "PR番号、repository、またはexact SHAが不正です", evidence)
@@ -113,6 +123,10 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         return _outcome(Status.UNKNOWN, "latest_head_review_pending",
                         ConvergencePhase.EXTERNAL_REVIEW_PENDING,
                         "latest-head reviewを同一head SHAへ束縛できません", evidence)
+    if snapshot.latest_review_base_sha != snapshot.base_sha:
+        return _outcome(Status.UNKNOWN, "latest_review_base_mismatch",
+                        ConvergencePhase.EXTERNAL_REVIEW_PENDING,
+                        "latest-head reviewを同一base SHAへ束縛できません", evidence)
     if snapshot.latest_review_outcome is None:
         return _outcome(Status.UNKNOWN, "latest_review_outcome_unknown",
                         ConvergencePhase.EXTERNAL_REVIEW_PENDING,

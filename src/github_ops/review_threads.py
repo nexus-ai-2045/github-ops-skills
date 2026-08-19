@@ -105,6 +105,10 @@ def summarize(payload: dict[str, Any]) -> AuditResult:
     truncated = bool(page_info.get("hasNextPage"))
 
     for thread in pull_request["reviewThreads"]["nodes"]:
+        if not isinstance(thread.get("isResolved"), bool) or not isinstance(
+            thread.get("isOutdated"), bool
+        ):
+            raise ValueError("review thread state is not boolean")
         comments = thread["comments"]["nodes"]
         latest_comment = comments[-1] if comments else {}
         if thread["isResolved"]:

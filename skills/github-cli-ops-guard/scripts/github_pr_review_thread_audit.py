@@ -111,6 +111,12 @@ def main() -> int:
             raise ValueError("pull request head changed during review thread audit")
         if final_pull["reviewThreads"]["nodes"] != threads:
             raise ValueError("review thread state changed during audit")
+        if any(
+            not isinstance(item.get("isResolved"), bool)
+            or not isinstance(item.get("isOutdated"), bool)
+            for item in threads
+        ):
+            raise ValueError("review thread state is not boolean")
         current = sum(not item["isResolved"] and not item["isOutdated"] for item in threads)
         outdated = sum(not item["isResolved"] and item["isOutdated"] for item in threads)
         unresolved = []

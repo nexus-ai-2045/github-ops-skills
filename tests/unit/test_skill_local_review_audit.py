@@ -210,6 +210,32 @@ def test_audit_rejects_non_object_graphql_payload(monkeypatch, capsys) -> None:
     assert "not an object" in result["errors"][0]
 
 
+def test_audit_rejects_non_boolean_thread_state(monkeypatch, capsys) -> None:
+    module = _load_module()
+    payload = {
+        "data": {"repository": {"pullRequest": {
+            "headRefOid": "abc123",
+            "reviewThreads": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [{
+                    "id": "thread-1",
+                    "isResolved": "false",
+                    "isOutdated": False,
+                    "comments": {"nodes": []},
+                }],
+            },
+        }}}
+    }
+    monkeypatch.setattr(module, "graphql", lambda *args: deepcopy(payload))
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", "owner/repo", "--pr", "3", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["decision"] == "error"
+    assert "not boolean" in result["errors"][0]
+
+
 def test_audit_rejects_head_change_after_last_page(monkeypatch, capsys) -> None:
     module = _load_module()
     initial = {

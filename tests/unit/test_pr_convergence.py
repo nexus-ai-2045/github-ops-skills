@@ -19,6 +19,7 @@ def snapshot(**overrides) -> ConvergenceSnapshot:
         "checks_head_sha": HEAD,
         "unresolved_threads": 0,
         "latest_review_head_sha": HEAD,
+        "latest_review_base_sha": "b" * 40,
         "latest_review_outcome": "clean",
     }
     values.update(overrides)
@@ -92,3 +93,15 @@ def test_invalid_pr_number_and_short_sha_are_rejected() -> None:
 
 def test_invalid_repository_shape_is_rejected() -> None:
     assert decide_next_step(snapshot(repository="missing-owner-separator")).code == "snapshot_invalid"
+
+
+def test_negative_or_boolean_counters_are_rejected() -> None:
+    assert decide_next_step(snapshot(repair_cycles=-1)).code == "snapshot_invalid"
+    assert decide_next_step(snapshot(same_failure_count=-1)).code == "snapshot_invalid"
+    assert decide_next_step(snapshot(repair_cycles=True)).code == "snapshot_invalid"
+
+
+def test_review_must_match_exact_base() -> None:
+    result = decide_next_step(snapshot(latest_review_base_sha="c" * 40))
+    assert result.code == "latest_review_base_mismatch"
+    assert result.status.value == "UNKNOWN"

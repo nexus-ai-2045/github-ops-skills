@@ -98,3 +98,12 @@ def test_pr_creation_accepts_remote_head_equal_to_expected() -> None:
         ready_input(operation="pr", remote_head_sha="a" * 40, fast_forward_verified=None)
     )
     assert result.status.value == "READY"
+
+
+def test_raw_dirty_path_is_compared_but_evidence_is_redacted() -> None:
+    token_path = "ghp_" + ("A" * 24)
+    result = run_preflight(
+        ready_input(worktree_paths=(token_path,), approved_paths=(token_path,))
+    )
+    assert result.status.value == "READY"
+    assert token_path not in str(result.evidence)

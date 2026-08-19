@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .result import Outcome, Status
+from .redaction import redact
 
 
 WRITE_PERMISSIONS = {"WRITE", "MAINTAIN", "ADMIN"}
@@ -39,8 +40,8 @@ def run_preflight(data: PreflightInput) -> Outcome:
         "token_login": data.token_login,
         "permission": data.permission,
         "visibility": data.visibility,
-        "worktree_paths": list(data.worktree_paths),
-        "approved_paths": list(data.approved_paths),
+        "worktree_paths": [redact(path) for path in data.worktree_paths],
+        "approved_paths": [redact(path) for path in data.approved_paths],
         "approval_present": bool(data.approval_ref),
         "operation": data.operation,
         "expected_visibility": data.expected_visibility,
@@ -167,7 +168,7 @@ def run_preflight(data: PreflightInput) -> Outcome:
         )
     unapproved = sorted(set(data.worktree_paths) - set(data.approved_paths))
     if unapproved:
-        evidence["unapproved_paths"] = unapproved
+        evidence["unapproved_paths"] = [redact(path) for path in unapproved]
         return _blocked(
             "worktree_scope_mismatch",
             "承認範囲外のworktree変更があります",
