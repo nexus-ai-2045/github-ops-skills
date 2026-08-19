@@ -10,6 +10,11 @@ from pathlib import Path
 SCHEMA_VERSION = "github-ops/source-manifest/v1"
 
 
+def _portable_digest(path: Path) -> str:
+    content = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(content).hexdigest()
+
+
 def _unsafe_component(repo: Path, target: Path) -> bool:
     current = repo.resolve()
     relative = target.relative_to(repo)
@@ -67,7 +72,7 @@ def verify_target_hashes(repo: Path) -> list[str]:
         if not target.is_file():
             errors.append(f"target missing: {relative}")
             continue
-        actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        actual = _portable_digest(target)
         if actual != expected:
             errors.append(f"target hash mismatch: {relative}")
     return errors
@@ -85,7 +90,7 @@ def refresh_target_hashes(repo: Path) -> int:
         relative = record["target_path"]
         target = (repo / relative).resolve()
         target.relative_to(repo.resolve())
-        digest = hashlib.sha256(target.read_bytes()).hexdigest()
+        digest = _portable_digest(target)
         record["sha256"] = digest
         record["target_sha256"] = digest
         count += 1
