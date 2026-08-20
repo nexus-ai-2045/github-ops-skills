@@ -16,7 +16,13 @@ from urllib.parse import urlparse
 COMMAND_TIMEOUT_SECONDS = 30
 
 
-def run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
+def run(
+    cmd: list[str],
+    cwd: Path,
+    *,
+    input_text: str | None = None,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
     try:
         proc = subprocess.run(
             cmd,
@@ -25,6 +31,8 @@ def run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
             encoding="utf-8",
             errors="replace",
             capture_output=True,
+            input=input_text,
+            env=env,
             shell=False,
             timeout=COMMAND_TIMEOUT_SECONDS,
         )
@@ -119,6 +127,37 @@ def gh_active_login(cwd: Path) -> tuple[str | None, str | None]:
     return None, err or status_err or f"gh auth status exited {status_code}"
 
 
+def git_credential_login(
+    cwd: Path, remote_url: str | None
+) -> tuple[str | None, str | None, str | None]:
+    parsed = urlparse(remote_url or "")
+    if parsed.scheme.casefold() != "https" or parsed.hostname != "github.com":
+        return None, None, None
+    code, out, err = run(
+        ["git", "credential", "fill"],
+        cwd,
+        input_text=(
+            f"protocol=https\nhost=github.com\npath={parsed.path.lstrip('/')}\n\n"
+        ),
+    )
+    if code != 0:
+        return None, None, err or "git credential fill failed"
+    fields = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    token = fields.get("password")
+    if not token:
+        return fields.get("username"), None, "credential token is unavailable"
+    token_env = os.environ.copy()
+    token_env.pop("GITHUB_TOKEN", None)
+    token_env["GH_TOKEN"] = token
+    token_env["GH_HOST"] = "github.com"
+    code, login, err = run(
+        ["gh", "api", "user", "--jq", ".login"], cwd, env=token_env
+    )
+    if code != 0 or not login:
+        return fields.get("username"), None, err or "credential identity lookup failed"
+    return fields.get("username"), login, None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe gh active identity against a local GitHub repo.")
     parser.add_argument("--repo", default=".", help="local repository root")
@@ -132,7 +171,12 @@ def main() -> int:
     remote_owner, remote_repo = parse_remote_owner(remote_url)
     expected_owner = args.expected_owner or remote_owner
     expected_login = args.expected_login
-    credential_username, credential_origin = git_value_with_origin(cwd, "credential.https://github.com.username")
+    credential_username, credential_login, credential_error = git_credential_login(
+        cwd, remote_url
+    )
+    credential_required = bool(
+        expected_login and urlparse(remote_url or "").scheme.casefold() == "https"
+    )
     branch = git_value(cwd, "branch", "--show-current")
     git_author_name = git_value(cwd, "config", "--get", "user.name")
     git_author_email = git_value(cwd, "config", "--get", "user.email")
@@ -170,11 +214,13 @@ def main() -> int:
             "detail": active_error,
         },
         "credential_username": {
-            # HTTPS usernames (including x-access-token) are not identities.
-            # gh_active_login is the authenticated API identity evidence.
-            "status": "ok",
+            # HTTPS usernames (including x-access-token) are not identities;
+            # verify the effective credential token through the API instead.
+            "status": "ok" if (
+                not credential_required or credential_login == expected_login
+            ) else "error",
             "value": credential_username,
-            "detail": credential_origin,
+            "detail": credential_error,
         },
         "repo_view": {
             "status": "ok" if repo_view_ok else "error",

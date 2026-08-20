@@ -109,6 +109,26 @@ def test_run_handles_os_error_without_raising(monkeypatch) -> None:
     assert "gh executable missing" in stderr
 
 
+def test_git_credential_login_validates_the_returned_token(monkeypatch) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_run(cmd, cwd, **kwargs):  # noqa: ANN001, ANN202
+        calls.append((cmd, kwargs))
+        if cmd[:3] == ["git", "credential", "fill"]:
+            return 0, "username=x-access-token\npassword=secret-value", ""
+        return 0, "example-user", ""
+
+    monkeypatch.setattr(module, "run", fake_run)
+    username, login, error = module.git_credential_login(
+        Path("."), "https://github.com/example-org/tooling.git"
+    )
+    assert (username, login, error) == ("x-access-token", "example-user", None)
+    assert "path=example-org/tooling.git" in calls[0][1]["input_text"]
+    assert calls[1][1]["env"]["GH_TOKEN"] == "secret-value"
+    assert calls[1][1]["env"]["GH_HOST"] == "github.com"
+
+
 def test_main_emits_fail_closed_structured_outcome_on_command_failure(
     monkeypatch, capsys
 ) -> None:
@@ -163,7 +183,9 @@ def test_org_owner_and_authenticated_login_are_independent(monkeypatch, capsys) 
 
     monkeypatch.setattr(module, "git_value", fake_git_value)
     monkeypatch.setattr(
-        module, "git_value_with_origin", lambda *args: ("x-access-token", "file:.git/config")
+        module, "git_credential_login", lambda *args: (
+            "x-access-token", "example-user", None
+        )
     )
     monkeypatch.setattr(module, "gh_active_login", lambda *args: ("example-user", None))
     monkeypatch.setattr(
@@ -203,7 +225,9 @@ def test_expected_owner_mismatch_is_an_error(monkeypatch, capsys) -> None:
             else None
         ),
     )
-    monkeypatch.setattr(module, "git_value_with_origin", lambda *args: (None, None))
+    monkeypatch.setattr(
+        module, "git_credential_login", lambda *args: (None, "example-user", None)
+    )
     monkeypatch.setattr(module, "gh_active_login", lambda *args: ("example-user", None))
     monkeypatch.setattr(
         module, "run", lambda *args, **kwargs: (
@@ -216,3 +240,37 @@ def test_expected_owner_mismatch_is_an_error(monkeypatch, capsys) -> None:
     assert module.main() == 1
     result = json.loads(capsys.readouterr().out)
     assert result["checks"]["remote_owner"]["status"] == "error"
+
+
+def test_effective_git_credential_login_must_match_expected_login(
+    monkeypatch, capsys
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "git_value",
+        lambda cwd, *args: (
+            "https://github.com/example-org/tooling.git"
+            if args == ("remote", "get-url", "origin")
+            else "codex/test"
+            if args == ("branch", "--show-current")
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        module, "git_credential_login", lambda *args: (
+            "x-access-token", "wrong-user", None
+        )
+    )
+    monkeypatch.setattr(module, "gh_active_login", lambda *args: ("example-user", None))
+    monkeypatch.setattr(
+        module, "run", lambda *args, **kwargs: (
+            0, '{"nameWithOwner":"example-org/tooling","visibility":"PRIVATE"}', ""
+        )
+    )
+    monkeypatch.setattr(
+        sys, "argv", [str(SCRIPT), "--repo", ".", "--expected-login", "example-user", "--json"]
+    )
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"]["credential_username"]["status"] == "error"

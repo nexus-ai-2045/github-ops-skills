@@ -102,7 +102,7 @@ def import_sources(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
         source_digest = _sha256(source)
-        target_digest = _sha256(target)
+        target_digest = _portable_sha256(target)
         records.append(
             {
                 "source_root": root_name,
@@ -133,7 +133,7 @@ def verify_records(
         expected_target = record.get("target_sha256", record["sha256"])
         if not source.is_file() or _sha256(source) != expected_source:
             errors.append(f"source hash mismatch: {record['source_path']}")
-        if not target.is_file() or _sha256(target) != expected_target:
+        if not target.is_file() or _portable_sha256(target) != expected_target:
             errors.append(f"target hash mismatch: {record['target_path']}")
     return errors
 
@@ -197,6 +197,10 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _portable_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def _normalize_private_identity(text: str) -> str:

@@ -190,7 +190,7 @@ class IdentityProbe:
                     "git",
                     "config",
                     "--get-regexp",
-                    r"^http\..*\.extraHeader$|^http\.extraHeader$",
+                    r"^http\..*\.extraheader$|^http\.extraheader$",
                 ],
                 cwd=resolved_repo,
             )

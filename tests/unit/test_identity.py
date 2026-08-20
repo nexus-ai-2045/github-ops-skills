@@ -113,7 +113,7 @@ def test_probe_blocks_http_authorization_header_override(tmp_path) -> None:
         ],
         http_extra_headers=CommandResult(
             0,
-            "http.https://github.com/.extraHeader Authorization: Basic hidden\n",
+            "http.https://github.com/.extraheader Authorization: Basic hidden\n",
             "",
         ),
     )

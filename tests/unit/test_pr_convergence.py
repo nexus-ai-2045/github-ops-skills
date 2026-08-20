@@ -69,6 +69,11 @@ def test_actor_must_match_expected_actor() -> None:
     assert result.status.value == "BLOCKED"
 
 
+def test_actor_fields_must_be_nonempty_strings() -> None:
+    assert decide_next_step(snapshot(actor=True, expected_actor=True)).code == "snapshot_invalid"
+    assert decide_next_step(snapshot(actor=" ")).code == "snapshot_invalid"
+
+
 def test_review_must_match_exact_head() -> None:
     result = decide_next_step(snapshot(latest_review_head_sha="c" * 40))
     assert result.status.value == "UNKNOWN"
@@ -84,7 +89,7 @@ def test_checks_must_match_exact_head() -> None:
 def test_repeated_failure_exhausts_repair_budget() -> None:
     result = decide_next_step(snapshot(same_failure_count=2))
     assert result.code == "repair_budget_exhausted"
-    assert result.status.value == "BLOCKED"
+    assert result.status.value == "UNKNOWN"
 
 
 def test_review_blocking_finding_prevents_false_ready() -> None:

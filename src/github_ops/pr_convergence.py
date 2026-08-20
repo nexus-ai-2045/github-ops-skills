@@ -97,6 +97,10 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         or not isinstance(snapshot.same_failure_count, int)
         or isinstance(snapshot.same_failure_count, bool)
         or snapshot.same_failure_count < 0
+        or not isinstance(snapshot.actor, str)
+        or not snapshot.actor.strip()
+        or not isinstance(snapshot.expected_actor, str)
+        or not snapshot.expected_actor.strip()
     ):
         return _outcome(Status.UNKNOWN, "snapshot_invalid", ConvergencePhase.PREFLIGHT,
                         "PR番号、repository、またはexact SHAが不正です", evidence)
@@ -110,7 +114,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         return _outcome(Status.BLOCKED, "default_branch_write_forbidden", ConvergencePhase.PREFLIGHT,
                         "PR headがdefault branchです", evidence)
     if snapshot.repair_cycles >= 3 or snapshot.same_failure_count >= 2:
-        return _outcome(Status.BLOCKED, "repair_budget_exhausted", ConvergencePhase.NEEDS_REPAIR,
+        return _outcome(Status.UNKNOWN, "repair_budget_exhausted", ConvergencePhase.NEEDS_REPAIR,
                         "修正retry予算を使い切りました", evidence)
     if snapshot.checks_state == "pending":
         return _outcome(Status.UNKNOWN, "ci_pending", ConvergencePhase.CI_WAIT,

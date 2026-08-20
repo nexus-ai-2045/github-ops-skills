@@ -24,6 +24,20 @@ def test_import_copies_without_modifying_source(tmp_path: Path) -> None:
     assert verify_records(records, {"shared": source}, target) == []
 
 
+def test_target_digest_is_portable_across_line_endings(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    (source / "skill.md").write_bytes(b"one\ntwo\n")
+    records = import_sources(
+        mappings=[("shared", "skill.md", "skills/skill.md")],
+        source_roots={"shared": source},
+        target_root=target,
+    )
+    (target / "skills/skill.md").write_bytes(b"one\r\ntwo\r\n")
+    assert verify_records(records, {"shared": source}, target) == []
+
+
 def test_import_rejects_symlink(tmp_path: Path) -> None:
     source = tmp_path / "source"
     target = tmp_path / "target"
