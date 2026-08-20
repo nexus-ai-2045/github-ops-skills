@@ -16,13 +16,17 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
    - 規約がなければ、日本語または英語から変更内容に合う言語を選ぶ
    - Conventional Commitsのtype/scope、コード識別子、API名は英語のままでよい
 4. ユーザーにコミットメッセージを提示して確認
-5. local検証とGitHub CIの対応を確認
+5. `docs/pr-self-review.md` のセルフレビューを差分に当てる
+   - 複数リポジトリのレビュー指摘を一般化した停止条件 R1〜R14 と、20 項目の確認表
+   - 該当した項目は、直してから次へ進む。直さない場合は理由を PR 本文に書く
+   - この file は生成物。手で編集しない (CI が本文 hash で検出する)
+6. local検証とGitHub CIの対応を確認
    - 実行したtest、build、lint、adapter検証を列挙する
    - `.github/workflows/`とGitHub上のworkflow/checkを読み取り専用で確認する
    - localだけで実行され、GitHub CIに対応するcheckがない項目を明示する
    - CIが不足している場合は、PR作成前に「CIを追加するか」を必ずユーザーへ確認する
    - workflow追加とrequired check設定は別操作として扱い、settingsを自動変更しない
-6. 承認されたら:
+7. 承認されたら:
    - `git add` で関連ファイルをステージング（.env, credentials等は除外）
    - `git commit` でコミット（Co-Authored-By付き）
    - コミット後、`git rev-list --count origin/main..HEAD` で未push数をチェック
@@ -37,7 +41,7 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
    - 承認後、次のwrapperで`gh pr create --body-file`と作成後read-backを実行する
      `python scripts/create_pr_with_japanese_gate.py --repo <owner/name> --base <base> --head <branch> --repo-root . --account-map <account-map> --expected-base-sha <base-sha> --expected-head-sha <head-sha> --expected-visibility PRIVATE --title-file <title-file> --body-file <body-file> --confirm --json`
    - wrapperが`UNKNOWN`または`BLOCKED`なら、PRを編集・再作成せず停止して報告する
-7. 結果を返す
+8. 結果を返す
 
 ## 注意事項
 - mainへのpushはユーザー確認を得てからOK
