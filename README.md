@@ -13,6 +13,23 @@ GitHub書き込み前にfail-closedで停止できます。
 - push、PR、repository作成、visibility変更は現在会話の明示承認なしに実行しません。
 - PR title/bodyは日本語gateを通し、作成後に承認済み入力との一致をread-backします。
 
+## 必須契約
+
+この repository の作業では、既存のgate／文書／skillだけを使い、次を必須契約とします。
+新しいprotocolやscriptは追加しません。
+
+| 契約 | このrepoでの扱い |
+|---|---|
+| `repo-preflight` / `public-repo-readiness` | 公開前判断材料。自動でのvisibility変更はしない |
+| 本repoの GitHub ops suite（この Core Suite） | identity／preflight／日本語gate／adapter。SSOTは`skills/` |
+| `engineering-brain` | 判断が必要な作業のときだけ適用 |
+| FDE（`fractal-decision-ecosystem`） | skill内の FDE Packet と同じ略称・packet契約 |
+| `ai-ratchet-gate` | 既存の昇格・回帰gateとして参照（新規scriptは作らない） |
+| `nexus-management-os` | 運用OS側の既存契約として参照（このrepo外正本） |
+| `nexus_ai` | mainline／最新の参照先。fork用の第二複製ではない |
+
+実行は README・`docs/`・`scripts/`・`skills/` に既にある手順と、上記 sibling 正本の既存手順に従います。
+
 ## ローカル確認
 
 ```powershell
