@@ -63,6 +63,61 @@ def test_parse_https_and_ssh_remotes() -> None:
     )
 
 
+def test_parse_https_remote_rejects_embedded_credential() -> None:
+    assert parse_github_remote(
+        "https://x-access-token:not-a-real-secret@github.com/example-org/tooling.git"
+    ) == (None, None)
+
+
+def test_parse_malformed_or_redacted_remote_fails_closed() -> None:
+    assert parse_github_remote(
+        "https://x-access-token:[REDACTED]@github.com/example-org/tooling.git"
+    ) == (None, None)
+
+
+def test_probe_blocks_embedded_fetch_credential_without_leaking_it(tmp_path) -> None:
+    remote = (
+        "https://x-access-token:not-a-real-secret@github.com/"
+        "example-org/tooling.git\n"
+    )
+    runner = FakeRunner(
+        [
+            CommandResult(0, remote, ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "embedded_remote_credential_unsupported"
+    assert runner.calls[0]["redact_stdout"] is False
+    assert "not-a-real-secret" not in outcome.to_json()
+
+
+def test_probe_blocks_embedded_push_credential_without_leaking_it(tmp_path) -> None:
+    push_remote = (
+        "https://x-access-token:not-a-real-secret@github.com/"
+        "example-org/tooling.git\n"
+    )
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, push_remote, ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "embedded_push_credential_unsupported"
+    assert runner.calls[1]["redact_stdout"] is False
+    assert "not-a-real-secret" not in outcome.to_json()
+
+
 def test_probe_blocks_mismatched_git_credential_token_owner(tmp_path) -> None:
     runner = FakeRunner(
         [

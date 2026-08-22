@@ -97,6 +97,7 @@ class IdentityProbe:
         remote = self.runner.run(
             ["git", "remote", "get-url", "origin"],
             cwd=resolved_repo,
+            redact_stdout=False,
         )
         if remote.returncode != 0:
             return Outcome(
@@ -107,7 +108,23 @@ class IdentityProbe:
                 recovery="originを設定するか、対象repositoryを明示してください",
                 evidence={"repo": resolved_repo.name},
             )
-        owner, name = parse_github_remote(remote.stdout.strip())
+        remote_url = remote.stdout.strip()
+        try:
+            parsed_remote = urlparse(remote_url)
+        except ValueError:
+            parsed_remote = None
+        if parsed_remote is not None and parsed_remote.scheme.casefold() == "https" and (
+            parsed_remote.username is not None or parsed_remote.password is not None
+        ):
+            return Outcome(
+                status=Status.BLOCKED,
+                code="embedded_remote_credential_unsupported",
+                cause="origin URLにcredentialが埋め込まれています",
+                impact="remote URLとcredential helperで別identityを使う事故を止めています",
+                recovery="credentialをURLから除去し、Git credential helperを使用してください",
+                evidence={"remote_kind": "https_with_userinfo"},
+            )
+        owner, name = parse_github_remote(remote_url)
         if not owner or not name:
             return Outcome(
                 status=Status.BLOCKED,
@@ -132,6 +149,7 @@ class IdentityProbe:
             push_remote = self.runner.run(
                 ["git", "remote", "get-url", "--all", "--push", "origin"],
                 cwd=resolved_repo,
+                redact_stdout=False,
             )
             if push_remote.returncode != 0:
                 return Outcome(
@@ -153,6 +171,22 @@ class IdentityProbe:
                     evidence={"push_url_count": len(push_urls)},
                 )
             push_url = push_urls[0]
+            try:
+                parsed_push_candidate = urlparse(push_url)
+            except ValueError:
+                parsed_push_candidate = None
+            if parsed_push_candidate is not None and parsed_push_candidate.scheme.casefold() == "https" and (
+                parsed_push_candidate.username is not None
+                or parsed_push_candidate.password is not None
+            ):
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="embedded_push_credential_unsupported",
+                    cause="push URLにcredentialが埋め込まれています",
+                    impact="push URLとcredential helperで別identityを使う事故を止めています",
+                    recovery="credentialをpush URLから除去し、Git credential helperを使用してください",
+                    evidence={"push_remote_kind": "https_with_userinfo"},
+                )
             push_owner, push_name = parse_github_remote(push_url)
             if not push_owner or not push_name:
                 return Outcome(
@@ -178,8 +212,18 @@ class IdentityProbe:
 
         credential_username: str | None = None
         ssh_login: str | None = None
-        push_is_https = urlparse(push_url).scheme.casefold() == "https"
-        parsed_push_transport = urlparse(push_url)
+        try:
+            parsed_push_transport = urlparse(push_url)
+        except ValueError:
+            return Outcome(
+                status=Status.BLOCKED,
+                code="unsupported_push_remote",
+                cause="push URLを安全に解析できません",
+                impact="未検証のpush先への書き込みを止めています",
+                recovery="HTTPSまたはSSHのGitHub push URLを使用してください",
+                evidence={"push_remote_kind": "unsupported"},
+            )
+        push_is_https = parsed_push_transport.scheme.casefold() == "https"
         push_is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url)) or (
             parsed_push_transport.scheme.casefold() == "ssh"
             and parsed_push_transport.hostname == "github.com"
@@ -213,10 +257,9 @@ class IdentityProbe:
                     recovery="対象scopeのhttp.extraHeaderを解除し、検証済みcredential経路を使用してください",
                     evidence={"repository": f"{owner}/{name}"},
                 )
-            parsed_push_url = urlparse(push_url)
-            credential_protocol = parsed_push_url.scheme.casefold()
-            credential_host = parsed_push_url.hostname or "github.com"
-            credential_path = parsed_push_url.path.lstrip("/")
+            credential_protocol = parsed_push_transport.scheme.casefold()
+            credential_host = parsed_push_transport.hostname or "github.com"
+            credential_path = parsed_push_transport.path.lstrip("/")
             credential = self.runner.run(
                 ["git", "credential", "fill"],
                 cwd=resolved_repo,
@@ -398,7 +441,10 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     )
     if ssh_match:
         return ssh_match.group("owner"), ssh_match.group("name")
-    parsed = urlparse(remote_url)
+    try:
+        parsed = urlparse(remote_url)
+    except ValueError:
+        return None, None
     if (
         parsed.scheme.casefold() == "ssh"
         and parsed.hostname == "github.com"
@@ -413,8 +459,10 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     if (
         parsed.scheme.casefold() != "https"
         or parsed.hostname != "github.com"
-        or parsed.username
-        or parsed.password
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
     ):
         return None, None
     parts = [part for part in parsed.path.strip("/").split("/") if part]
