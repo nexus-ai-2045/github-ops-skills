@@ -57,10 +57,10 @@ def test_parse_https_and_ssh_remotes() -> None:
     )
 
 
-def test_parse_https_remote_ignores_userinfo_for_owner() -> None:
+def test_parse_https_remote_rejects_embedded_credential() -> None:
     assert parse_github_remote(
         "https://x-access-token:not-a-real-credential@github.com/example-org/tooling.git"
-    ) == ("example-org", "tooling")
+    ) == (None, None)
 
 
 def test_parse_redacted_remote_is_fail_closed() -> None:
@@ -69,15 +69,14 @@ def test_parse_redacted_remote_is_fail_closed() -> None:
     ) == (None, None)
 
 
-def test_probe_does_not_redact_remote_before_parse() -> None:
+def test_probe_blocks_embedded_fetch_credential_without_leaking_it() -> None:
+    remote = (
+        "https://x-access-token:not-a-real-credential@github.com/"
+        "example-org/tooling.git\n"
+    )
     runner = FakeRunner(
         [
-            CommandResult(
-                0,
-                "https://x-access-token:not-a-real-credential@github.com/example-org/tooling.git\n",
-                "",
-            ),
-            CommandResult(0, "example-user\n", ""),
+            CommandResult(0, remote, ""),
         ]
     )
     outcome = IdentityProbe(runner).probe(
@@ -85,8 +84,8 @@ def test_probe_does_not_redact_remote_before_parse() -> None:
         expected_owner="example-org",
         expected_login="example-user",
     )
-    assert outcome.status.value == "READY"
-    assert outcome.evidence["repository"] == "example-org/tooling"
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "embedded_remote_credential_unsupported"
     assert runner.calls[0]["redact_stdout"] is False
     assert "not-a-real-credential" not in outcome.to_json()
     assert "x-access-token" not in outcome.to_json()

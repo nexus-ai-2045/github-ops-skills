@@ -107,7 +107,25 @@ class IdentityProbe:
                 recovery="originを設定するか、対象repositoryを明示してください",
                 evidence={"repo": resolved_repo.name},
             )
-        owner, name = parse_github_remote(remote.stdout.strip())
+        remote_url = remote.stdout.strip()
+        try:
+            parsed_remote = urlparse(remote_url)
+        except ValueError:
+            parsed_remote = None
+        # Existing Core Suite contract (ops-hardening): embedded HTTPS userinfo is
+        # not identity proof and must not yield READY.
+        if parsed_remote is not None and parsed_remote.scheme.casefold() == "https" and (
+            parsed_remote.username is not None or parsed_remote.password is not None
+        ):
+            return Outcome(
+                status=Status.BLOCKED,
+                code="embedded_remote_credential_unsupported",
+                cause="origin URLにcredentialが埋め込まれています",
+                impact="remote URLとcredential helperで別identityを使う事故を止めています",
+                recovery="credentialをURLから除去し、Git credential helperを使用してください",
+                evidence={"remote_kind": "https_with_userinfo"},
+            )
+        owner, name = parse_github_remote(remote_url)
         if not owner or not name:
             return Outcome(
                 status=Status.BLOCKED,
@@ -192,11 +210,14 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     except ValueError:
         # Redacted or otherwise malformed netloc must stay fail-closed.
         return None, None
-    if parsed.scheme.casefold() != "https" or parsed.hostname != "github.com":
-        return None, None
-    # Userinfo may carry a helper-injected token; it is not identity proof and
-    # must not appear in evidence. Owner/name still come from the path only.
-    if parsed.query or parsed.fragment:
+    if (
+        parsed.scheme.casefold() != "https"
+        or parsed.hostname != "github.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
         return None, None
     parts = [part for part in parsed.path.strip("/").split("/") if part]
     if len(parts) != 2:
