@@ -9,14 +9,18 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 
 ## 手順
 
-1. `git status` と `git diff` で変更内容を確認
+1. `git status` と、これから PR に入る差分全体で変更内容を確認
+   - `BASE=$(git merge-base origin/<base> HEAD)` を取り、`git diff "$BASE"` を見る
+   - この範囲は未コミット・staged・コミット済みを全部含む。素の `git diff` は
+     未 staged だけなので、staged と既存コミットが確認を素通りする
 2. `git log --oneline -5` で最近のコミットスタイルを確認
 3. 変更内容を分析してコミットメッセージをドラフト
    - repo固有のコミット規約があれば、その規約を優先する
    - 規約がなければ、日本語または英語から変更内容に合う言語を選ぶ
    - Conventional Commitsのtype/scope、コード識別子、API名は英語のままでよい
 4. ユーザーにコミットメッセージを提示して確認
-5. `docs/pr-self-review.md` のセルフレビューを差分に当てる
+5. `docs/pr-self-review.md` のセルフレビューを、手順 1 の `git diff "$BASE"`
+   （= これから push して PR に入る差分の全体）に当てる
    - 複数リポジトリのレビュー指摘を一般化した停止条件 R1〜R14 と、20 項目の確認表
    - 該当した項目は、直してから次へ進む。直さない場合は理由を PR 本文に書く
    - この file は生成物。手で編集しない (CI が本文 hash で検出する)
