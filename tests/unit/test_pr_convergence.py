@@ -16,6 +16,7 @@ def snapshot(**overrides) -> ConvergenceSnapshot:
         "head_ref": "codex/ops-hardening-drift-absorb",
         "head_sha": HEAD,
         "default_branch": "main",
+        "pr_state": "OPEN",
         "checks_state": "success",
         "checks_head_sha": HEAD,
         "unresolved_threads": 0,
@@ -80,6 +81,17 @@ def test_actor_must_match_expected_actor() -> None:
 def test_actor_fields_must_be_nonempty_strings() -> None:
     assert decide_next_step(snapshot(actor=True, expected_actor=True)).code == "snapshot_invalid"
     assert decide_next_step(snapshot(actor=" ")).code == "snapshot_invalid"
+
+
+def test_ref_fields_must_be_nonempty_strings() -> None:
+    assert decide_next_step(snapshot(base_ref=True)).code == "snapshot_invalid"
+    assert decide_next_step(snapshot(head_ref=True)).code == "snapshot_invalid"
+    assert decide_next_step(snapshot(default_branch=True)).code == "snapshot_invalid"
+
+
+def test_only_open_pull_requests_can_converge() -> None:
+    assert decide_next_step(snapshot(pr_state="CLOSED")).code == "pr_not_open"
+    assert decide_next_step(snapshot(pr_state="MERGED")).code == "pr_not_open"
 
 
 def test_review_must_match_exact_head() -> None:

@@ -92,6 +92,51 @@ def test_adapter_blocks_invalid_source_manifest(tmp_path: Path) -> None:
     assert result["manifest_valid"] is False
 
 
+def test_all_adapters_block_incomplete_source_records(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            target = tmp_path / "skills" / source.name
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    (tmp_path / "migration").mkdir()
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        '{"schema_version":"github-ops/source-manifest/v1","sources":[{}]}',
+        encoding="utf-8",
+    )
+    for verify in (verify_codex, verify_claude, verify_grok):
+        result = verify(tmp_path)
+        assert result["status"] == "BLOCKED"
+        assert result["manifest_valid"] is False
+
+
+def test_adapter_blocks_formally_valid_but_false_target_digest(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            target = tmp_path / "skills" / source.name
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    (tmp_path / "migration").mkdir()
+    record = {
+        "source_root": "shared",
+        "source_path": "skills/x/SKILL.md",
+        "target_path": "skills/commit-push-pr/SKILL.md",
+        "sha256": "0" * 64,
+        "source_sha256": "0" * 64,
+        "target_sha256": "0" * 64,
+        "normalized": False,
+    }
+    import json
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        json.dumps({"schema_version": "github-ops/source-manifest/v1", "sources": [record]}),
+        encoding="utf-8",
+    )
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["manifest_target_errors"]
+
+
 def test_adapter_blocks_unreadable_source_manifest(
     tmp_path: Path, monkeypatch
 ) -> None:

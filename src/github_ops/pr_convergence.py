@@ -28,6 +28,7 @@ class ConvergenceSnapshot:
     head_ref: str
     head_sha: str
     default_branch: str
+    pr_state: str
     checks_state: str
     checks_head_sha: str
     unresolved_threads: int
@@ -52,6 +53,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "base_sha": snapshot.base_sha,
         "head_ref": snapshot.head_ref,
         "head_sha": snapshot.head_sha,
+        "pr_state": snapshot.pr_state,
         "checks_state": snapshot.checks_state,
         "checks_head_sha": snapshot.checks_head_sha,
         "unresolved_threads": snapshot.unresolved_threads,
@@ -74,6 +76,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "head_ref": snapshot.head_ref,
         "head_sha": snapshot.head_sha,
         "default_branch": snapshot.default_branch,
+        "pr_state": snapshot.pr_state,
     }
     missing = sorted(name for name, value in required.items() if not value)
     if missing:
@@ -107,9 +110,17 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         or not snapshot.actor.strip()
         or not isinstance(snapshot.expected_actor, str)
         or not snapshot.expected_actor.strip()
+        or any(
+            not isinstance(value, str) or not value.strip()
+            for value in (snapshot.base_ref, snapshot.head_ref, snapshot.default_branch)
+        )
+        or not isinstance(snapshot.pr_state, str)
     ):
         return _outcome(Status.UNKNOWN, "snapshot_invalid", ConvergencePhase.PREFLIGHT,
                         "PR番号、repository、またはexact SHAが不正です", evidence)
+    if snapshot.pr_state != "OPEN":
+        return _outcome(Status.BLOCKED, "pr_not_open", ConvergencePhase.PREFLIGHT,
+                        "OPENではないPRは収束処理を進められません", evidence)
     if snapshot.visibility != "PRIVATE":
         return _outcome(Status.BLOCKED, "private_boundary_failed", ConvergencePhase.PREFLIGHT,
                         "repositoryがPRIVATEであることを確認できません", evidence)

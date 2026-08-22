@@ -110,8 +110,11 @@ def summarize(payload: dict[str, Any]) -> AuditResult:
     unresolved_outdated = 0
     page_info = _page_info(pull_request)
     truncated = bool(page_info.get("hasNextPage"))
+    nodes = pull_request["reviewThreads"]["nodes"]
+    if not isinstance(nodes, list):
+        raise ValueError("review thread nodes is not a list")
 
-    for thread in pull_request["reviewThreads"]["nodes"]:
+    for thread in nodes:
         if not isinstance(thread.get("isResolved"), bool) or not isinstance(
             thread.get("isOutdated"), bool
         ):
@@ -212,7 +215,10 @@ def _fetch_snapshot(repo: str, number: int) -> dict[str, Any]:
     payload = graphql(repo, number)
     _validate_graphql_payload(payload)
     pull_request = payload["data"]["repository"]["pullRequest"]
-    all_threads = list(pull_request["reviewThreads"]["nodes"])
+    nodes = pull_request["reviewThreads"]["nodes"]
+    if not isinstance(nodes, list):
+        raise ValueError("review thread nodes is not a list")
+    all_threads = list(nodes)
     page_info = _page_info(pull_request)
     head_ref_oid = pull_request["headRefOid"]
     if not isinstance(head_ref_oid, str) or not head_ref_oid:
@@ -237,7 +243,10 @@ def _fetch_snapshot(repo: str, number: int) -> dict[str, Any]:
             raise ValueError("pull request head changed during review thread audit")
         if pull_request_page["baseRefOid"] != base_ref_oid:
             raise ValueError("pull request base changed during review thread audit")
-        all_threads.extend(pull_request_page["reviewThreads"]["nodes"])
+        page_nodes = pull_request_page["reviewThreads"]["nodes"]
+        if not isinstance(page_nodes, list):
+            raise ValueError("review thread nodes is not a list")
+        all_threads.extend(page_nodes)
         page_info = _page_info(pull_request_page)
         page_count += 1
 

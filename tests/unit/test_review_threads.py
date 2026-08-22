@@ -135,6 +135,26 @@ def test_fetch_rejects_head_change_during_pagination(monkeypatch) -> None:
         raise AssertionError("head mutation must fail closed")
 
 
+def test_fetch_rejects_non_list_nodes_on_later_page(monkeypatch) -> None:
+    first = _payload()
+    first["data"]["repository"]["pullRequest"]["reviewThreads"]["pageInfo"] = {
+        "hasNextPage": True,
+        "endCursor": "cursor-1",
+    }
+    second = _payload()
+    second["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"] = {}
+    monkeypatch.setattr(
+        "github_ops.review_threads.graphql",
+        lambda repo, number, cursor=None: second if cursor else first,
+    )
+    try:
+        fetch("owner/name", 123)
+    except ValueError as exc:
+        assert "nodes is not a list" in str(exc)
+    else:
+        raise AssertionError("non-list later-page nodes must fail closed")
+
+
 def test_fetch_rejects_repeated_pagination_cursor(monkeypatch) -> None:
     payload = _payload()
     payload["data"]["repository"]["pullRequest"]["reviewThreads"]["pageInfo"] = {
@@ -183,6 +203,17 @@ def test_summarize_rejects_non_boolean_thread_state() -> None:
         assert "not boolean" in str(exc)
     else:
         raise AssertionError("non-boolean review state must fail closed")
+
+
+def test_summarize_rejects_non_list_thread_nodes() -> None:
+    payload = _payload()
+    payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"] = {}
+    try:
+        summarize(payload)
+    except ValueError as exc:
+        assert "nodes is not a list" in str(exc)
+    else:
+        raise AssertionError("non-list review nodes must fail closed")
 
 
 def test_fetch_rejects_missing_page_info(monkeypatch) -> None:

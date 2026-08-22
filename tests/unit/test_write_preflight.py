@@ -56,6 +56,9 @@ def _git_ok_responses(
         ("git", "worktree", "list", "--porcelain"): CommandResult(
             0, "worktree C:/repo\nworktree C:/repo-wt\n", ""
         ),
+        ("git", "ls-remote", "--symref", "origin", "HEAD"): CommandResult(
+            0, "ref: refs/heads/main\tHEAD\n0123456789abcdef\tHEAD\n", ""
+        ),
     }
 
 
@@ -109,6 +112,36 @@ def test_ready_when_location_clean_and_identity_ready(tmp_path: Path) -> None:
     assert outcome.evidence["location"]["branch"] == "codex/feature"
     assert outcome.evidence["location"]["worktree_count"] == 2
     assert identity.kwargs["expected_host"] == "github.com"
+
+
+def test_default_branch_is_blocked_even_when_clean_and_identity_ready(tmp_path: Path) -> None:
+    runner = FakeRunner(_git_ok_responses(dirty="", branch="main"))
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"login": "o"})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.status is Status.BLOCKED
+    assert outcome.code == "default_branch_write_forbidden"
+
+
+def test_stale_local_origin_head_cannot_override_remote_default(tmp_path: Path) -> None:
+    responses = _git_ok_responses(dirty="", branch="main")
+    runner = FakeRunner(responses)
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"login": "o"})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.code == "default_branch_write_forbidden"
 
 
 def test_detached_head_is_unknown(tmp_path: Path) -> None:

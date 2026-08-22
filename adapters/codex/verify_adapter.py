@@ -4,6 +4,14 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from github_ops.source_manifest import verify_target_hashes
 
 REQUIRED_SKILLS = {
     "commit-push-pr",
@@ -15,6 +23,36 @@ REQUIRED_SKILLS = {
     "public-repo-readiness",
     "review-pr",
 }
+
+SOURCE_KEYS = {
+    "source_root": str,
+    "source_path": str,
+    "target_path": str,
+    "sha256": str,
+    "source_sha256": str,
+    "target_sha256": str,
+    "normalized": bool,
+}
+
+
+def _valid_source(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    for key, expected_type in SOURCE_KEYS.items():
+        value = record.get(key)
+        if not isinstance(value, expected_type):
+            return False
+        if expected_type is str and not value.strip():
+            return False
+    for key in ("sha256", "source_sha256", "target_sha256"):
+        value = record[key]
+        if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+            return False
+    for key in ("source_path", "target_path"):
+        path = Path(record[key])
+        if path.is_absolute() or ".." in path.parts:
+            return False
+    return True
 
 
 def verify(repo: Path) -> dict[str, object]:
@@ -32,12 +70,21 @@ def verify(repo: Path) -> dict[str, object]:
             manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
         except (OSError, UnicodeError, json.JSONDecodeError):
             pass
+    sources = manifest_payload.get("sources") if manifest_payload else None
     manifest_valid = bool(
         manifest_payload
         and manifest_payload.get("schema_version") == "github-ops/source-manifest/v1"
-        and isinstance(manifest_payload.get("sources"), list)
-        and manifest_payload.get("sources")
+        and isinstance(sources, list)
+        and sources
+        and all(_valid_source(record) for record in sources)
     )
+    manifest_target_errors: list[str] = []
+    if manifest_valid:
+        try:
+            manifest_target_errors = verify_target_hashes(repo.resolve())
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            manifest_target_errors = [f"manifest target verification failed: {type(exc).__name__}"]
+    manifest_valid = manifest_valid and not manifest_target_errors
     missing_skills = sorted(REQUIRED_SKILLS - set(skills))
     unexpected_skills = sorted(set(skills) - REQUIRED_SKILLS)
     missing_entrypoints = []
@@ -68,6 +115,7 @@ def verify(repo: Path) -> dict[str, object]:
         "missing_entrypoints": missing_entrypoints,
         "invalid_entrypoints": invalid_entrypoints,
         "manifest_valid": manifest_valid,
+        "manifest_target_errors": manifest_target_errors,
         "manifest_sha256": manifest_sha256,
     }
 

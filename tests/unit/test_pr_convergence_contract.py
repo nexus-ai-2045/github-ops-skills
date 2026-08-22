@@ -63,6 +63,7 @@ def test_pr_convergence_cli_runs_from_checkout() -> None:
         "head_ref": "codex/test",
         "head_sha": head,
         "default_branch": "main",
+        "pr_state": "OPEN",
         "checks_state": "success",
         "checks_head_sha": head,
         "unresolved_threads": 0,
