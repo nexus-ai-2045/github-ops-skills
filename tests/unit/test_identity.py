@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from github_ops.command import CommandResult
 from github_ops.identity import IdentityProbe, parse_github_remote
@@ -54,3 +55,38 @@ def test_parse_https_and_ssh_remotes() -> None:
         "example-org",
         "tooling",
     )
+
+
+def test_parse_https_remote_ignores_userinfo_for_owner() -> None:
+    assert parse_github_remote(
+        "https://x-access-token:not-a-real-credential@github.com/example-org/tooling.git"
+    ) == ("example-org", "tooling")
+
+
+def test_parse_redacted_remote_is_fail_closed() -> None:
+    assert parse_github_remote(
+        "https://x-access-token:[REDACTED]@github.com/example-org/tooling.git"
+    ) == (None, None)
+
+
+def test_probe_does_not_redact_remote_before_parse() -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(
+                0,
+                "https://x-access-token:not-a-real-credential@github.com/example-org/tooling.git\n",
+                "",
+            ),
+            CommandResult(0, "example-user\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        Path("."),
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "READY"
+    assert outcome.evidence["repository"] == "example-org/tooling"
+    assert runner.calls[0]["redact_stdout"] is False
+    assert "not-a-real-credential" not in outcome.to_json()
+    assert "x-access-token" not in outcome.to_json()

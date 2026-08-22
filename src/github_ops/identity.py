@@ -92,9 +92,11 @@ class IdentityProbe:
         expected_host: str | None = None,
     ) -> Outcome:
         resolved_repo = repo.resolve()
+        # Remote URL may embed a credential. Parse the raw value, never echo it.
         remote = self.runner.run(
             ["git", "remote", "get-url", "origin"],
             cwd=resolved_repo,
+            redact_stdout=False,
         )
         if remote.returncode != 0:
             return Outcome(
@@ -185,15 +187,21 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     )
     if ssh_match:
         return ssh_match.group("owner"), ssh_match.group("name")
-    parsed = urlparse(remote_url)
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname != "github.com"
-        or parsed.username
-        or parsed.password
-    ):
+    try:
+        parsed = urlparse(remote_url)
+    except ValueError:
+        # Redacted or otherwise malformed netloc must stay fail-closed.
+        return None, None
+    if parsed.scheme.casefold() != "https" or parsed.hostname != "github.com":
+        return None, None
+    # Userinfo may carry a helper-injected token; it is not identity proof and
+    # must not appear in evidence. Owner/name still come from the path only.
+    if parsed.query or parsed.fragment:
         return None, None
     parts = [part for part in parsed.path.strip("/").split("/") if part]
     if len(parts) != 2:
         return None, None
-    return parts[0], parts[1].removesuffix(".git")
+    owner, name = parts[0], parts[1].removesuffix(".git")
+    if not owner or not name or any(char.isspace() for char in owner + name):
+        return None, None
+    return owner, name
