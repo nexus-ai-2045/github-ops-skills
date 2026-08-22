@@ -1,6 +1,6 @@
 ---
 name: github-cli-ops-guard
-description: GitHub CLI (`gh`) のactive account drift、remote owner不一致、repo解決失敗、credential username差分、Git author差分をGitHub write前後に検査する共有向け運用ゲート。Use before or after `gh` / GitHub operations such as `git push`, `gh pr create`, `gh pr edit`, `gh pr merge`, branch cleanup, release/tag work, GitHub issue/discussion writes, or when errors mention wrong account, active account, repo not found, GraphQL repository resolution, `gh auth switch`, `gh auth status`, `GITHUB_TOKEN`, credential username, owner mismatch, or Japanese requests such as "gh名義", "GitHub名義", "repo解決失敗", "マージ前確認", "PR前ゲート", "運用保証", "共有前提".
+description: GitHub CLI (`gh`) のactive account drift、remote owner不一致、repo解決失敗、credential username差分、Git author差分、PR review thread の fail-closed resolve をGitHub write前後に検査する共有向け運用ゲート。Use before or after `gh` / GitHub operations such as `git push`, `gh pr create`, `gh pr edit`, `gh pr merge`, review thread resolve, branch cleanup, release/tag work, GitHub issue/discussion writes, or when errors mention wrong account, active account, repo not found, GraphQL repository resolution, unresolved review threads, `gh auth switch`, `gh auth status`, `GITHUB_TOKEN`, credential username, owner mismatch, or Japanese requests such as "gh名義", "GitHub名義", "repo解決失敗", "マージ前確認", "PR前ゲート", "review吸収", "運用保証", "共有前提".
 ---
 
 # GitHub CLI Ops Guard
@@ -50,6 +50,19 @@ gh auth switch --hostname github.com --user <expected_owner>
 
 6. After any GitHub write, verify the result with a read command and rerun the identity check if additional GitHub writes remain.
 
+## PR review thread resolve（既存 audit 判定のみ）
+
+Review / comment thread を閉じる前に、既存の read-only audit 判定を使う。comment 本文や commit 更新だけで「修正済み」と推定して resolve しない。
+
+```powershell
+python scripts/github_pr_review_thread_audit.py --repo owner/name --pr N --json
+python scripts/github_pr_review_thread_resolve.py --repo owner/name --pr N --json
+```
+
+- 既存判定が `error` / pagination 未完了 / 未解決 thread あり → resolve しない。未解決は materials として残す。
+- `--apply` は既存判定がすでに `isResolved` と判定した thread だけを対象にする（未解決の強制 close はしない）。
+- raw `resolveReviewThread` や本文推定での close は使わない。
+
 ## Stop Lines
 
 Stop and explain in human language when any of these are true:
@@ -61,6 +74,7 @@ Stop and explain in human language when any of these are true:
 - Repo visibility is public or unknown and the user did not explicitly approve that target and operation.
 - The target operation is `gh pr merge`, `commands:register`, release/tag, visibility, hook/settings/auth, or credential mutation without current-turn approval.
 - The working tree is dirty and the intended GitHub write does not explicitly include or exclude that dirty scope.
+- `github_pr_review_thread_resolve.py` returns `hold` / `error` (unresolved or unjudgeable threads remain as materials).
 
 ## Recovery Pattern
 
