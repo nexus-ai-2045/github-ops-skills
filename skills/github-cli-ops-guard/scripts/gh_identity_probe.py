@@ -121,10 +121,16 @@ def parse_remote_owner(remote_url: str | None) -> tuple[str | None, str | None]:
 
 
 def gh_active_login(cwd: Path) -> tuple[str | None, str | None]:
-    code, out, err = run(["gh", "api", "user", "--jq", ".login"], cwd)
+    env = os.environ.copy()
+    env["GH_HOST"] = "github.com"
+    code, out, err = run(
+        ["gh", "api", "user", "--jq", ".login"], cwd, env=env
+    )
     if code == 0 and out:
         return out, None
-    status_code, status_out, status_err = run(["gh", "auth", "status", "--hostname", "github.com"], cwd)
+    status_code, status_out, status_err = run(
+        ["gh", "auth", "status", "--hostname", "github.com"], cwd, env=env
+    )
     combined = "\n".join(part for part in [status_out, status_err] if part)
     active = None
     for line in combined.splitlines():
@@ -249,7 +255,13 @@ def main() -> int:
     repo_view_error = None
     visibility = None
     if repo_full_name:
-        code, out, err = run(["gh", "repo", "view", repo_full_name, "--json", "nameWithOwner,visibility"], cwd)
+        host_env = os.environ.copy()
+        host_env["GH_HOST"] = "github.com"
+        code, out, err = run(
+            ["gh", "repo", "view", repo_full_name, "--json", "nameWithOwner,visibility"],
+            cwd,
+            env=host_env,
+        )
         if code == 0 and out:
             repo_view_ok = True
             try:

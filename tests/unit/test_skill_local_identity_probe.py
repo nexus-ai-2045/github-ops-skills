@@ -109,6 +109,20 @@ def test_run_handles_os_error_without_raising(monkeypatch) -> None:
     assert "gh executable missing" in stderr
 
 
+def test_active_login_is_bound_to_github_com(monkeypatch) -> None:
+    module = _load_module()
+    captured = {}
+
+    def fake_run(cmd, cwd, **kwargs):  # noqa: ANN001, ANN202
+        captured.update(kwargs)
+        return 0, "example-user", ""
+
+    monkeypatch.setenv("GH_HOST", "enterprise.example")
+    monkeypatch.setattr(module, "run", fake_run)
+    assert module.gh_active_login(Path(".")) == ("example-user", None)
+    assert captured["env"]["GH_HOST"] == "github.com"
+
+
 def test_git_credential_login_validates_the_returned_token(monkeypatch) -> None:
     module = _load_module()
     calls = []
