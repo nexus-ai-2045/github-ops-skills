@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .command import CommandRunner
+from .redaction import redact
 from .result import Outcome, Status
 
 
@@ -379,8 +380,8 @@ class IdentityProbe:
                 "remote_owner": owner,
                 "login": login,
                 "identity_mode": mode,
-                "credential_username": credential_username
-                if push_is_https
+                "credential_username": redact(credential_username)
+                if push_is_https and credential_username is not None
                 else None,
                 "ssh_login": ssh_login
                 if push_is_ssh

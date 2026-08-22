@@ -14,6 +14,19 @@ from urllib.parse import urlparse
 
 
 COMMAND_TIMEOUT_SECONDS = 30
+TOKEN_PATTERNS = (
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+)
+
+
+def redact(text: str | None) -> str | None:
+    if text is None:
+        return None
+    result = text
+    for pattern in TOKEN_PATTERNS:
+        result = pattern.sub("[REDACTED]", result)
+    return result
 
 
 def run(
@@ -158,6 +171,49 @@ def git_credential_login(
     return fields.get("username"), login, None
 
 
+def push_transport_identity(
+    cwd: Path, push_url: str | None
+) -> tuple[str | None, str | None, str | None]:
+    parsed = urlparse(push_url or "")
+    is_https = parsed.scheme.casefold() == "https" and parsed.hostname == "github.com"
+    is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url or "")) or (
+        parsed.scheme.casefold() == "ssh"
+        and parsed.hostname == "github.com"
+        and parsed.username == "git"
+    )
+    if is_https:
+        code, out, err = run(
+            [
+                "git", "config", "--get-regexp",
+                r"^http\..*\.extraheader$|^http\.extraheader$",
+            ],
+            cwd,
+        )
+        if code not in {0, 1}:
+            return None, None, err or "HTTP authorization override is unverified"
+        if code == 0 and "authorization:" in out.casefold():
+            return None, None, "HTTP Authorization extraheader is unsupported"
+        return git_credential_login(cwd, push_url)
+    if is_ssh:
+        code, out, err = run(["git", "config", "--get", "core.sshCommand"], cwd)
+        if code not in {0, 1}:
+            return None, None, err or "SSH transport config is unverified"
+        overrides = [
+            name for name in ("GIT_SSH_COMMAND", "GIT_SSH") if os.environ.get(name)
+        ]
+        if code == 0 and out:
+            overrides.append("core.sshCommand")
+        if overrides:
+            return None, None, "SSH transport override is unsupported"
+        code, out, err = run(["ssh", "-T", "git@github.com"], cwd)
+        greeting = "\n".join(part for part in (out, err) if part)
+        match = re.search(r"Hi\s+([^!\s]+)!", greeting)
+        if code not in {0, 1} or not match:
+            return None, None, "SSH login could not be verified"
+        return None, match.group(1), None
+    return None, None, "unsupported push transport"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe gh active identity against a local GitHub repo.")
     parser.add_argument("--repo", default=".", help="local repository root")
@@ -169,13 +225,19 @@ def main() -> int:
     cwd = Path(args.repo).resolve()
     remote_url = git_value(cwd, "remote", "get-url", "origin")
     remote_owner, remote_repo = parse_remote_owner(remote_url)
+    push_urls_text = git_value(
+        cwd, "remote", "get-url", "--push", "--all", "origin"
+    )
+    push_urls = push_urls_text.splitlines() if push_urls_text else []
+    push_url = push_urls[0] if len(push_urls) == 1 else None
+    push_owner, push_repo = parse_remote_owner(push_url)
     expected_owner = args.expected_owner or remote_owner
     expected_login = args.expected_login
-    credential_username, credential_login, credential_error = git_credential_login(
-        cwd, remote_url
+    credential_username, credential_login, credential_error = push_transport_identity(
+        cwd, push_url
     )
     credential_required = bool(
-        expected_login and urlparse(remote_url or "").scheme.casefold() == "https"
+        expected_login and push_url
     )
     branch = git_value(cwd, "branch", "--show-current")
     git_author_name = git_value(cwd, "config", "--get", "user.name")
@@ -207,6 +269,17 @@ def main() -> int:
             "status": "ok" if remote_owner and remote_owner == expected_owner else "error",
             "value": remote_owner,
         },
+        "push_url": {
+            "status": "ok" if (
+                len(push_urls) == 1
+                and push_owner == remote_owner
+                and push_repo == remote_repo
+            ) else "error",
+            "value": (
+                f"{push_owner}/{push_repo}" if push_owner and push_repo else None
+            ),
+            "detail": None if len(push_urls) == 1 else "exactly one push URL is required",
+        },
         "expected_owner": {"status": "ok" if expected_owner else "error", "value": expected_owner},
         "gh_active_login": {
             "status": "ok" if active_login and (not expected_login or active_login == expected_login) else "error",
@@ -217,9 +290,10 @@ def main() -> int:
             # HTTPS usernames (including x-access-token) are not identities;
             # verify the effective credential token through the API instead.
             "status": "ok" if (
-                not credential_required or credential_login == expected_login
+                credential_error is None
+                and (not credential_required or credential_login == expected_login)
             ) else "error",
-            "value": credential_username,
+            "value": redact(credential_username),
             "detail": credential_error,
         },
         "repo_view": {

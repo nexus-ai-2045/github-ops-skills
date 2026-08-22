@@ -19,6 +19,8 @@ def snapshot(**overrides) -> ConvergenceSnapshot:
         "checks_state": "success",
         "checks_head_sha": HEAD,
         "unresolved_threads": 0,
+        "thread_audit_head_sha": HEAD,
+        "thread_audit_base_sha": "b" * 40,
         "latest_review_head_sha": HEAD,
         "latest_review_base_sha": "b" * 40,
         "latest_review_outcome": "clean",
@@ -61,6 +63,12 @@ def test_unresolved_review_requires_verified_repair() -> None:
 def test_non_integer_thread_count_is_rejected() -> None:
     assert decide_next_step(snapshot(unresolved_threads=False)).code == "thread_count_invalid"
     assert decide_next_step(snapshot(unresolved_threads=0.0)).code == "thread_count_invalid"
+
+
+def test_thread_audit_must_match_exact_revision() -> None:
+    result = decide_next_step(snapshot(thread_audit_head_sha="c" * 40))
+    assert result.code == "thread_audit_revision_mismatch"
+    assert result.status.value == "UNKNOWN"
 
 
 def test_actor_must_match_expected_actor() -> None:

@@ -59,7 +59,18 @@ def collect_location_facts(
             evidence={"repo": str(root)},
         )
     root_path = Path(top)
-    branch, _ = _run_text(command, ["git", "branch", "--show-current"], cwd=root_path)
+    branch, branch_err = _run_text(
+        command, ["git", "branch", "--show-current"], cwd=root_path
+    )
+    if branch_err or not branch:
+        return None, Outcome(
+            status=Status.UNKNOWN,
+            code="branch_unverified",
+            cause="current branchを確認できません",
+            impact="detached HEADまたはbranch不明のため書き込みは進めません",
+            recovery="明示的な非default branchをcheckoutして再実行してください",
+            evidence={"repo_root": str(root_path)},
+        )
     git_dir, _ = _run_text(command, ["git", "rev-parse", "--git-dir"], cwd=root_path)
     common_dir, _ = _run_text(
         command, ["git", "rev-parse", "--git-common-dir"], cwd=root_path
@@ -193,6 +204,7 @@ def evaluate_write_preflight(
         expected_owner=expected_owner,
         expected_login=expected_login,
         token=token,
+        expected_host="github.com",
     )
     evidence = {
         "location": {

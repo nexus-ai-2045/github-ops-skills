@@ -27,3 +27,4 @@ def test_core_suite_workflow_covers_local_verification_without_write_permissions
     assert "pull_request_target" not in text
     assert "write" not in text
     assert "secrets." not in text
+    assert text.count("persist-credentials: false") == 2

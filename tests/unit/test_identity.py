@@ -126,6 +126,23 @@ def test_probe_blocks_http_authorization_header_override(tmp_path) -> None:
     assert outcome.code == "http_auth_override_unsupported"
 
 
+def test_credential_username_is_redacted_in_evidence(tmp_path) -> None:
+    secret_username = "ghp_" + "A" * 24
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, f"username={secret_username}\npassword=hidden\n", ""),
+            CommandResult(0, "example-user\n", ""),
+            CommandResult(0, "example-user\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path, expected_owner="example-org", expected_login="example-user"
+    )
+    assert outcome.evidence["credential_username"] == "[REDACTED]"
+
+
 def test_probe_stops_when_git_credential_has_no_token(tmp_path) -> None:
     runner = FakeRunner(
         [

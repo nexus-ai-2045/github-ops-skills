@@ -31,6 +31,8 @@ class ConvergenceSnapshot:
     checks_state: str
     checks_head_sha: str
     unresolved_threads: int
+    thread_audit_head_sha: str
+    thread_audit_base_sha: str
     latest_review_head_sha: str | None
     latest_review_base_sha: str | None
     latest_review_outcome: str | None
@@ -53,6 +55,8 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "checks_state": snapshot.checks_state,
         "checks_head_sha": snapshot.checks_head_sha,
         "unresolved_threads": snapshot.unresolved_threads,
+        "thread_audit_head_sha": snapshot.thread_audit_head_sha,
+        "thread_audit_base_sha": snapshot.thread_audit_base_sha,
         "latest_review_head_sha": snapshot.latest_review_head_sha,
         "latest_review_base_sha": snapshot.latest_review_base_sha,
         "latest_review_outcome": snapshot.latest_review_outcome,
@@ -79,6 +83,8 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "base_sha": snapshot.base_sha,
         "head_sha": snapshot.head_sha,
         "checks_head_sha": snapshot.checks_head_sha,
+        "thread_audit_head_sha": snapshot.thread_audit_head_sha,
+        "thread_audit_base_sha": snapshot.thread_audit_base_sha,
     }
     if snapshot.latest_review_head_sha is not None:
         sha_values["latest_review_head_sha"] = snapshot.latest_review_head_sha
@@ -132,6 +138,13 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     ):
         return _outcome(Status.UNKNOWN, "thread_count_invalid", ConvergencePhase.LATEST_HEAD_REVIEW,
                         "review thread件数が不正です", evidence)
+    if (
+        snapshot.thread_audit_head_sha != snapshot.head_sha
+        or snapshot.thread_audit_base_sha != snapshot.base_sha
+    ):
+        return _outcome(Status.UNKNOWN, "thread_audit_revision_mismatch",
+                        ConvergencePhase.LATEST_HEAD_REVIEW,
+                        "review thread監査を同一base/headへ束縛できません", evidence)
     if snapshot.unresolved_threads:
         return _outcome(Status.BLOCKED, "review_threads_unresolved", ConvergencePhase.NEEDS_REPAIR,
                         "未解決review threadがあります", evidence)

@@ -129,6 +129,35 @@ def test_git_credential_login_validates_the_returned_token(monkeypatch) -> None:
     assert calls[1][1]["env"]["GH_HOST"] == "github.com"
 
 
+def test_https_authorization_extraheader_is_rejected(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda *args, **kwargs: (
+            0,
+            "http.https://github.com/.extraheader Authorization: " + "Bearer hidden",
+            "",
+        ),
+    )
+    _, login, error = module.push_transport_identity(
+        Path("."), "https://github.com/example-org/tooling.git"
+    )
+    assert login is None
+    assert "Authorization" in error
+
+
+def test_ssh_transport_override_is_rejected(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i other-key")
+    monkeypatch.setattr(module, "run", lambda *args, **kwargs: (1, "", ""))
+    _, login, error = module.push_transport_identity(
+        Path("."), "git@github.com:example-org/tooling.git"
+    )
+    assert login is None
+    assert "override" in error
+
+
 def test_main_emits_fail_closed_structured_outcome_on_command_failure(
     monkeypatch, capsys
 ) -> None:
@@ -177,13 +206,14 @@ def test_org_owner_and_authenticated_login_are_independent(monkeypatch, capsys) 
     def fake_git_value(cwd, *args):  # noqa: ANN001, ANN202
         values = {
             ("remote", "get-url", "origin"): "https://github.com/example-org/tooling.git",
+            ("remote", "get-url", "--push", "--all", "origin"): "https://github.com/example-org/tooling.git",
             ("branch", "--show-current"): "codex/test",
         }
         return values.get(args)
 
     monkeypatch.setattr(module, "git_value", fake_git_value)
     monkeypatch.setattr(
-        module, "git_credential_login", lambda *args: (
+        module, "push_transport_identity", lambda *args: (
             "x-access-token", "example-user", None
         )
     )
@@ -220,13 +250,15 @@ def test_expected_owner_mismatch_is_an_error(monkeypatch, capsys) -> None:
         lambda cwd, *args: (
             "https://github.com/actual-org/tooling.git"
             if args == ("remote", "get-url", "origin")
+            else "https://github.com/actual-org/tooling.git"
+            if args == ("remote", "get-url", "--push", "--all", "origin")
             else "codex/test"
             if args == ("branch", "--show-current")
             else None
         ),
     )
     monkeypatch.setattr(
-        module, "git_credential_login", lambda *args: (None, "example-user", None)
+        module, "push_transport_identity", lambda *args: (None, "example-user", None)
     )
     monkeypatch.setattr(module, "gh_active_login", lambda *args: ("example-user", None))
     monkeypatch.setattr(
@@ -252,13 +284,15 @@ def test_effective_git_credential_login_must_match_expected_login(
         lambda cwd, *args: (
             "https://github.com/example-org/tooling.git"
             if args == ("remote", "get-url", "origin")
+            else "https://github.com/example-org/tooling.git"
+            if args == ("remote", "get-url", "--push", "--all", "origin")
             else "codex/test"
             if args == ("branch", "--show-current")
             else None
         ),
     )
     monkeypatch.setattr(
-        module, "git_credential_login", lambda *args: (
+        module, "push_transport_identity", lambda *args: (
             "x-access-token", "wrong-user", None
         )
     )
@@ -274,3 +308,66 @@ def test_effective_git_credential_login_must_match_expected_login(
     assert module.main() == 1
     result = json.loads(capsys.readouterr().out)
     assert result["checks"]["credential_username"]["status"] == "error"
+
+
+def test_push_url_must_match_fetch_repository(monkeypatch, capsys) -> None:
+    module = _load_module()
+    monkeypatch.setattr(
+        module,
+        "git_value",
+        lambda cwd, *args: (
+            "https://github.com/example-org/tooling.git"
+            if args == ("remote", "get-url", "origin")
+            else "https://github.com/other-org/other.git"
+            if args == ("remote", "get-url", "--push", "--all", "origin")
+            else "codex/test"
+            if args == ("branch", "--show-current")
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        module, "push_transport_identity", lambda *args: ("x-access-token", "user", None)
+    )
+    monkeypatch.setattr(module, "gh_active_login", lambda *args: ("user", None))
+    monkeypatch.setattr(
+        module, "run", lambda *args, **kwargs: (
+            0, '{"nameWithOwner":"example-org/tooling","visibility":"PRIVATE"}', ""
+        )
+    )
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--repo", ".", "--json"])
+    assert module.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["checks"]["push_url"]["status"] == "error"
+
+
+def test_skill_probe_redacts_secret_like_credential_username(monkeypatch, capsys) -> None:
+    module = _load_module()
+    secret_username = "ghp_" + "A" * 24
+    monkeypatch.setattr(
+        module,
+        "git_value",
+        lambda cwd, *args: (
+            "https://github.com/example-org/tooling.git"
+            if args in {
+                ("remote", "get-url", "origin"),
+                ("remote", "get-url", "--push", "--all", "origin"),
+            }
+            else "codex/test"
+            if args == ("branch", "--show-current")
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        module, "push_transport_identity", lambda *args: (secret_username, "user", None)
+    )
+    monkeypatch.setattr(module, "gh_active_login", lambda *args: ("user", None))
+    monkeypatch.setattr(
+        module, "run", lambda *args, **kwargs: (
+            0, '{"nameWithOwner":"example-org/tooling","visibility":"PRIVATE"}', ""
+        )
+    )
+    monkeypatch.setattr(sys, "argv", [str(SCRIPT), "--repo", ".", "--json"])
+    assert module.main() == 0
+    output = capsys.readouterr().out
+    assert secret_username not in output
+    assert "[REDACTED]" in output

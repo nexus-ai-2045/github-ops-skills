@@ -30,8 +30,10 @@ class TrackingRunner(FakeRunner):
 class FakeIdentity:
     def __init__(self, outcome: Outcome) -> None:
         self.outcome = outcome
+        self.kwargs = None
 
     def probe(self, repo: Path, **kwargs) -> Outcome:  # noqa: ANN003
+        self.kwargs = kwargs
         return self.outcome
 
 
@@ -106,6 +108,23 @@ def test_ready_when_location_clean_and_identity_ready(tmp_path: Path) -> None:
     assert outcome.code == "write_preflight_ready"
     assert outcome.evidence["location"]["branch"] == "codex/feature"
     assert outcome.evidence["location"]["worktree_count"] == 2
+    assert identity.kwargs["expected_host"] == "github.com"
+
+
+def test_detached_head_is_unknown(tmp_path: Path) -> None:
+    runner = FakeRunner(_git_ok_responses(branch=""))
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"ok": True})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == "branch_unverified"
+    assert identity.kwargs is None
 
 
 def test_preserves_leading_space_in_porcelain_paths(tmp_path: Path) -> None:
