@@ -56,38 +56,12 @@ jobs:
           else
             git diff --check "$BASE_SHA"..HEAD
           fi
-      # docs/pr-self-review.md は nexus_ai 側の
-      # scripts/export_pr_self_review.py が生成した配布物。rules_version は
-      # 本文の sha256 先頭 16 桁なので、生成器を持たないこの repository でも
-      # 手編集を検出できる。
+      # docs/pr-self-review.md と skill 内 references/pr-self-review.md は nexus_ai 側の
+      # scripts/export_pr_self_review.py が生成した配布物。候補側では生成元が宣言する
+      # rules_version と配布コピーを確認し、信頼済みbase側のworkflowでは前置き部分を
+      # 含む文書全体をbaseの実体と比較する。
       - name: PRセルフレビュー配布物の同一性を確認
-        run: |
-          python - <<'PY'
-          import hashlib
-          import pathlib
-          import re
-          import sys
-
-          path = pathlib.Path("docs/pr-self-review.md")
-          try:
-              text = path.read_text(encoding="utf-8")
-          except (OSError, UnicodeError) as exc:
-              sys.exit(f"{path} unreadable as UTF-8: {exc}")
-          declared = re.search(r"^\| rules_version \| `([0-9a-f]{16})` \|$", text, re.M)
-          if declared is None:
-              sys.exit(f"{path} has no rules_version row")
-          start = text.find("\n## R1 ")
-          if start < 0:
-              sys.exit(f"{path} has no R1 section")
-          actual = hashlib.sha256(text[start + 1 :].encode("utf-8")).hexdigest()[:16]
-          if actual != declared.group(1):
-              sys.exit(
-                  f"{path} was edited by hand: it declares rules_version "
-                  f"{declared.group(1)} but its body hashes to {actual}. "
-                  "Regenerate it from nexus_ai scripts/export_pr_self_review.py."
-              )
-          print(f"{path} matches rules_version {actual}")
-          PY
+        run: python scripts/check_pr_self_review.py --candidate-root .
       - name: Codex adapterを検証
         run: python adapters/codex/verify_adapter.py
       - name: Claude adapterを検証
