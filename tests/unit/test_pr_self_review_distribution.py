@@ -53,3 +53,5 @@ def test_commit_push_skill_fails_closed_for_review_input_and_base_pair() -> None
     assert "INTENDED_PATHS" in skill
     assert 'git add -A -- "${INTENDED_PATHS[@]}"' in skill
     assert "required checkではない" in skill
+    commit_step = skill.split("7. 承認されたら:", 1)[1]
+    assert "手順 1 の `INTENDED_PATHS` と同じ path だけを `git add`" in commit_step

@@ -65,7 +65,8 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
      head SHAが同じでも旧レビューを再利用しない。`.github/workflows/pr-self-review-trusted.yml` の
      `workflow_dispatch` にPR番号を指定して、base/head組を再検査する
 7. 承認されたら:
-   - `git add` で関連ファイルをステージング（.env, credentials等は除外）
+   - 手順 1 の `INTENDED_PATHS` と同じ path だけを `git add` でステージングする。
+     ここで path を足し引きすると `REVIEWED_TREE` と一致しなくなり、次行の確認で停止する
    - `git commit` でコミット（Co-Authored-By付き）。手順 5 の最終レビューと同じ tree であることを確認する
    - コミット後、`git rev-list --count origin/main..HEAD` で未push数をチェック
    - 未pushが1件以上 → 「未push {N}件。pushする？」とユーザーに確認（未解決の停止条件があれば確認前に停止）
