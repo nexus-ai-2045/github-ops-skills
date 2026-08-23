@@ -32,8 +32,18 @@ def _unsafe_component(repo: Path, target: Path) -> bool:
     return False
 
 
-def verify_target_hashes(repo: Path) -> list[str]:
+def _manifest_path(repo: Path) -> Path:
     manifest = repo / "migration" / "source-manifest.json"
+    if _unsafe_component(repo, manifest):
+        raise ValueError("unsafe manifest path")
+    return manifest
+
+
+def verify_target_hashes(repo: Path) -> list[str]:
+    try:
+        manifest = _manifest_path(repo)
+    except ValueError as exc:
+        return [str(exc)]
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     errors: list[str] = []
     if payload.get("schema_version") != SCHEMA_VERSION:
@@ -79,7 +89,7 @@ def verify_target_hashes(repo: Path) -> list[str]:
 
 
 def refresh_target_hashes(repo: Path) -> int:
-    manifest = repo / "migration" / "source-manifest.json"
+    manifest = _manifest_path(repo)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     count = 0
     errors = verify_target_hashes(repo)

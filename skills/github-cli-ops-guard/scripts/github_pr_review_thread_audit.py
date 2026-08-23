@@ -59,7 +59,7 @@ def comment_title(body: str) -> str:
 
 def graphql(owner: str, name: str, number: int, cursor: str | None = None) -> dict:
     command = [
-        "gh", "api", "graphql", "-f", f"owner={owner}", "-f", f"name={name}",
+        "gh", "api", "--hostname", "github.com", "graphql", "-f", f"owner={owner}", "-f", f"name={name}",
         "-F", f"number={number}", "-f", f"query={QUERY}",
     ]
     if cursor is not None:

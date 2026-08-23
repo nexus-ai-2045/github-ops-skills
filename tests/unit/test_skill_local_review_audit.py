@@ -29,12 +29,14 @@ def test_graphql_uses_a_finite_timeout(monkeypatch) -> None:
         stdout = '{"data": {}}'
 
     def fake_run(command, **kwargs):  # noqa: ANN001, ANN003
+        captured["command"] = command
         captured.update(kwargs)
         return Completed()
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
     module.graphql("owner", "repo", 3)
     assert captured["timeout"] == 30
+    assert captured["command"][:4] == ["gh", "api", "--hostname", "github.com"]
 
 
 def test_json_output_includes_unresolved_thread_details(

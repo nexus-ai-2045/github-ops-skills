@@ -76,5 +76,31 @@ def test_unverifiable_path_component_fails_closed(tmp_path: Path) -> None:
             "target_sha256": hashlib.sha256(b"current\n").hexdigest(),
         }],
     }), encoding="utf-8")
-    with patch("github_ops.source_manifest.os.lstat", side_effect=PermissionError):
+    real_lstat = __import__("os").lstat
+
+    def fail_target(path):  # noqa: ANN001, ANN202
+        if Path(path) == tmp_path / "skills":
+            raise PermissionError("denied")
+        return real_lstat(path)
+
+    with patch("github_ops.source_manifest.os.lstat", side_effect=fail_target):
         assert verify_target_hashes(tmp_path) == ["unsafe target path: skills/x/SKILL.md"]
+
+
+def test_symlinked_manifest_is_rejected_before_refresh(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-manifest.json"
+    outside.write_text(
+        json.dumps({"schema_version": "github-ops/source-manifest/v1", "sources": []}),
+        encoding="utf-8",
+    )
+    migration = tmp_path / "migration"
+    migration.mkdir()
+    try:
+        (migration / "source-manifest.json").symlink_to(outside)
+    except OSError:
+        return
+
+    assert verify_target_hashes(tmp_path) == ["unsafe manifest path"]
+    with __import__("pytest").raises(ValueError, match="unsafe manifest path"):
+        refresh_target_hashes(tmp_path)
+    assert outside.read_text(encoding="utf-8").endswith("}")

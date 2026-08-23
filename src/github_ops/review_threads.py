@@ -187,6 +187,8 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
     command = [
         "gh",
         "api",
+        "--hostname",
+        "github.com",
         "graphql",
         "-f",
         f"owner={owner}",

@@ -14,9 +14,9 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/scripts/github_pr_review_thread_audit.py",
       "target_path": "skills/github-cli-ops-guard/scripts/github_pr_review_thread_audit.py",
-      "sha256": "bcf28a321c48d11a70d445a602f294af84b856e365048546f94322778e02b507",
+      "sha256": "785ac7c56e1c8f0c7ad802b46f29f7c3e739ba5cdb6bcfb0e203cde2ef7ad02f",
       "source_sha256": "f147a7c95241887244886477d2aae8206df7d6b8476ac2cf13b66bf1c8abab2c",
-      "target_sha256": "bcf28a321c48d11a70d445a602f294af84b856e365048546f94322778e02b507",
+      "target_sha256": "785ac7c56e1c8f0c7ad802b46f29f7c3e739ba5cdb6bcfb0e203cde2ef7ad02f",
       "normalized": true
     },
     {
