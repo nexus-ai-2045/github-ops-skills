@@ -62,4 +62,12 @@ def test_commit_push_skill_fails_closed_for_review_input_and_base_pair() -> None
     assert "手順 1 の `INTENDED_PATHS` と同じ path だけを `git add`" in commit_step
     # commit前に本物のindexのtreeを照合する（commit後のHEAD^{tree}照合では遅い）
     guard = 'test "$(git write-tree)" = "$REVIEWED_TREE"'
-    assert guard in commit_step.split("`git commit` でコミット", 1)[0]
+    assert guard in commit_step.split("git commit ...", 1)[0]
+    # shallow clone / 初回push / hook 書き換え / shell をまたぐ状態受け渡し
+    assert "--is-shallow-repository" in skill
+    assert "--unshallow" in skill
+    assert "unborn" in skill
+    assert 'STATE="$(git rev-parse --git-dir)/pr-self-review"' in skill
+    assert 'REVIEWED_TREE=$(cat "$STATE/reviewed_tree")' in commit_step
+    assert "git reset --soft HEAD@{1}" in commit_step
+    assert "--no-verify" in skill
