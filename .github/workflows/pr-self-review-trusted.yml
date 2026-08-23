@@ -32,11 +32,11 @@ jobs:
             {
               echo "base_sha=${{ github.event.pull_request.base.sha }}"
               echo "head_sha=${{ github.event.pull_request.head.sha }}"
-              echo "head_repo=${{ github.event.pull_request.head.repo.full_name }}"
+              echo "pr_number=${{ github.event.pull_request.number }}"
             } >> "$GITHUB_OUTPUT"
           else
             gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq \
-              '"base_sha=" + .base.sha, "head_sha=" + .head.sha, "head_repo=" + .head.repo.full_name' \
+              '"base_sha=" + .base.sha, "head_sha=" + .head.sha, "pr_number=" + (.number|tostring)' \
               >> "$GITHUB_OUTPUT"
           fi
       - name: 信頼済みbaseを取得
@@ -45,13 +45,27 @@ jobs:
           ref: ${{ steps.pr.outputs.base_sha }}
           path: trusted-base
           persist-credentials: false
+      # headはbase repository経由の refs/pull/<N>/head で取る。fork（private含む）の
+      # repositoryを直接checkoutするとgithub.tokenでは認証できず、そのためのPATを
+      # 未信頼PRのworkflowへ持ち込むことになる。
       - name: 提案headを取得（実行しない）
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          repository: ${{ steps.pr.outputs.head_repo }}
-          ref: ${{ steps.pr.outputs.head_sha }}
+          ref: refs/pull/${{ steps.pr.outputs.pr_number }}/head
           path: candidate
           persist-credentials: false
+      - name: 取得したheadがPRのhead SHAと一致することを確認
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ steps.pr.outputs.head_sha }}
+        working-directory: candidate
+        run: |
+          set -Eeuo pipefail
+          actual=$(git rev-parse HEAD)
+          if [[ "$actual" != "$EXPECTED_HEAD" ]]; then
+            echo "BLOCKED: checked out $actual but PR head is $EXPECTED_HEAD" >&2
+            exit 2
+          fi
       - name: 信頼済みbaseの検査器で候補を検証
         # このworkflowと検査器、allowlistがbaseに存在しない初回bootstrapはADVISORYにしない。
         # このrunはPR headに結び付くrequired checkではなく、人間bootstrap判断の材料である。

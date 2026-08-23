@@ -14,8 +14,9 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 
      ```bash
      set -Eeuo pipefail
-     DIFF_BASE=$(git merge-base origin/<base> HEAD)
-     LIVE_BASE=$(git rev-parse origin/<base>)
+     git fetch origin <base>
+     DIFF_BASE=$(git merge-base FETCH_HEAD HEAD)
+     LIVE_BASE=$(git rev-parse FETCH_HEAD)
      INTENDED_PATHS=(<approved path 1> <approved path 2> ...)
      if ((${#INTENDED_PATHS[@]} == 0)); then echo 'no intended paths'; exit 2; fi
      TMPIDX_DIR=$(mktemp -d)
@@ -30,6 +31,9 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 
    - `INTENDED_PATHS` は承認済みの関連ファイルを明示する。未 staged・staged・未 trackedのうち
      そのpathだけを一時indexへ取り込み、無関係差分やcredential候補をレビュー対象・commit対象へ混ぜない
+   - `git fetch` を先に通してから `FETCH_HEAD` で解決する。`origin/<base>` の remote-tracking ref は
+     古い・single-branch cloneに無い・force-push前を指す、のいずれもありうる。fetch が失敗したら
+     `set -Eeuo pipefail` でここで止まる（古い値のままレビュー範囲を決めない）
    - 素の `git diff` は未 staged だけ、`git diff "$DIFF_BASE"` は未 tracked を落とす。
      どちらも手順 7 が push する範囲より狭く、新規 file が確認を素通りする
 2. `git log --oneline -5` で最近のコミットスタイルを確認
@@ -62,12 +66,23 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
      `git write-tree` の `REVIEWED_TREE` を記録する。
      commit直前に一時 index で同じ tree を再計算し、値が変わったら停止する。commit後は
      `git rev-parse HEAD^{tree}` と `REVIEWED_TREE` が一致することを確認する。PRのbase SHAが変わった場合は、
-     head SHAが同じでも旧レビューを再利用しない。`.github/workflows/pr-self-review-trusted.yml` の
-     `workflow_dispatch` にPR番号を指定して、base/head組を再検査する
+     head SHAが同じでも旧レビューを再利用しない。再検査は手順 1 をやり直す
+     （新しい base を fetch し直して `DIFF_BASE` / `LIVE_BASE` / `REVIEWED_TREE` を取り直し、
+     セルフレビューを最初から実行する）。これは skill 同梱物だけで完結する。
+     配布先に `.github/workflows/pr-self-review-trusted.yml` がある場合に限り、
+     `workflow_dispatch` にPR番号を渡したbase側監査を追加で回してよい（必須ではない）
 7. 承認されたら:
-   - 手順 1 の `INTENDED_PATHS` と同じ path だけを `git add` でステージングする。
-     ここで path を足し引きすると `REVIEWED_TREE` と一致しなくなり、次行の確認で停止する
-   - `git commit` でコミット（Co-Authored-By付き）。手順 5 の最終レビューと同じ tree であることを確認する
+   - 手順 1 の `INTENDED_PATHS` と同じ path だけを `git add` でステージングする
+   - **commit する前に** 本物の index の tree を `REVIEWED_TREE` と突き合わせて停止判定する
+
+     ```bash
+     test "$(git write-tree)" = "$REVIEWED_TREE" || { echo 'index differs from reviewed tree'; exit 2; }
+     ```
+
+     `git add` の前から index に残っていた無関係な stage 済み entry はここで検出する。
+     commit 後の `HEAD^{tree}` 照合だけでは、未レビューの commit（stage 済み credential を含みうる）が
+     すでに作られた後になる
+   - `git commit` でコミット（Co-Authored-By付き）
    - コミット後、`git rev-list --count origin/main..HEAD` で未push数をチェック
    - 未pushが1件以上 → 「未push {N}件。pushする？」とユーザーに確認（未解決の停止条件があれば確認前に停止）
    - 承認 → mainなら `git push origin main`、ブランチなら `git push -u origin <branch>`

@@ -31,6 +31,9 @@ def test_trusted_workflow_uses_base_only_verifier_and_read_permissions() -> None
     assert "contents: read" in workflow
     assert "pull-requests: read" in workflow
     assert "advisory" in workflow
+    # fork（private含む）のrepositoryを直接checkoutせず、base repository経由で取る
+    assert "refs/pull/" in workflow
+    assert "head_repo" not in workflow
     assert "persist-credentials: false" in workflow
     assert "scripts/check_pr_self_review.py" in workflow
     assert "--base-root" in workflow
@@ -53,5 +56,10 @@ def test_commit_push_skill_fails_closed_for_review_input_and_base_pair() -> None
     assert "INTENDED_PATHS" in skill
     assert 'git add -A -- "${INTENDED_PATHS[@]}"' in skill
     assert "required checkではない" in skill
+    assert "git fetch origin <base>" in skill
+    assert "FETCH_HEAD" in skill
     commit_step = skill.split("7. 承認されたら:", 1)[1]
     assert "手順 1 の `INTENDED_PATHS` と同じ path だけを `git add`" in commit_step
+    # commit前に本物のindexのtreeを照合する（commit後のHEAD^{tree}照合では遅い）
+    guard = 'test "$(git write-tree)" = "$REVIEWED_TREE"'
+    assert guard in commit_step.split("`git commit` でコミット", 1)[0]
