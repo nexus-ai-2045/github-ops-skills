@@ -29,9 +29,9 @@ GitHub を触る直前（この repo）
 ## 1 コマンド（この Core Suite）
 
 ```powershell
-python scripts/preflight_write_gate.py --repo . --expected-login <login> --json
+python scripts/preflight_write_gate.py --repo . --expected-owner <owner> --expected-login <login> --json
 # dirty を意図的に含む write なら:
-python scripts/preflight_write_gate.py --repo . --expected-login <login> --allow-dirty --approved-path path/a.py --json
+python scripts/preflight_write_gate.py --repo . --expected-owner <owner> --expected-login <login> --allow-dirty --approved-path path/a.py --json
 # 複数pathは --approved-path を繰り返す。--allow-dirty 単独ではREADYにならない。
 ```
 

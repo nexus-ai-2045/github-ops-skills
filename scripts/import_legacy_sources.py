@@ -111,7 +111,7 @@ def import_sources(
                 "sha256": target_digest,
                 "source_sha256": source_digest,
                 "target_sha256": target_digest,
-                "normalized": source_digest != target_digest,
+                "normalized": source_text != text,
             }
         )
     return records

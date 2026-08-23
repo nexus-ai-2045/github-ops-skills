@@ -8,7 +8,7 @@ python adapters/codex/verify_adapter.py --repo . --json
 python adapters/claude/verify_adapter.py --repo . --json
 python adapters/grok/verify_adapter.py --repo . --json
 python scripts/gh_identity_probe.py --repo . --json
-python scripts/preflight_write_gate.py --repo . --expected-login <login> --json
+python scripts/preflight_write_gate.py --repo . --expected-owner <owner> --expected-login <login> --json
 ```
 
 接続順の正本: `docs/operating-card.md`
