@@ -79,13 +79,19 @@ def verify(repo: Path) -> dict[str, object]:
         and all(_valid_source(record) for record in sources)
     )
     manifest_target_errors: list[str] = []
+    provenance_skills: set[str] = set()
     if manifest_valid:
+        for record in sources:
+            target_parts = Path(record["target_path"]).parts
+            if len(target_parts) >= 2 and target_parts[0] == "skills":
+                provenance_skills.add(target_parts[1])
         try:
             manifest_target_errors = verify_target_hashes(repo.resolve())
         except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
             manifest_target_errors = [f"manifest target verification failed: {type(exc).__name__}"]
     manifest_valid = manifest_valid and not manifest_target_errors
     missing_skills = sorted(REQUIRED_SKILLS - set(skills))
+    missing_provenance_skills = sorted(REQUIRED_SKILLS - provenance_skills)
     unexpected_skills = sorted(set(skills) - REQUIRED_SKILLS)
     missing_entrypoints = []
     invalid_entrypoints = []
@@ -105,6 +111,7 @@ def verify(repo: Path) -> dict[str, object]:
         and not unexpected_skills
         and not missing_entrypoints
         and not invalid_entrypoints
+        and not missing_provenance_skills
         and manifest_valid
         else "BLOCKED",
         "skill_root": str(root),
@@ -114,6 +121,7 @@ def verify(repo: Path) -> dict[str, object]:
         "unexpected_skills": unexpected_skills,
         "missing_entrypoints": missing_entrypoints,
         "invalid_entrypoints": invalid_entrypoints,
+        "missing_provenance_skills": missing_provenance_skills,
         "manifest_valid": manifest_valid,
         "manifest_target_errors": manifest_target_errors,
         "manifest_sha256": manifest_sha256,

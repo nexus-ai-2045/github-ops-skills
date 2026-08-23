@@ -5,6 +5,7 @@ import sys
 from adapters.claude.verify_adapter import verify as verify_claude
 from adapters.codex.verify_adapter import verify as verify_codex
 from adapters.grok.verify_adapter import verify as verify_grok
+import adapters.codex.verify_adapter as codex_adapter
 
 
 def test_all_adapters_resolve_the_same_skill_root() -> None:
@@ -162,6 +163,40 @@ def test_adapter_blocks_unreadable_source_manifest(
     assert result["status"] == "BLOCKED"
     assert result["manifest_valid"] is False
     assert result["manifest_sha256"] is None
+
+
+def test_adapter_requires_provenance_for_every_distributed_skill(
+    tmp_path: Path, monkeypatch
+) -> None:
+    for name in codex_adapter.REQUIRED_SKILLS:
+        target = tmp_path / "skills" / name
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    records = []
+    for name in sorted(codex_adapter.REQUIRED_SKILLS - {"review-pr"}):
+        records.append(
+            {
+                "source_root": "shared",
+                "source_path": f"skills/{name}/SKILL.md",
+                "target_path": f"skills/{name}/SKILL.md",
+                "sha256": "0" * 64,
+                "source_sha256": "0" * 64,
+                "target_sha256": "0" * 64,
+                "normalized": False,
+            }
+        )
+    (tmp_path / "migration").mkdir()
+    import json
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        json.dumps({"schema_version": "github-ops/source-manifest/v1", "sources": records}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_adapter, "verify_target_hashes", lambda repo: [])
+
+    result = verify_codex(tmp_path)
+
+    assert result["status"] == "BLOCKED"
+    assert result["missing_provenance_skills"] == ["review-pr"]
 
 
 def test_claude_adapter_supports_direct_script_execution() -> None:
