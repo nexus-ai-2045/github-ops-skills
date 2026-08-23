@@ -1,76 +1,85 @@
 # github-ops-skills
 
-GitHubを複数account・複数repositoryで扱う際に、対象、identity、権限、承認を
-混同しないための小さなCore Suiteです。Codex、Claude、Grokから同じ`skills/`を参照し、
-GitHub書き込み前にfail-closedで停止できます。
+複数の GitHub アカウントと repository を扱うとき、対象・identity・権限・承認を混ぜないための小さな Core Suite です。Codex / Claude / Grok は同じ `skills/` を見ます。書き込み前に fail-closed で止まります。
 
-## 安全境界
+## 目的
 
-- 通常のprobeとE2Eはread-onlyです。
-- globalな`gh` active accountを切り替えません。
-- tokenをfile、引数、出力へ保存しません。
-- adapterはhome directoryや設定を変更しません。
-- push、PR、repository作成、visibility変更は現在会話の明示承認なしに実行しません。
-- PR title/bodyは日本語gateを通し、作成後に承認済み入力との一致をread-backします。
+GitHub へ書く直前に、今どの owner の、どの repo に触ろうとしているかを identity と remote から確定します。write 権限の有無は照会しません。確定できない操作は実行しません。
 
-## 必須契約
+公開判断、テスト成功、Settings 変更は別の承認です。この repo はフル orchestrator ではなく、既存 skill を直列につなぐだけです。
 
-この repository の作業では、既存のgate／文書／skillだけを使い、次を必須契約とします。
-新しいprotocolやscriptは追加しません。
+## できること
 
-| 契約 | このrepoでの扱い |
-|---|---|
-| `repo-preflight` / `public-repo-readiness` | 公開前判断材料。自動でのvisibility変更はしない |
-| 本repoの GitHub ops suite（この Core Suite） | identity／preflight／日本語gate／adapter。SSOTは`skills/` |
-| `engineering-brain` | 判断が必要な作業のときだけ適用 |
-| FDE（`fractal-decision-ecosystem`） | skill内の FDE Packet と同じ略称・packet契約 |
-| `ai-ratchet-gate` | 既存の昇格・回帰gateとして参照（新規scriptは作らない） |
-| `nexus-management-os` | 運用OS側の既存契約として参照（このrepo外正本） |
-| `nexus_ai` | mainline／最新の参照先。fork用の第二複製ではない |
+- GitHub CLI の active account と remote owner を照合する
+- PR の title/body が日本語境界を満たすか検査する
+- runtime skill が `skills/` 正本からずれていないか検査する
+- `tracked ∧ ignored` の新規増加を ai-ratchet-gate が CI で検出する（required check 未設定のため merge は機械強制しない）
+- review thread を本文推定せず、既存 audit 判定だけで扱う
 
-実行は README・`docs/`・`scripts/`・`skills/` に既にある手順と、上記 sibling 正本の既存手順に従います。
+やらないこと: visibility 変更、自動 merge、token の保存、home 設定の書き換え。
 
-## ローカル確認
+## クイックスタート
+
+Python 3.11 以上。token は環境変数だけに置き、file へ書きません。
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe scripts/gh_identity_probe.py --repo . --json
-.\.venv\Scripts\python.exe adapters/codex/verify_adapter.py --repo . --json
-.\.venv\Scripts\python.exe adapters/claude/verify_adapter.py --repo . --json
 .\.venv\Scripts\python.exe adapters/grok/verify_adapter.py --repo . --json
 ```
 
-結果は`READY`、`BLOCKED`、`UNKNOWN`の3状態です。`UNKNOWN`を成功として扱いません。
-account overlay例は`examples/account-repo-map.example.yaml`にあります。
-PR作成手順は`docs/pr-japanese-gate.md`を参照してください。
+結果は `READY` / `BLOCKED` / `UNKNOWN` の3状態です。`UNKNOWN` を成功扱いしません。
 
-PR review thread の read-only 監査:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/github_pr_review_thread_audit.py --repo owner/name --pr N --json
-```
-
-runtime skill との差分確認:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/skill_drift_check.py --repo . --runtime codex --local-root <runtime-skills-root> --json
-```
-
-GitHub write 前の薄い接続ゲート（場所 + dirty + identity）:
+GitHub へ書く直前:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --expected-owner <owner> --expected-login <login> --json
 ```
 
-既存 worktree skill/repo との接続順は `docs/operating-card.md`。
-人間レビュー材料は `docs/human-review-packet.md`。
+`<owner>` と `<login>` は、今触っている clone の remote owner と `gh` login に置き換えてください。upstream 維持者専用の値ではありません。
 
-並列作業中のsibling repositoryに未commit変更がある場合は、
-`skills/cross-repo-wip-ownership/`と
-`schemas/wip-ownership-registry.schema.json`で所有者、期限、依存関係、
-secretリスクを`allow`／`warn`／`block`へ分類できます。
+接続順の詳細は [運用カード](docs/operating-card.md) です。
 
-保証はL1（静的契約）、L2（ローカル実行）、L3（GitHub read-only実測）、
-L4（private canary）を分離します。現在の実測は`PUBLIC_READY.md`を参照してください。
+## 安全境界
+
+- 通常の probe と E2E は read-only です
+- global な `gh` active account を切り替えません
+- token を file・引数・出力へ保存しません
+- push / PR / merge / repository 作成 / visibility 変更は、現在会話の明示承認が必要です
+- PR title/body は日本語 gate を通し、作成後に read-back します
+- required status checks と secret scanning は GitHub Settings であり、この repo の file 差分ではありません
+
+## 必須契約
+
+既存の gate と sibling 正本だけを使います。新しい protocol や script は足しません。
+
+| 契約 | この repo での扱い |
+|---|---|
+| `repo-preflight` / `public-repo-readiness` | 公開前の判断材料。visibility は自動変更しない |
+| この Core Suite | identity / 日本語 gate / adapter。正本は `skills/` |
+| `engineering-brain` | 判断が必要な作業のときだけ |
+| FDE | skill 内 FDE Packet と同じ契約 |
+| `ai-ratchet-gate` | 既存の昇格・回帰 gate。エンジンは再実装しない |
+| `nexus-management-os` | 運用 OS 側の既存契約 |
+| `nexus_ai` | mainline / 最新参照。第二複製にしない |
+
+## ライセンスと出典
+
+コードは [MIT License](LICENSE) です。Copyright (c) 2026 nexus_ai。
+
+検査ロジックの一部は sibling 正本を呼びます。
+
+- [repo-preflight](https://github.com/nexus-ai-2045/repo-preflight)
+- [ai-ratchet-gate](https://github.com/nexus-ai-2045/ai-ratchet-gate)
+
+## 次の文書
+
+| 文書 | 内容 |
+|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | setup / test / PR |
+| [SECURITY.md](SECURITY.md) | 報告経路 |
+| [PUBLIC_READY.md](PUBLIC_READY.md) | L1–L4 の実測 |
+| [PREFLIGHT.md](PREFLIGHT.md) | release 前の review 記録 |
+| [docs/operating-card.md](docs/operating-card.md) | write 前の接続順 |
+| [docs/pr-japanese-gate.md](docs/pr-japanese-gate.md) | PR 日本語 gate |

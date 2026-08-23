@@ -1,10 +1,11 @@
 # セキュリティ
 
 secret、個人パス、誤account操作を見つけた場合は公開issueへ詳細を書かないでください。
-このrepositoryはprivateのため、GitHubのPrivate vulnerability reportingは利用できません。
-private運用中は、詳細を書かずにrepository管理者へ非公開連絡方法を確認してください。
-publicへ変更する場合は、変更直後にPrivate vulnerability reportingを有効化し、この節を
-正確な報告手順へ更新することを公開前の必須条件とします。
+
+この repository は public です。脆弱性や漏えいの疑いがある場合の第一経路は
+GitHub の [Private vulnerability reporting](https://github.com/nexus-ai-2045/github-ops-skills/security/advisories/new)
+です。ページが 404 なら未有効なので、公開 issue へ詳細を書かず owner `nexus-ai-2045` へ
+GitHub 上で非公開連絡してください。メールアドレスはこの file に置きません。
 
 このrepositoryはtokenを受け取る場合も対象processの環境変数だけを使い、ログへ
 出さない設計です。漏えいの疑いがあるtokenは直ちに提供元で失効してください。
