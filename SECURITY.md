@@ -1,10 +1,10 @@
 # セキュリティ
 
 secret、個人パス、誤account操作を見つけた場合は公開issueへ詳細を書かないでください。
-このrepositoryはprivateのため、GitHubのPrivate vulnerability reportingは利用できません。
-private運用中は、詳細を書かずにrepository管理者へ非公開連絡方法を確認してください。
-publicへ変更する場合は、変更直後にPrivate vulnerability reportingを有効化し、この節を
-正確な報告手順へ更新することを公開前の必須条件とします。
+
+この repository は public です。GitHub の Private vulnerability reporting が有効な場合は、
+そこから非公開で報告してください。まだ有効でない場合は、公開issueへ詳細を書かず、
+repository 管理者へ先に連絡してください。
 
 このrepositoryはtokenを受け取る場合も対象processの環境変数だけを使い、ログへ
 出さない設計です。漏えいの疑いがあるtokenは直ちに提供元で失効してください。
