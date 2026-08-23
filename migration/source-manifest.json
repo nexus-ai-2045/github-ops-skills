@@ -41,19 +41,19 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
       "target_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
-      "sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
+      "sha256": "018ef1c18f19c7cc8027e91f4c179e8c771cd58bc101e9841c7161789facd5ae",
       "source_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
-      "target_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
-      "normalized": false
+      "target_sha256": "018ef1c18f19c7cc8027e91f4c179e8c771cd58bc101e9841c7161789facd5ae",
+      "normalized": true
     },
     {
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/SKILL.md",
       "target_path": "skills/github-cli-ops-guard/SKILL.md",
-      "sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
+      "sha256": "25624a434fa49e64654022ed7486e531faa763c4747d11a0b3bc7f0a3ead770c",
       "source_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
-      "target_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
-      "normalized": false
+      "target_sha256": "25624a434fa49e64654022ed7486e531faa763c4747d11a0b3bc7f0a3ead770c",
+      "normalized": true
     },
     {
       "source_root": "shared",
