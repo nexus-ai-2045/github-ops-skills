@@ -28,6 +28,12 @@ def test_bundled_parser_accepts_standard_ssh_url() -> None:
     assert gh_identity_probe.parse_remote_owner(
         "ssh://git@github.com/example-org/tooling.git"
     ) == ("example-org", "tooling")
+    assert gh_identity_probe.parse_remote_owner(
+        "ssh://git@github.com:22/example-org/tooling.git"
+    ) == ("example-org", "tooling")
+    assert gh_identity_probe.parse_remote_owner(
+        "ssh://git@github.com:2222/example-org/tooling.git"
+    ) == (None, None)
 
 
 def test_bundled_guard_checks_push_url_without_expected_login(monkeypatch, tmp_path: Path) -> None:

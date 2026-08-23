@@ -307,7 +307,7 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
             or parsed.hostname != "github.com"
             or parsed.username != "git"
             or parsed.password is not None
-            or explicit_port is not None
+            or explicit_port not in {None, 22}
             or parsed.query
             or parsed.fragment
         ):

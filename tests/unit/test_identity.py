@@ -67,6 +67,15 @@ def test_parse_https_remote_rejects_explicit_port() -> None:
     ) == (None, None)
 
 
+def test_parse_ssh_remote_accepts_standard_explicit_port() -> None:
+    assert parse_github_remote(
+        "ssh://git@github.com:22/example-org/tooling.git"
+    ) == ("example-org", "tooling")
+    assert parse_github_remote(
+        "ssh://git@github.com:2222/example-org/tooling.git"
+    ) == (None, None)
+
+
 def test_parse_https_remote_rejects_non_lowercase_scheme() -> None:
     assert parse_github_remote("HTTPS://github.com/example-org/tooling.git") == (
         None,

@@ -60,7 +60,7 @@ def parse_remote_owner(remote_url: str | None) -> tuple[str | None, str | None]:
             parsed.hostname != "github.com"
             or parsed.username != "git"
             or parsed.password is not None
-            or explicit_port is not None
+            or explicit_port not in {None, 22}
             or parsed.query
             or parsed.fragment
         ):
