@@ -11,6 +11,17 @@ from .result import Outcome, Status
 TOKEN_ENV_NAMES = {"GH_TOKEN", "GITHUB_TOKEN"}
 
 
+def _has_exact_https_scheme(remote_url: str) -> bool:
+    """Check the raw URL for the lowercase HTTPS scheme Git expects.
+
+    ``urllib.parse.urlparse`` normalizes schemes to lowercase, but Git's
+    transport helper lookup can preserve the original case. Inspecting the
+    raw prefix keeps this preflight aligned with the URL Git will operate on.
+    """
+    match = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", remote_url)
+    return match is not None and match.group(0) == "https:"
+
+
 class IdentityProbe:
     def __init__(self, runner: CommandRunner | None = None) -> None:
         self.runner = runner or CommandRunner()
@@ -114,7 +125,7 @@ class IdentityProbe:
             parsed_remote = None
         # Existing Core Suite contract (ops-hardening): embedded HTTPS userinfo is
         # not identity proof and must not yield READY.
-        if parsed_remote is not None and parsed_remote.scheme.casefold() == "https" and (
+        if parsed_remote is not None and _has_exact_https_scheme(remote_url) and (
             parsed_remote.username is not None or parsed_remote.password is not None
         ):
             return Outcome(
@@ -181,7 +192,7 @@ class IdentityProbe:
                 parsed_push_candidate = None
             if (
                 parsed_push_candidate is not None
-                and parsed_push_candidate.scheme.casefold() == "https"
+                and _has_exact_https_scheme(push_url)
                 and (
                     parsed_push_candidate.username is not None
                     or parsed_push_candidate.password is not None
@@ -284,7 +295,7 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
         # Redacted or otherwise malformed netloc must stay fail-closed.
         return None, None
     if (
-        parsed.scheme.casefold() != "https"
+        not _has_exact_https_scheme(remote_url)
         or parsed.hostname != "github.com"
         or parsed.username is not None
         or parsed.password is not None

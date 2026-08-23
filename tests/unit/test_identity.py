@@ -57,6 +57,13 @@ def test_parse_https_and_ssh_remotes() -> None:
     )
 
 
+def test_parse_https_remote_rejects_non_lowercase_scheme() -> None:
+    assert parse_github_remote("HTTPS://github.com/example-org/tooling.git") == (
+        None,
+        None,
+    )
+
+
 def test_parse_https_remote_rejects_embedded_credential() -> None:
     assert parse_github_remote(
         "https://x-access-token:not-a-real-credential@github.com/example-org/tooling.git"
@@ -156,3 +163,19 @@ def test_probe_blocks_push_repository_mismatch() -> None:
     )
     assert outcome.status.value == "BLOCKED"
     assert outcome.code == "push_repository_mismatch"
+
+
+def test_probe_blocks_uppercase_push_scheme() -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "HTTPS://github.com/example-org/tooling.git\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        Path("."),
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "unsupported_push_remote"
