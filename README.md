@@ -1,7 +1,7 @@
 # github-ops-skills
 
 GitHubを複数account・複数repositoryで扱う際に、対象、identity、権限、承認を
-混同しないための小さなCore Suiteです。CodexとClaudeから同じ`skills/`を参照し、
+混同しないための小さなCore Suiteです。Codex、Claude、Grokから同じ`skills/`を参照し、
 GitHub書き込み前にfail-closedで停止できます。
 
 ## 安全境界

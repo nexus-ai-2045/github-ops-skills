@@ -60,3 +60,5 @@ jobs:
         run: python adapters/codex/verify_adapter.py
       - name: Claude adapterを検証
         run: python adapters/claude/verify_adapter.py
+      - name: Grok adapterを検証
+        run: python adapters/grok/verify_adapter.py
