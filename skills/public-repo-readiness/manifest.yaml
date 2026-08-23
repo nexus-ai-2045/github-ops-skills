@@ -1,6 +1,11 @@
 name: public-repo-readiness
 owner_kind: skill
-ssot_pointers: []
+ssot_pointers:
+  - skills/public-repo-readiness/SKILL.md
+  - scripts/public_identity_guard.py
+  - PUBLIC_READY.md
+  - SECURITY.md
+  - LICENSE
 runtimes:
   claude:
     mode: copy
@@ -16,5 +21,5 @@ duplication_guard:
   max_overlap_lines: 2
 interface:
   display_name: "Public Repo Readiness"
-  short_description: "公開 GitHub repo の lockdown 文書と検査を揃える skill。"
-  default_prompt: "Use $public-repo-readiness to check PUBLIC_READY.md, SECURITY.md, LICENSE, and lockdown audit before making a repository public."
+  short_description: "公開 repo の lockdown と PUBLIC_READY 整備を fail-closed で進める。"
+  default_prompt: "Use $public-repo-readiness when preparing a repository for public readiness review."

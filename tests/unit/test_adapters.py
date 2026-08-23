@@ -5,9 +5,10 @@ import sys
 from adapters.claude.verify_adapter import verify as verify_claude
 from adapters.codex.verify_adapter import verify as verify_codex
 from adapters.grok.verify_adapter import verify as verify_grok
+import adapters.codex.verify_adapter as codex_adapter
 
 
-def test_both_adapters_resolve_the_same_skill_root() -> None:
+def test_all_adapters_resolve_the_same_skill_root() -> None:
     repo = Path(__file__).resolve().parents[2]
     codex = verify_codex(repo)
     claude = verify_claude(repo)
@@ -16,6 +17,187 @@ def test_both_adapters_resolve_the_same_skill_root() -> None:
     assert codex["skill_count"] == 8
     assert grok["status"] == "READY"
     assert codex["manifest_sha256"] == claude["manifest_sha256"] == grok["manifest_sha256"]
+    assert "public-repo-readiness" in codex["skills"]
+    assert (repo / "skills/public-repo-readiness/manifest.yaml").is_file()
+
+
+def test_adapter_blocks_when_required_skill_is_missing(tmp_path: Path) -> None:
+    skills = tmp_path / "skills"
+    for name in {
+        "commit-push-pr",
+        "github-cli-ops-guard",
+        "post-merge-closeout",
+        "pr-convergence-loop",
+        "pr-status",
+        "public-repo-readiness",
+        "review-pr",
+    }:
+        (skills / name).mkdir(parents=True)
+    migration = tmp_path / "migration"
+    migration.mkdir()
+    (migration / "source-manifest.json").write_text(
+        '{"schema_version":"github-ops/source-manifest/v1","sources":[{}]}',
+        encoding="utf-8",
+    )
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["missing_skills"] == ["cross-repo-wip-ownership"]
+
+
+def test_adapter_blocks_empty_required_skill_directories(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            (tmp_path / "skills" / source.name).mkdir(parents=True)
+    (tmp_path / "migration").mkdir()
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        '{"schema_version":"github-ops/source-manifest/v1","sources":[{}]}',
+        encoding="utf-8",
+    )
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["missing_entrypoints"]
+
+
+def test_adapter_blocks_blank_and_non_utf8_entrypoints(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            target = tmp_path / "skills" / source.name
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    (tmp_path / "skills" / "commit-push-pr" / "SKILL.md").write_text(
+        "  \n", encoding="utf-8"
+    )
+    (tmp_path / "skills" / "review-pr" / "SKILL.md").write_bytes(b"\xff")
+    (tmp_path / "migration").mkdir()
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        '{"schema_version":"github-ops/source-manifest/v1","sources":[{}]}',
+        encoding="utf-8",
+    )
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["invalid_entrypoints"] == ["commit-push-pr", "review-pr"]
+
+
+def test_adapter_blocks_invalid_source_manifest(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            (tmp_path / "skills" / source.name).mkdir(parents=True)
+    (tmp_path / "migration").mkdir()
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        "not-json", encoding="utf-8"
+    )
+    result = verify_grok(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["manifest_valid"] is False
+
+
+def test_all_adapters_block_incomplete_source_records(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            target = tmp_path / "skills" / source.name
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    (tmp_path / "migration").mkdir()
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        '{"schema_version":"github-ops/source-manifest/v1","sources":[{}]}',
+        encoding="utf-8",
+    )
+    for verify in (verify_codex, verify_claude, verify_grok):
+        result = verify(tmp_path)
+        assert result["status"] == "BLOCKED"
+        assert result["manifest_valid"] is False
+
+
+def test_adapter_blocks_formally_valid_but_false_target_digest(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            target = tmp_path / "skills" / source.name
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    (tmp_path / "migration").mkdir()
+    record = {
+        "source_root": "shared",
+        "source_path": "skills/x/SKILL.md",
+        "target_path": "skills/commit-push-pr/SKILL.md",
+        "sha256": "0" * 64,
+        "source_sha256": "0" * 64,
+        "target_sha256": "0" * 64,
+        "normalized": False,
+    }
+    import json
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        json.dumps({"schema_version": "github-ops/source-manifest/v1", "sources": [record]}),
+        encoding="utf-8",
+    )
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["manifest_target_errors"]
+
+
+def test_adapter_blocks_unreadable_source_manifest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    for source in (repo / "skills").iterdir():
+        if source.is_dir():
+            target = tmp_path / "skills" / source.name
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    migration = tmp_path / "migration"
+    migration.mkdir()
+    manifest = migration / "source-manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    original = Path.read_bytes
+
+    def unreadable(path: Path) -> bytes:
+        if path == manifest:
+            raise PermissionError("denied")
+        return original(path)
+
+    monkeypatch.setattr(Path, "read_bytes", unreadable)
+    result = verify_codex(tmp_path)
+    assert result["status"] == "BLOCKED"
+    assert result["manifest_valid"] is False
+    assert result["manifest_sha256"] is None
+
+
+def test_adapter_requires_provenance_for_every_distributed_skill(
+    tmp_path: Path, monkeypatch
+) -> None:
+    for name in codex_adapter.REQUIRED_SKILLS:
+        target = tmp_path / "skills" / name
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text("# usable\n", encoding="utf-8")
+    records = []
+    for name in sorted(codex_adapter.REQUIRED_SKILLS - {"review-pr"}):
+        records.append(
+            {
+                "source_root": "shared",
+                "source_path": f"skills/{name}/SKILL.md",
+                "target_path": f"skills/{name}/SKILL.md",
+                "sha256": "0" * 64,
+                "source_sha256": "0" * 64,
+                "target_sha256": "0" * 64,
+                "normalized": False,
+            }
+        )
+    (tmp_path / "migration").mkdir()
+    import json
+    (tmp_path / "migration" / "source-manifest.json").write_text(
+        json.dumps({"schema_version": "github-ops/source-manifest/v1", "sources": records}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_adapter, "verify_target_hashes", lambda repo: [])
+
+    result = verify_codex(tmp_path)
+
+    assert result["status"] == "BLOCKED"
+    assert result["missing_provenance_skills"] == ["review-pr"]
 
 
 def test_claude_adapter_supports_direct_script_execution() -> None:

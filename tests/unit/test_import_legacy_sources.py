@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from scripts.import_legacy_sources import import_sources, verify_records
+from scripts.import_legacy_sources import _safe_child, import_sources, verify_records
 
 
 def test_import_copies_without_modifying_source(tmp_path: Path) -> None:
@@ -22,6 +22,37 @@ def test_import_copies_without_modifying_source(tmp_path: Path) -> None:
         target / "skills/skill-a/SKILL.md"
     ).read_text(encoding="utf-8") == "# Skill A\n"
     assert verify_records(records, {"shared": source}, target) == []
+
+
+def test_target_digest_is_portable_across_line_endings(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    (source / "skill.md").write_bytes(b"one\ntwo\n")
+    records = import_sources(
+        mappings=[("shared", "skill.md", "skills/skill.md")],
+        source_roots={"shared": source},
+        target_root=target,
+    )
+    (target / "skills/skill.md").write_bytes(b"one\r\ntwo\r\n")
+    assert verify_records(records, {"shared": source}, target) == []
+
+
+def test_line_ending_conversion_is_not_reported_as_identity_normalization(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    (source / "skill.md").write_bytes(b"one\r\ntwo\r\n")
+
+    records = import_sources(
+        mappings=[("shared", "skill.md", "skills/skill.md")],
+        source_roots={"shared": source},
+        target_root=target,
+    )
+
+    assert records[0]["normalized"] is False
 
 
 def test_import_rejects_symlink(tmp_path: Path) -> None:
@@ -46,6 +77,17 @@ def test_import_rejects_symlink(tmp_path: Path) -> None:
         assert "symlink" in str(exc)
     else:
         raise AssertionError("symlink must be rejected")
+
+
+def test_safe_child_rejects_escape_after_missing_component(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    try:
+        _safe_child(root, "missing/../../escaped.txt")
+    except ValueError as exc:
+        assert "escapes root" in str(exc)
+    else:
+        raise AssertionError("missing component must not bypass root boundary")
 
 
 def test_import_normalizes_private_identity_without_modifying_source(

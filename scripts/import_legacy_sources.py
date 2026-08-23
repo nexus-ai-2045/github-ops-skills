@@ -24,6 +24,7 @@ SKILL_SOURCES = {
     "public-repo-readiness": ("agent-skills", "public-repo-readiness"),
     "post-merge-closeout": ("shared", "skills/post-merge-closeout"),
     "pr-convergence-loop": ("shared", "skills/pr-convergence-loop"),
+    "cross-repo-wip-ownership": ("shared", "skills/cross-repo-wip-ownership"),
 }
 
 
@@ -101,7 +102,7 @@ def import_sources(
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
         source_digest = _sha256(source)
-        target_digest = _sha256(target)
+        target_digest = _portable_sha256(target)
         records.append(
             {
                 "source_root": root_name,
@@ -110,7 +111,7 @@ def import_sources(
                 "sha256": target_digest,
                 "source_sha256": source_digest,
                 "target_sha256": target_digest,
-                "normalized": source_digest != target_digest,
+                "normalized": source_text != text,
             }
         )
     return records
@@ -132,7 +133,7 @@ def verify_records(
         expected_target = record.get("target_sha256", record["sha256"])
         if not source.is_file() or _sha256(source) != expected_source:
             errors.append(f"source hash mismatch: {record['source_path']}")
-        if not target.is_file() or _sha256(target) != expected_target:
+        if not target.is_file() or _portable_sha256(target) != expected_target:
             errors.append(f"target hash mismatch: {record['target_path']}")
     return errors
 
@@ -158,14 +159,36 @@ def _expand_skill_mappings(
 
 
 def _safe_child(root: Path, relative: str) -> Path:
-    unresolved_candidate = root / relative
-    if unresolved_candidate.is_symlink():
-        raise ValueError(f"symlink path is not allowed: {relative}")
-    candidate = unresolved_candidate.resolve()
+    """Return a child path under root without following intermediate symlinks.
+
+    Symlink components are rejected before resolve. The returned path is the
+    non-resolved child so callers can still observe symlink status if needed.
+    """
     resolved_root = root.resolve()
-    if candidate != resolved_root and resolved_root not in candidate.parents:
+    current = resolved_root
+    parts = Path(relative).parts
+    if not parts:
+        raise ValueError("relative path is required")
+    for index, part in enumerate(parts):
+        nxt = current / part
+        if nxt.is_symlink():
+            raise ValueError(f"symlink source is not allowed: {relative}")
+        if nxt.exists():
+            current = nxt
+            continue
+        # Remaining components do not exist yet (import target creation).
+        candidate = nxt.joinpath(*parts[index + 1 :])
+        resolved_candidate = candidate.resolve()
+        if (
+            resolved_candidate != resolved_root
+            and resolved_root not in resolved_candidate.parents
+        ):
+            raise ValueError(f"path escapes root: {relative}")
+        return candidate
+    resolved = current.resolve()
+    if resolved != resolved_root and resolved_root not in resolved.parents:
         raise ValueError(f"path escapes root: {relative}")
-    return candidate
+    return current
 
 
 def _sha256(path: Path) -> str:
@@ -174,6 +197,10 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _portable_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def _normalize_private_identity(text: str) -> str:
