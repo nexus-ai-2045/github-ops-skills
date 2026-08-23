@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
@@ -33,15 +34,76 @@ def git_value_with_origin(cwd: Path, key: str) -> tuple[str | None, str | None]:
 def parse_remote_owner(remote_url: str | None) -> tuple[str | None, str | None]:
     if not remote_url:
         return None, None
-    patterns = [
-        r"github\.com[:/](?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?$",
-        r"https://github\.com/(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?$",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, remote_url)
-        if match:
-            return match.group("owner"), match.group("repo")
-    return None, None
+    value = remote_url.strip()
+    ssh_match = re.fullmatch(
+        r"git@github\.com:(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?",
+        value,
+    )
+    if ssh_match:
+        return ssh_match.group("owner"), ssh_match.group("repo")
+
+    # Keep the raw scheme exact. urlparse() normalizes it, but Git transport
+    # helper lookup can preserve case and reject e.g. HTTPS:// on Linux.
+    scheme_match = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value)
+    if not scheme_match or scheme_match.group(0) != "https:":
+        return None, None
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return None, None
+    if (
+        parsed.hostname != "github.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None, None
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) != 2:
+        return None, None
+    owner, repo = parts[0], parts[1].removesuffix(".git")
+    if not owner or not repo or any(char.isspace() for char in owner + repo):
+        return None, None
+    return owner, repo
+
+
+def inspect_push_remote(
+    cwd: Path,
+    *,
+    fetch_owner: str | None,
+    fetch_repo: str | None,
+) -> dict[str, str]:
+    """Validate the effective origin push URL without exposing its value."""
+    push_remote = git_value(cwd, "remote", "get-url", "--all", "--push", "origin")
+    if not push_remote:
+        return {
+            "status": "error",
+            "value": "unavailable",
+            "detail": "originの実効push URLを確認できません",
+        }
+    push_urls = [line.strip() for line in push_remote.splitlines() if line.strip()]
+    if len(push_urls) != 1:
+        return {
+            "status": "error",
+            "value": f"count:{len(push_urls)}",
+            "detail": "originの実効push URLが1件に確定していません",
+        }
+    push_owner, push_repo = parse_remote_owner(push_urls[0])
+    if not push_owner or not push_repo:
+        return {
+            "status": "error",
+            "value": "configured",
+            "detail": "originの実効push URLが安全なGitHub remoteではありません",
+        }
+    push_repository = f"{push_owner}/{push_repo}"
+    if (push_owner, push_repo) != (fetch_owner, fetch_repo):
+        return {
+            "status": "error",
+            "value": push_repository,
+            "detail": "originの実効push先がfetch先repositoryと一致しません",
+        }
+    return {"status": "ok", "value": push_repository}
 
 
 def gh_active_login(cwd: Path) -> tuple[str | None, str | None]:
@@ -99,7 +161,11 @@ def main() -> int:
 
     token_env_present = any(os.environ.get(name) for name in ["GITHUB_TOKEN", "GH_TOKEN"])
     checks = {
-        "remote_url": {"status": "ok" if remote_url else "error", "value": remote_url},
+        "remote_url": {
+            "status": "ok" if remote_url else "error",
+            "value": "configured" if remote_url else None,
+            "detail": None if remote_url else "origin remoteを確認できません",
+        },
         "remote_owner": {"status": "ok" if remote_owner else "error", "value": remote_owner},
         "expected_owner": {"status": "ok" if expected_owner else "error", "value": expected_owner},
         "gh_active_login": {
@@ -124,6 +190,11 @@ def main() -> int:
             "detail": "GITHUB_TOKEN/GH_TOKEN can override expected gh auth behavior; do not print token values.",
         },
     }
+    checks["push_remote"] = inspect_push_remote(
+        cwd,
+        fetch_owner=remote_owner,
+        fetch_repo=remote_repo,
+    )
     status = "ok"
     if any(item["status"] == "error" for item in checks.values()):
         status = "error"
