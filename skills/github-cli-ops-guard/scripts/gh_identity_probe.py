@@ -101,9 +101,10 @@ def parse_remote_owner(remote_url: str | None) -> tuple[str | None, str | None]:
     try:
         parsed = urlparse(remote_url)
         hostname = parsed.hostname
+        explicit_port = parsed.port
     except ValueError:
         return None, None
-    if hostname != "github.com" or parsed.query or parsed.fragment:
+    if hostname != "github.com" or explicit_port is not None or parsed.query or parsed.fragment:
         return None, None
     if (
         parsed.scheme.lower() == "https"
@@ -150,7 +151,17 @@ def git_credential_login(
     cwd: Path, remote_url: str | None
 ) -> tuple[str | None, str | None, str | None]:
     parsed = urlparse(remote_url or "")
-    if parsed.scheme.casefold() != "https" or parsed.hostname != "github.com":
+    try:
+        explicit_port = parsed.port
+    except ValueError:
+        return None, None, "invalid remote port"
+    if (
+        parsed.scheme.casefold() != "https"
+        or parsed.hostname != "github.com"
+        or explicit_port is not None
+    ):
+        if explicit_port is not None:
+            return None, None, "unsupported explicit remote port"
         return None, None, None
     code, out, err = run(
         ["git", "credential", "fill"],
@@ -181,6 +192,12 @@ def push_transport_identity(
     cwd: Path, push_url: str | None
 ) -> tuple[str | None, str | None, str | None]:
     parsed = urlparse(push_url or "")
+    try:
+        explicit_port = parsed.port
+    except ValueError:
+        return None, None, "invalid remote port"
+    if explicit_port is not None:
+        return None, None, "unsupported explicit remote port"
     is_https = parsed.scheme.casefold() == "https" and parsed.hostname == "github.com"
     is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url or "")) or (
         parsed.scheme.casefold() == "ssh"

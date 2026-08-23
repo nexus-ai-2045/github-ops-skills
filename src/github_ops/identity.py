@@ -444,10 +444,15 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
         parsed = urlparse(remote_url)
     except ValueError:
         return None, None
+    try:
+        explicit_port = parsed.port
+    except ValueError:
+        return None, None
     if (
         parsed.scheme.casefold() == "ssh"
         and parsed.hostname == "github.com"
         and parsed.username == "git"
+        and explicit_port is None
         and not parsed.password
         and not parsed.query
         and not parsed.fragment
@@ -458,6 +463,7 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     if (
         parsed.scheme.casefold() != "https"
         or parsed.hostname != "github.com"
+        or explicit_port is not None
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query

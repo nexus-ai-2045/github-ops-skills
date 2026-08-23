@@ -78,6 +78,7 @@ def test_blocks_unapproved_dirty_paths(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -103,6 +104,7 @@ def test_ready_when_location_clean_and_identity_ready(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -114,6 +116,22 @@ def test_ready_when_location_clean_and_identity_ready(tmp_path: Path) -> None:
     assert identity.kwargs["expected_host"] == "github.com"
 
 
+def test_expected_owner_is_required_before_identity_probe(tmp_path: Path) -> None:
+    runner = TrackingRunner(_git_ok_responses(dirty=""))
+    identity = FakeIdentity(
+        Outcome(Status.READY, "identity_verified", "ok", "ok", "none", {"login": "o"})
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_login="o",
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.status is Status.BLOCKED
+    assert outcome.code == "expected_owner_required"
+    assert identity.kwargs is None
+
+
 def test_default_branch_is_blocked_even_when_clean_and_identity_ready(tmp_path: Path) -> None:
     runner = FakeRunner(_git_ok_responses(dirty="", branch="main"))
     identity = FakeIdentity(
@@ -121,6 +139,7 @@ def test_default_branch_is_blocked_even_when_clean_and_identity_ready(tmp_path: 
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -137,6 +156,7 @@ def test_stale_local_origin_head_cannot_override_remote_default(tmp_path: Path) 
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -151,6 +171,7 @@ def test_detached_head_is_unknown(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -176,6 +197,7 @@ def test_preserves_leading_space_in_porcelain_paths(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -196,6 +218,7 @@ def test_authorization_uses_raw_porcelain_paths_but_redacts_evidence(tmp_path: P
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -228,6 +251,7 @@ def test_propagates_identity_block_with_location_evidence(tmp_path: Path) -> Non
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="a",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -244,6 +268,7 @@ def test_blocks_unconfirmed_environment_token(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         token="secret",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -259,6 +284,7 @@ def test_porcelain_arrow_text_is_preserved_as_filename(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         runner=runner,  # type: ignore[arg-type]
         identity_probe=identity,  # type: ignore[arg-type]
@@ -274,6 +300,7 @@ def test_porcelain_rename_includes_source_and_target(tmp_path: Path) -> None:
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         allow_dirty=True,
         approved_paths=("new.txt",),
@@ -291,6 +318,7 @@ def test_porcelain_preserves_literal_backslash_in_filename(tmp_path: Path) -> No
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         allow_dirty=True,
         approved_paths=("secret/approved",),
@@ -308,6 +336,7 @@ def test_allow_dirty_without_explicit_paths_still_blocks(tmp_path: Path) -> None
     )
     outcome = evaluate_write_preflight(
         tmp_path,
+        expected_owner="example-org",
         expected_login="o",
         allow_dirty=True,
         runner=runner,  # type: ignore[arg-type]

@@ -197,6 +197,19 @@ def evaluate_write_preflight(
             },
         )
 
+    if not expected_owner:
+        return Outcome(
+            status=Status.BLOCKED,
+            code="expected_owner_required",
+            cause="書き込み対象のGitHub ownerが独立入力されていません",
+            impact="意図しないownerまたはrepositoryへの書き込みを検知できないため停止します",
+            recovery="--expected-ownerまたはaccount mapで想定ownerを明示してください",
+            evidence={
+                "repo_root": location.repo_root,
+                "token_env_present": bool(token),
+            },
+        )
+
     if not expected_login:
         return Outcome(
             status=Status.BLOCKED,

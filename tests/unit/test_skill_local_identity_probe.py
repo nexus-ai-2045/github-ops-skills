@@ -61,6 +61,9 @@ def test_parse_remote_owner_rejects_lookalike_hosts() -> None:
         None,
         None,
     )
+    assert module.parse_remote_owner(
+        "https://github.com:443/example-org/tooling.git"
+    ) == (None, None)
 
 
 def test_run_uses_a_finite_timeout(monkeypatch) -> None:
@@ -141,6 +144,24 @@ def test_git_credential_login_validates_the_returned_token(monkeypatch) -> None:
     assert "path=example-org/tooling.git" in calls[0][1]["input_text"]
     assert calls[1][1]["env"]["GH_TOKEN"] == "secret-value"
     assert calls[1][1]["env"]["GH_HOST"] == "github.com"
+
+
+def test_git_credential_login_rejects_explicit_port(monkeypatch) -> None:
+    module = _load_module()
+    called = False
+
+    def fake_run(*args, **kwargs):  # noqa: ANN002, ANN003
+        nonlocal called
+        called = True
+        return 0, "username=example-user\npassword=secret", ""
+
+    monkeypatch.setattr(module, "run", fake_run)
+    username, login, error = module.git_credential_login(
+        Path("."), "https://github.com:443/example-org/tooling.git"
+    )
+    assert (username, login) == (None, None)
+    assert error == "unsupported explicit remote port"
+    assert called is False
 
 
 def test_https_authorization_extraheader_is_rejected(monkeypatch) -> None:

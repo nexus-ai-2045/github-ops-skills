@@ -75,6 +75,12 @@ def test_parse_malformed_or_redacted_remote_fails_closed() -> None:
     ) == (None, None)
 
 
+def test_parse_https_remote_rejects_explicit_port() -> None:
+    assert parse_github_remote(
+        "https://github.com:443/example-org/tooling.git"
+    ) == (None, None)
+
+
 def test_probe_blocks_embedded_fetch_credential_without_leaking_it(tmp_path) -> None:
     remote = (
         "https://x-access-token:not-a-real-secret@github.com/"
