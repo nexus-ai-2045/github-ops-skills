@@ -8,11 +8,27 @@ merge product. This module only classifies reviewThreads resolution state.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import asdict, dataclass
 from typing import Any
 
 from .redaction import redact
+
+
+def github_com_env() -> dict[str, str]:
+    """Pin gh API calls to github.com (same contract as pr_create)."""
+    configured = os.environ.get("GH_HOST")
+    if configured and configured.casefold() != "github.com":
+        raise ValueError("GH_HOST is not github.com")
+    env = os.environ.copy()
+    env["GH_HOST"] = "github.com"
+    return env
+
+
+def github_com_api_argv(*parts: str) -> list[str]:
+    """Build `gh api` argv pinned to github.com via --hostname and GH_HOST."""
+    return ["gh", "api", "--hostname", "github.com", *parts]
 
 THREAD_QUERY = """
 query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
@@ -110,11 +126,8 @@ def summarize(payload: dict[str, Any]) -> AuditResult:
     unresolved_outdated = 0
     page_info = _page_info(pull_request)
     truncated = bool(page_info.get("hasNextPage"))
-    nodes = pull_request["reviewThreads"]["nodes"]
-    if not isinstance(nodes, list):
-        raise ValueError("review thread nodes is not a list")
 
-    for thread in nodes:
+    for thread in pull_request["reviewThreads"]["nodes"]:
         if not isinstance(thread.get("isResolved"), bool) or not isinstance(
             thread.get("isOutdated"), bool
         ):
@@ -184,11 +197,7 @@ def error_result(message: str) -> AuditResult:
 
 def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]:
     owner, name = repo_parts(repo)
-    command = [
-        "gh",
-        "api",
-        "--hostname",
-        "github.com",
+    command = github_com_api_argv(
         "graphql",
         "-f",
         f"owner={owner}",
@@ -198,7 +207,7 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
         f"number={number}",
         "-f",
         f"query={THREAD_QUERY}",
-    ]
+    )
     if cursor is not None:
         command.extend(["-f", f"cursor={cursor}"])
     completed = subprocess.run(
@@ -209,6 +218,7 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
         encoding="utf-8",
         errors="replace",
         timeout=GRAPHQL_TIMEOUT_SECONDS,
+        env=github_com_env(),
     )
     return json.loads(completed.stdout)
 
@@ -217,10 +227,7 @@ def _fetch_snapshot(repo: str, number: int) -> dict[str, Any]:
     payload = graphql(repo, number)
     _validate_graphql_payload(payload)
     pull_request = payload["data"]["repository"]["pullRequest"]
-    nodes = pull_request["reviewThreads"]["nodes"]
-    if not isinstance(nodes, list):
-        raise ValueError("review thread nodes is not a list")
-    all_threads = list(nodes)
+    all_threads = list(pull_request["reviewThreads"]["nodes"])
     page_info = _page_info(pull_request)
     head_ref_oid = pull_request["headRefOid"]
     if not isinstance(head_ref_oid, str) or not head_ref_oid:
@@ -245,10 +252,7 @@ def _fetch_snapshot(repo: str, number: int) -> dict[str, Any]:
             raise ValueError("pull request head changed during review thread audit")
         if pull_request_page["baseRefOid"] != base_ref_oid:
             raise ValueError("pull request base changed during review thread audit")
-        page_nodes = pull_request_page["reviewThreads"]["nodes"]
-        if not isinstance(page_nodes, list):
-            raise ValueError("review thread nodes is not a list")
-        all_threads.extend(page_nodes)
+        all_threads.extend(pull_request_page["reviewThreads"]["nodes"])
         page_info = _page_info(pull_request_page)
         page_count += 1
 

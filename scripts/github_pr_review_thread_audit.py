@@ -17,6 +17,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from github_ops.output import configure_utf8_stdout
+from github_ops.redaction import redact
 from github_ops.review_threads import error_result, fetch, summarize
 
 
@@ -34,16 +35,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = summarize(fetch(args.repo, args.pr))
     except ValueError as exc:
-        result = error_result(str(exc))
+        result = error_result(redact(str(exc)))
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or str(exc)).strip()
-        result = error_result(f"gh_api_failed: {detail}")
+        result = error_result(redact(f"gh_api_failed: {detail}"))
     except subprocess.TimeoutExpired:
         result = error_result("gh_api_timeout")
     except OSError as exc:
-        result = error_result(f"gh_launch_failed: {exc}")
+        result = error_result(redact(f"gh_launch_failed: {exc}"))
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
-        result = error_result(f"unexpected_github_response: {exc}")
+        result = error_result(redact(f"unexpected_github_response: {exc}"))
 
     payload = result.to_dict()
     if args.json:
@@ -56,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
                 outdated=result.unresolved_outdated,
             )
         )
+        for message in result.errors:
+            print(f"error: {message}")
         for thread in result.threads:
             if thread.state != "resolved":
                 print(f"{thread.state}: {thread.path}:{thread.line or '-'} {thread.title}")

@@ -5,9 +5,9 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/manifest.yaml",
       "target_path": "skills/github-cli-ops-guard/manifest.yaml",
-      "sha256": "34fa0b6557e79cfa77bdac5a0d70e29c3b497b8cc7740964aa68ed501513123f",
+      "sha256": "171a21d562fdc668c4268ddf7d00e073c49a5c7374f0be89cdfdc5a7244b8493",
       "source_sha256": "d2b5bc27b6a26a525a13f85e33473645946ee7251f55b2fd3272996abdd0f47d",
-      "target_sha256": "34fa0b6557e79cfa77bdac5a0d70e29c3b497b8cc7740964aa68ed501513123f",
+      "target_sha256": "171a21d562fdc668c4268ddf7d00e073c49a5c7374f0be89cdfdc5a7244b8493",
       "normalized": true
     },
     {
@@ -86,9 +86,9 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/SKILL.md",
       "target_path": "skills/github-cli-ops-guard/SKILL.md",
-      "sha256": "c04be18afb42dfd8dcdd664974966b46bf06288a8d4e3a9c166399ad59dea51b",
+      "sha256": "d343caf6eae13ed6af5aa421caeb5107f9dae43163361b1ee027af0922b47735",
       "source_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
-      "target_sha256": "c04be18afb42dfd8dcdd664974966b46bf06288a8d4e3a9c166399ad59dea51b",
+      "target_sha256": "d343caf6eae13ed6af5aa421caeb5107f9dae43163361b1ee027af0922b47735",
       "normalized": true
     },
     {

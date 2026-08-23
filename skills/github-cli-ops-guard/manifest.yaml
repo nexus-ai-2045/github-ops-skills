@@ -7,6 +7,7 @@ ssot_pointers:
   - skills/github-cli-ops-guard/scripts/gh_identity_probe.py
   - scripts/gh_identity_probe.py
   - scripts/github_pr_review_thread_audit.py
+  - scripts/github_pr_review_thread_resolve.py
 runtimes:
   claude:
     mode: copy
