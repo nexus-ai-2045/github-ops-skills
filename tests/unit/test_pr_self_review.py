@@ -143,3 +143,25 @@ def test_trusted_check_rejects_gate_replacement(tmp_path: Path) -> None:
     gate.write_text(gate.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
     with pytest.raises(VerificationError, match="protected gate"):
         verify_candidate(candidate_root, base_root)
+
+
+def test_trusted_check_rejects_allowlist_replacement(tmp_path: Path) -> None:
+    base_root = tmp_path / "base"
+    candidate_root = tmp_path / "candidate"
+    for relative in (
+        Path("docs/pr-self-review.md"),
+        Path("skills/commit-push-pr/references/pr-self-review.md"),
+        Path("docs/pr-self-review-trusted-digests.txt"),
+        Path(".github/workflows/pr-self-review-trusted.yml"),
+        Path("scripts/check_pr_self_review.py"),
+    ):
+        base_path = base_root / relative
+        base_path.parent.mkdir(parents=True, exist_ok=True)
+        base_path.write_bytes((ROOT / relative).read_bytes())
+        candidate_path = candidate_root / relative
+        candidate_path.parent.mkdir(parents=True, exist_ok=True)
+        candidate_path.write_bytes((ROOT / relative).read_bytes())
+    allowlist = candidate_root / "docs/pr-self-review-trusted-digests.txt"
+    allowlist.write_text(allowlist.read_text(encoding="utf-8") + "0" * 64 + "\n", encoding="utf-8")
+    with pytest.raises(VerificationError, match="protected gate"):
+        verify_candidate(candidate_root, base_root)

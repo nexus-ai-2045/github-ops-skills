@@ -30,10 +30,16 @@ def test_trusted_workflow_uses_base_only_verifier_and_read_permissions() -> None
     assert "pr_number:" in workflow
     assert "contents: read" in workflow
     assert "pull-requests: read" in workflow
+    assert "advisory" in workflow
     assert "persist-credentials: false" in workflow
     assert "scripts/check_pr_self_review.py" in workflow
     assert "--base-root" in workflow
     assert "--candidate-root" in workflow
+    adr = (ROOT / "docs/adr/0002-pr-self-review-advisory-bootstrap.md").read_text(
+        encoding="utf-8"
+    )
+    assert "advisory" in adr
+    assert "required check" in adr
 
 
 def test_commit_push_skill_fails_closed_for_review_input_and_base_pair() -> None:
@@ -44,3 +50,6 @@ def test_commit_push_skill_fails_closed_for_review_input_and_base_pair() -> None
     assert "DIFF_BASE" in skill
     assert "LIVE_BASE" in skill
     assert "REVIEWED_TREE" in skill
+    assert "INTENDED_PATHS" in skill
+    assert 'git add -A -- "${INTENDED_PATHS[@]}"' in skill
+    assert "required checkではない" in skill

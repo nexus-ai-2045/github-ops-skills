@@ -16,19 +16,21 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
      set -Eeuo pipefail
      DIFF_BASE=$(git merge-base origin/<base> HEAD)
      LIVE_BASE=$(git rev-parse origin/<base>)
+     INTENDED_PATHS=(<approved path 1> <approved path 2> ...)
+     if ((${#INTENDED_PATHS[@]} == 0)); then echo 'no intended paths'; exit 2; fi
      TMPIDX_DIR=$(mktemp -d)
      trap 'rm -rf "$TMPIDX_DIR"' EXIT
      TMPIDX="$TMPIDX_DIR/index"
      GIT_INDEX_FILE="$TMPIDX" git read-tree HEAD
-     GIT_INDEX_FILE="$TMPIDX" git add -A
+     GIT_INDEX_FILE="$TMPIDX" git add -A -- "${INTENDED_PATHS[@]}"
      GIT_INDEX_FILE="$TMPIDX" git diff --cached "$DIFF_BASE"
-     GIT_INDEX_FILE="$TMPIDX" git write-tree
+     REVIEWED_TREE=$(GIT_INDEX_FILE="$TMPIDX" git write-tree)
+     printf 'REVIEWED_TREE=%s DIFF_BASE=%s LIVE_BASE=%s\n' "$REVIEWED_TREE" "$DIFF_BASE" "$LIVE_BASE"
      ```
 
-   - `git add -A` を通すので、未 staged・staged・コミット済みに加えて
-     **未 tracked の新規 file も中身ごと** 入る。`.gitignore` 済みは入らない
-     (手順 7 の `git add` でも commit されないので範囲が一致する)
-   - 素の `git diff` は未 staged だけ、`git diff "$BASE"` は未 tracked を落とす。
+   - `INTENDED_PATHS` は承認済みの関連ファイルを明示する。未 staged・staged・未 trackedのうち
+     そのpathだけを一時indexへ取り込み、無関係差分やcredential候補をレビュー対象・commit対象へ混ぜない
+   - 素の `git diff` は未 staged だけ、`git diff "$DIFF_BASE"` は未 tracked を落とす。
      どちらも手順 7 が push する範囲より狭く、新規 file が確認を素通りする
 2. `git log --oneline -5` で最近のコミットスタイルを確認
 3. 変更内容を分析してコミットメッセージをドラフト
@@ -52,6 +54,8 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
    - localだけで実行され、GitHub CIに対応するcheckがない項目を明示する
    - CIが不足している場合は、PR作成前に「CIを追加するか」を必ずユーザーへ確認する
    - workflow追加とrequired check設定は別操作として扱い、settingsを自動変更しない
+   - `pr-self-review-trusted.yml` はbase側から候補を監査する advisory であり、PR head SHAに結び付く
+     required checkではない。merge許可やrequired設定の証拠として扱わず、人間bootstrap判断を残す
    - 5 または 6 の修正を行ったら、手順 1 の完全差分を取り直し、セルフレビューを最初から再実行する
    - 最終レビューで、`DIFF_BASE`（差分の共通祖先）と `LIVE_BASE`（`git rev-parse origin/<base>` の現在値）を
      分けて記録する。PR wrapperの `--expected-base-sha` には `LIVE_BASE` を使う。あわせて branch、prospective diff、

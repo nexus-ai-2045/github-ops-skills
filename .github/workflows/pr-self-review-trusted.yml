@@ -1,4 +1,4 @@
-name: PRセルフレビュー（信頼済みbase）
+name: PRセルフレビュー（base監査 advisory）
 
 on:
   pull_request_target:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   integrity:
-    name: 信頼済みbaseからセルフレビューを検査
+    name: 信頼済みbaseからセルフレビューを監査（advisory）
     runs-on: ubuntu-latest
     steps:
       - name: PRのbase/head SHAを解決
@@ -53,8 +53,8 @@ jobs:
           path: candidate
           persist-credentials: false
       - name: 信頼済みbaseの検査器で候補を検証
-        # このworkflowと検査器がbaseに存在しない初回bootstrapはREADYにしない。
-        # artifact更新はbase側allowlistを先に更新する別のtrusted changeが必要。
+        # このworkflowと検査器、allowlistがbaseに存在しない初回bootstrapはADVISORYにしない。
+        # このrunはPR headに結び付くrequired checkではなく、人間bootstrap判断の材料である。
         working-directory: trusted-base
         run: >-
           python scripts/check_pr_self_review.py

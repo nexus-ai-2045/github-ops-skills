@@ -22,6 +22,7 @@ _TRUSTED_DIGESTS_RELATIVE = Path("docs/pr-self-review-trusted-digests.txt")
 _PROTECTED_GATE_RELATIVES = (
     Path(".github/workflows/pr-self-review-trusted.yml"),
     Path("scripts/check_pr_self_review.py"),
+    _TRUSTED_DIGESTS_RELATIVE,
 )
 
 
@@ -153,8 +154,9 @@ def main(argv: list[str] | None = None) -> int:
     except VerificationError as exc:
         print(f"BLOCKED: {exc}", file=sys.stderr)
         return 2
-    scope = "trusted base" if args.base_root else "candidate"
-    print(f"READY: {scope} PR self-review artifact matches {computed} ({declared})")
+    scope = "base-side advisory" if args.base_root else "candidate"
+    outcome = "ADVISORY" if args.base_root else "READY"
+    print(f"{outcome}: {scope} PR self-review artifact matches {computed} ({declared})")
     return 0
 
 
