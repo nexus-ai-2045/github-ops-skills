@@ -4,15 +4,21 @@ ssot_pointers: []
 runtimes:
   claude:
     mode: copy
-    files: [SKILL.md]
+    files:
+      - SKILL.md
+      - references/pr-self-review.md
   codex:
     mode: copy
-    files: [SKILL.md]
+    files:
+      - SKILL.md
+      - references/pr-self-review.md
     extra:
       agents/openai.yaml: runtime/agents/openai.yaml
   grok:
     mode: copy
-    files: [SKILL.md]
+    files:
+      - SKILL.md
+      - references/pr-self-review.md
 duplication_guard:
   enabled: true
   max_overlap_lines: 2

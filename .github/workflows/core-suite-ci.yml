@@ -56,6 +56,14 @@ jobs:
           else
             git diff --check "$BASE_SHA"..HEAD
           fi
+      # docs/pr-self-review.md と skill 内 references/pr-self-review.md は
+      # pr-review-rule-exporter (scripts/export_pr_self_review.py) が生成した配布物。
+      # 配布物側は生成元を中立識別子で書いているので、ここでも正本 repository 名を書かない。
+      # 候補側では生成元が宣言する
+      # rules_version と配布コピーを確認し、信頼済みbase側のworkflowでは前置き部分を
+      # 含む文書全体をbaseの実体と比較する。
+      - name: PRセルフレビュー配布物の同一性を確認
+        run: python scripts/check_pr_self_review.py --candidate-root .
       - name: Codex adapterを検証
         run: python adapters/codex/verify_adapter.py
       - name: Claude adapterを検証
