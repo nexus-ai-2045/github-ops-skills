@@ -14,7 +14,7 @@ class FakeRunner:
 
     def run(self, argv, **kwargs):
         self.calls.append({"argv": list(argv), **kwargs})
-        if list(argv[:3]) == ["git", "config", "--get-regexp"]:
+        if list(argv[:3]) == ["git", "config", "--get-urlmatch"]:
             return self.http_extra_headers or CommandResult(1, "", "")
         return self.results.pop(0)
 
@@ -185,6 +185,33 @@ def test_probe_blocks_http_authorization_header_override(tmp_path) -> None:
     )
     assert outcome.status.value == "BLOCKED"
     assert outcome.code == "http_auth_override_unsupported"
+
+
+def test_probe_ignores_unrelated_http_authorization_header(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "username=x-access-token\npassword=hidden\n", ""),
+            CommandResult(0, "example-user\n", ""),
+            CommandResult(0, "example-user\n", ""),
+        ],
+        http_extra_headers=CommandResult(
+            1,
+            "",
+            "",
+        ),
+    )
+    outcome = IdentityProbe(runner).probe(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="example-user",
+    )
+    assert outcome.status.value == "READY"
+    assert [
+        call["argv"] for call in runner.calls
+        if call["argv"][:3] == ["git", "config", "--get-urlmatch"]
+    ] == [["git", "config", "--get-urlmatch", "http.extraheader", "https://github.com/example-org/tooling.git"]]
 
 
 def test_credential_username_is_redacted_in_evidence(tmp_path) -> None:

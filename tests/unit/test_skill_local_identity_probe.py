@@ -182,6 +182,28 @@ def test_https_authorization_extraheader_is_rejected(monkeypatch) -> None:
     assert "Authorization" in error
 
 
+def test_https_authorization_extraheader_is_scoped_to_push_url(monkeypatch) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_run(cmd, cwd, **kwargs):  # noqa: ANN001, ANN202
+        calls.append(cmd)
+        if cmd[:3] == ["git", "config", "--get-urlmatch"]:
+            return 1, "", ""
+        if cmd[:3] == ["git", "credential", "fill"]:
+            return 0, "username=x-access-token\npassword=secret-value", ""
+        return 0, "example-user", ""
+
+    monkeypatch.setattr(module, "run", fake_run)
+    _, login, error = module.push_transport_identity(
+        Path("."), "https://github.com/example-org/tooling.git"
+    )
+    assert (login, error) == ("example-user", None)
+    assert [cmd for cmd in calls if cmd[:3] == ["git", "config", "--get-urlmatch"]] == [
+        ["git", "config", "--get-urlmatch", "http.extraheader", "https://github.com/example-org/tooling.git"]
+    ]
+
+
 def test_ssh_transport_override_is_rejected(monkeypatch) -> None:
     module = _load_module()
     monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i other-key")

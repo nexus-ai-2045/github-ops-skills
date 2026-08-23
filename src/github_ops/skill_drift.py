@@ -44,6 +44,16 @@ def compare_skill_roots(
 ) -> list[SkillFileDrift]:
     # Only SSOT skills are compared. Local-only skills outside this Core Suite
     # are ignored to avoid high-dimensional noise from large runtime roots.
+    if _has_unsafe_component(ssot_skills_root.parent, ssot_skills_root):
+        return [
+            SkillFileDrift(
+                skill=".",
+                relative_path=".",
+                ssot_sha256=None,
+                local_sha256=None,
+                status="unsafe_ssot_symlink",
+            )
+        ]
     try:
         skills = list_skill_names(ssot_skills_root)
     except (OSError, UnicodeError) as exc:

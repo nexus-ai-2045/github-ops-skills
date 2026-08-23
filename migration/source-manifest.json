@@ -77,9 +77,9 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
       "target_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
-      "sha256": "c666914fd08366e33056c69453aef9b665791b9f200a24a47ccd2dcada6805d9",
+      "sha256": "3c171e0336b20f54cb27b0a80444285ff011cf1bbadbdf0f0e2a94f7b46cdb47",
       "source_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
-      "target_sha256": "c666914fd08366e33056c69453aef9b665791b9f200a24a47ccd2dcada6805d9",
+      "target_sha256": "3c171e0336b20f54cb27b0a80444285ff011cf1bbadbdf0f0e2a94f7b46cdb47",
       "normalized": true
     },
     {

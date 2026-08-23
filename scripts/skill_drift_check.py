@@ -35,7 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    ssot_root = (args.repo / "skills").resolve()
+    # Keep the lexical absolute path so compare_skill_roots can inspect every
+    # component (including a symlinked <repo>/skills) before enumeration.
+    ssot_root = (args.repo / "skills").absolute()
     reports = []
     overall = Status.READY
     if not args.local_root:

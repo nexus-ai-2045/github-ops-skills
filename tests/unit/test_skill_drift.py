@@ -143,6 +143,28 @@ def test_symlinked_local_skill_root_is_rejected_before_recursive_scan(tmp_path: 
     assert not any(row.relative_path == "secret.txt" for row in rows)
 
 
+def test_symlinked_ssot_root_is_rejected_before_enumeration(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    ssot_target = tmp_path / "outside-ssot"
+    ssot_target.mkdir()
+    (ssot_target / "secret-skill").mkdir()
+    (ssot_target / "secret-skill" / "SKILL.md").write_text(
+        "outside\n", encoding="utf-8"
+    )
+    local = tmp_path / "local"
+    local.mkdir()
+    try:
+        (repo / "skills").symlink_to(ssot_target, target_is_directory=True)
+    except OSError:
+        return
+    rows = _compare(repo / "skills", local)
+    assert len(rows) == 1
+    assert rows[0].status == "unsafe_ssot_symlink"
+    assert rows[0].relative_path == "."
+    assert not any(row.skill == "secret-skill" for row in rows)
+
+
 def test_compare_detects_extra_file_inside_managed_skill(tmp_path: Path) -> None:
     ssot = tmp_path / "ssot"
     local = tmp_path / "local"

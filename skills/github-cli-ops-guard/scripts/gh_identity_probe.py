@@ -207,8 +207,11 @@ def push_transport_identity(
     if is_https:
         code, out, err = run(
             [
-                "git", "config", "--get-regexp",
-                r"^http\..*\.extraheader$|^http\.extraheader$",
+                "git",
+                "config",
+                "--get-urlmatch",
+                "http.extraheader",
+                push_url,
             ],
             cwd,
         )

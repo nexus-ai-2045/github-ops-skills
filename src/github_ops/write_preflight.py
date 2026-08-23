@@ -155,48 +155,9 @@ def evaluate_write_preflight(
         return location_error
     assert location is not None
 
-    remote_head, remote_head_error = _run_text(
-        command,
-        ["git", "ls-remote", "--symref", "origin", "HEAD"],
-        cwd=Path(location.repo_root),
-    )
-    ref_lines = [
-        line for line in (remote_head or "").splitlines()
-        if line.startswith("ref: refs/heads/") and line.endswith("\tHEAD")
-    ]
-    if remote_head_error or len(ref_lines) != 1:
-        return Outcome(
-            status=Status.UNKNOWN,
-            code="default_branch_unverified",
-            cause="remote default branchを確認できません",
-            impact="default branchへの書き込み事故を除外できないため停止します",
-            recovery="origin/HEADを更新して再実行してください",
-            evidence={"repo_root": location.repo_root, "branch": location.branch},
-        )
-    default_branch = ref_lines[0].removeprefix("ref: refs/heads/").removesuffix("\tHEAD")
-    if not default_branch or any(char.isspace() for char in default_branch):
-        return Outcome(
-            status=Status.UNKNOWN,
-            code="default_branch_unverified",
-            cause="remote default branch応答が不正です",
-            impact="default branchへの書き込み事故を除外できないため停止します",
-            recovery="remote HEADを確認して再実行してください",
-            evidence={"repo_root": location.repo_root, "branch": location.branch},
-        )
-    if location.branch == default_branch:
-        return Outcome(
-            status=Status.BLOCKED,
-            code="default_branch_write_forbidden",
-            cause="current branchがremote default branchです",
-            impact="default branchへの直接書き込みを止めています",
-            recovery="専用の非default branch/worktreeで再実行してください",
-            evidence={
-                "repo_root": location.repo_root,
-                "branch": location.branch,
-                "default_branch": default_branch,
-            },
-        )
-
+    # Validate the local fetch/push URLs and identity before any command that
+    # contacts origin. An untrusted origin must never be queried merely to
+    # discover its default branch.
     if not expected_owner:
         return Outcome(
             status=Status.BLOCKED,
@@ -261,6 +222,69 @@ def evaluate_write_preflight(
         token=token,
         expected_host="github.com",
     )
+    if identity.status is not Status.READY:
+        return Outcome(
+            status=identity.status,
+            code=identity.code,
+            cause=identity.cause,
+            impact=identity.impact,
+            recovery=identity.recovery,
+            evidence={
+                "location": {
+                    "repo_root": location.repo_root,
+                    "branch": location.branch,
+                    "is_linked_worktree": location.is_linked_worktree,
+                    "common_dir": location.common_dir,
+                    "dirty_paths": [redact(path) for path in location.dirty_paths],
+                    "worktree_count": location.worktree_count,
+                    "allow_dirty": allow_dirty,
+                },
+                "identity": identity.to_dict(),
+            },
+        )
+
+    remote_head, remote_head_error = _run_text(
+        command,
+        ["git", "ls-remote", "--symref", "origin", "HEAD"],
+        cwd=Path(location.repo_root),
+    )
+    ref_lines = [
+        line for line in (remote_head or "").splitlines()
+        if line.startswith("ref: refs/heads/") and line.endswith("\tHEAD")
+    ]
+    if remote_head_error or len(ref_lines) != 1:
+        return Outcome(
+            status=Status.UNKNOWN,
+            code="default_branch_unverified",
+            cause="remote default branchを確認できません",
+            impact="default branchへの書き込み事故を除外できないため停止します",
+            recovery="origin/HEADを更新して再実行してください",
+            evidence={"repo_root": location.repo_root, "branch": location.branch},
+        )
+    default_branch = ref_lines[0].removeprefix("ref: refs/heads/").removesuffix("\tHEAD")
+    if not default_branch or any(char.isspace() for char in default_branch):
+        return Outcome(
+            status=Status.UNKNOWN,
+            code="default_branch_unverified",
+            cause="remote default branch応答が不正です",
+            impact="default branchへの書き込み事故を除外できないため停止します",
+            recovery="remote HEADを確認して再実行してください",
+            evidence={"repo_root": location.repo_root, "branch": location.branch},
+        )
+    if location.branch == default_branch:
+        return Outcome(
+            status=Status.BLOCKED,
+            code="default_branch_write_forbidden",
+            cause="current branchがremote default branchです",
+            impact="default branchへの直接書き込みを止めています",
+            recovery="専用の非default branch/worktreeで再実行してください",
+            evidence={
+                "repo_root": location.repo_root,
+                "branch": location.branch,
+                "default_branch": default_branch,
+            },
+        )
+
     evidence = {
         "location": {
             "repo_root": location.repo_root,

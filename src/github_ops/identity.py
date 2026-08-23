@@ -233,8 +233,9 @@ class IdentityProbe:
                 [
                     "git",
                     "config",
-                    "--get-regexp",
-                    r"^http\..*\.extraheader$|^http\.extraheader$",
+                    "--get-urlmatch",
+                    "http.extraheader",
+                    push_url,
                 ],
                 cwd=resolved_repo,
             )

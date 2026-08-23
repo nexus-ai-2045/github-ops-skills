@@ -132,6 +132,29 @@ def test_expected_owner_is_required_before_identity_probe(tmp_path: Path) -> Non
     assert identity.kwargs is None
 
 
+def test_identity_block_prevents_origin_default_branch_lookup(tmp_path: Path) -> None:
+    runner = TrackingRunner(_git_ok_responses(dirty=""))
+    identity = FakeIdentity(
+        Outcome(
+            Status.BLOCKED,
+            "unsupported_remote",
+            "unsupported remote",
+            "stop",
+            "fix remote",
+            {},
+        )
+    )
+    outcome = evaluate_write_preflight(
+        tmp_path,
+        expected_owner="example-org",
+        expected_login="o",
+        runner=runner,  # type: ignore[arg-type]
+        identity_probe=identity,  # type: ignore[arg-type]
+    )
+    assert outcome.code == "unsupported_remote"
+    assert not any(call[0] == ("git", "ls-remote", "--symref", "origin", "HEAD") for call in runner.calls)
+
+
 def test_default_branch_is_blocked_even_when_clean_and_identity_ready(tmp_path: Path) -> None:
     runner = FakeRunner(_git_ok_responses(dirty="", branch="main"))
     identity = FakeIdentity(

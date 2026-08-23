@@ -23,6 +23,7 @@ def verify(repo: Path) -> list[str]:
     items = payload.get("invariants")
     if not isinstance(items, list) or not items:
         return errors + ["invariants must be a non-empty list"]
+    tests_root = (repo / "tests").resolve()
     seen: set[str] = set()
     for item in items:
         identifier = item.get("id") if isinstance(item, dict) else None
@@ -54,6 +55,21 @@ def verify(repo: Path) -> list[str]:
                 continue
             if relative_path.is_absolute() or ".." in relative_path.parts or not candidate.is_file():
                 errors.append(f"test path missing: {identifier}:{relative}")
+                continue
+            try:
+                candidate.relative_to(tests_root)
+            except ValueError:
+                errors.append(
+                    f"test path outside collected tests: {identifier}:{relative}"
+                )
+                continue
+            if not (
+                candidate.name.startswith("test_")
+                or candidate.name.endswith("_test.py")
+            ) or candidate.suffix != ".py":
+                errors.append(
+                    f"test path is not a collected test module: {identifier}:{relative}"
+                )
     for missing in sorted(REQUIRED_IDS - seen):
         errors.append(f"required invariant missing: {missing}")
     return errors
