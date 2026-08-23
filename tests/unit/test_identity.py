@@ -128,6 +128,26 @@ def test_probe_blocks_embedded_push_credential_without_leaking_it() -> None:
     assert "not-a-real-credential" not in outcome.to_json()
 
 
+def test_probe_checks_push_url_without_expected_login() -> None:
+    push_remote = (
+        "https://x-access-token:not-a-real-credential@github.com/"
+        "example-org/tooling.git\n"
+    )
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, push_remote, ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(
+        Path("."),
+        expected_owner="example-org",
+    )
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "embedded_push_credential_unsupported"
+    assert "not-a-real-credential" not in outcome.to_json()
+
+
 def test_probe_blocks_multiple_push_urls() -> None:
     runner = FakeRunner(
         [

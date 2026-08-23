@@ -156,78 +156,78 @@ class IdentityProbe:
                 evidence={"expected_owner": expected_owner, "remote_owner": owner},
             )
 
-        # Existing ops-hardening contract: when expected_login is set (write path),
-        # validate the effective push URL(s), not only the fetch URL.
-        if expected_login:
-            push_remote = self.runner.run(
-                ["git", "remote", "get-url", "--all", "--push", "origin"],
-                cwd=resolved_repo,
-                redact_stdout=False,
+        # Existing ops-hardening contract: always validate the effective push
+        # URL(s), not only the fetch URL. Read-only identity probes must not
+        # report READY for a repository whose later push path is unsafe.
+        push_remote = self.runner.run(
+            ["git", "remote", "get-url", "--all", "--push", "origin"],
+            cwd=resolved_repo,
+            redact_stdout=False,
+        )
+        if push_remote.returncode != 0:
+            return Outcome(
+                status=Status.UNKNOWN,
+                code="push_remote_unavailable",
+                cause="originの実効push URLを確認できません",
+                impact="実際のpush先を確定できないため書き込みを止めています",
+                recovery="remote.origin.pushurlとorigin URLを確認してください",
+                evidence={"repository": f"{owner}/{name}"},
             )
-            if push_remote.returncode != 0:
-                return Outcome(
-                    status=Status.UNKNOWN,
-                    code="push_remote_unavailable",
-                    cause="originの実効push URLを確認できません",
-                    impact="実際のpush先を確定できないため書き込みを止めています",
-                    recovery="remote.origin.pushurlとorigin URLを確認してください",
-                    evidence={"repository": f"{owner}/{name}"},
-                )
-            push_urls = [
-                line.strip() for line in push_remote.stdout.splitlines() if line.strip()
-            ]
-            if len(push_urls) != 1:
-                return Outcome(
-                    status=Status.BLOCKED,
-                    code="push_remote_count_unsupported",
-                    cause="originの実効push URLが1つに確定していません",
-                    impact="複数または空のpush先への書き込みを止めています",
-                    recovery="originのpush URLを対象repository 1件へ限定してください",
-                    evidence={"push_url_count": len(push_urls)},
-                )
-            push_url = push_urls[0]
-            try:
-                parsed_push_candidate = urlparse(push_url)
-            except ValueError:
-                parsed_push_candidate = None
-            if (
-                parsed_push_candidate is not None
-                and _has_exact_https_scheme(push_url)
-                and (
-                    parsed_push_candidate.username is not None
-                    or parsed_push_candidate.password is not None
-                )
-            ):
-                return Outcome(
-                    status=Status.BLOCKED,
-                    code="embedded_push_credential_unsupported",
-                    cause="push URLにcredentialが埋め込まれています",
-                    impact="push URLとcredential helperで別identityを使う事故を止めています",
-                    recovery="credentialをpush URLから除去し、Git credential helperを使用してください",
-                    evidence={"push_remote_kind": "https_with_userinfo"},
-                )
-            push_owner, push_name = parse_github_remote(push_url)
-            if not push_owner or not push_name:
-                return Outcome(
-                    status=Status.BLOCKED,
-                    code="unsupported_push_remote",
-                    cause="push URLをGitHub owner/nameへ解決できません",
-                    impact="未検証のpush先への書き込みを止めています",
-                    recovery="HTTPSまたはSSHのGitHub push URLを使用してください",
-                    evidence={"push_remote_kind": "unsupported"},
-                )
-            if (push_owner, push_name) != (owner, name):
-                return Outcome(
-                    status=Status.BLOCKED,
-                    code="push_repository_mismatch",
-                    cause="push先repositoryがfetch先と一致しません",
-                    impact="別repositoryへの誤pushを止めています",
-                    recovery="remote.origin.pushurlをfetch先と同じrepositoryへ修正してください",
-                    evidence={
-                        "fetch_repository": f"{owner}/{name}",
-                        "push_repository": f"{push_owner}/{push_name}",
-                    },
-                )
+        push_urls = [
+            line.strip() for line in push_remote.stdout.splitlines() if line.strip()
+        ]
+        if len(push_urls) != 1:
+            return Outcome(
+                status=Status.BLOCKED,
+                code="push_remote_count_unsupported",
+                cause="originの実効push URLが1つに確定していません",
+                impact="複数または空のpush先への書き込みを止めています",
+                recovery="originのpush URLを対象repository 1件へ限定してください",
+                evidence={"push_url_count": len(push_urls)},
+            )
+        push_url = push_urls[0]
+        try:
+            parsed_push_candidate = urlparse(push_url)
+        except ValueError:
+            parsed_push_candidate = None
+        if (
+            parsed_push_candidate is not None
+            and _has_exact_https_scheme(push_url)
+            and (
+                parsed_push_candidate.username is not None
+                or parsed_push_candidate.password is not None
+            )
+        ):
+            return Outcome(
+                status=Status.BLOCKED,
+                code="embedded_push_credential_unsupported",
+                cause="push URLにcredentialが埋め込まれています",
+                impact="push URLとcredential helperで別identityを使う事故を止めています",
+                recovery="credentialをpush URLから除去し、Git credential helperを使用してください",
+                evidence={"push_remote_kind": "https_with_userinfo"},
+            )
+        push_owner, push_name = parse_github_remote(push_url)
+        if not push_owner or not push_name:
+            return Outcome(
+                status=Status.BLOCKED,
+                code="unsupported_push_remote",
+                cause="push URLをGitHub owner/nameへ解決できません",
+                impact="未検証のpush先への書き込みを止めています",
+                recovery="HTTPSまたはSSHのGitHub push URLを使用してください",
+                evidence={"push_remote_kind": "unsupported"},
+            )
+        if (push_owner, push_name) != (owner, name):
+            return Outcome(
+                status=Status.BLOCKED,
+                code="push_repository_mismatch",
+                cause="push先repositoryがfetch先と一致しません",
+                impact="別repositoryへの誤pushを止めています",
+                recovery="remote.origin.pushurlをfetch先と同じrepositoryへ修正してください",
+                evidence={
+                    "fetch_repository": f"{owner}/{name}",
+                    "push_repository": f"{push_owner}/{push_name}",
+                },
+            )
 
         if token and expected_login:
             token_outcome = self.validate_token_login(
