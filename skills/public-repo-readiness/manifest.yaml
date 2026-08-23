@@ -1,0 +1,20 @@
+name: public-repo-readiness
+owner_kind: skill
+ssot_pointers: []
+runtimes:
+  claude:
+    mode: copy
+    files: [SKILL.md]
+  codex:
+    mode: copy
+    files: [SKILL.md]
+  grok:
+    mode: copy
+    files: [SKILL.md]
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "Public Repo Readiness"
+  short_description: "公開 GitHub repo の lockdown 文書と検査を揃える skill。"
+  default_prompt: "Use $public-repo-readiness to check PUBLIC_READY.md, SECURITY.md, LICENSE, and lockdown audit before making a repository public."
