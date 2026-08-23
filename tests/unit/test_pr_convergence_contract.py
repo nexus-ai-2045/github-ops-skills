@@ -66,6 +66,7 @@ def test_pr_convergence_cli_runs_from_checkout() -> None:
         "pr_state": "OPEN",
         "checks_state": "success",
         "checks_head_sha": head,
+        "checks_base_sha": "b" * 40,
         "unresolved_threads": 0,
         "thread_audit_head_sha": head,
         "thread_audit_base_sha": "b" * 40,

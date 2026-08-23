@@ -31,6 +31,7 @@ class ConvergenceSnapshot:
     pr_state: str
     checks_state: str
     checks_head_sha: str
+    checks_base_sha: str
     unresolved_threads: int
     thread_audit_head_sha: str
     thread_audit_base_sha: str
@@ -56,6 +57,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "pr_state": snapshot.pr_state,
         "checks_state": snapshot.checks_state,
         "checks_head_sha": snapshot.checks_head_sha,
+        "checks_base_sha": snapshot.checks_base_sha,
         "unresolved_threads": snapshot.unresolved_threads,
         "thread_audit_head_sha": snapshot.thread_audit_head_sha,
         "thread_audit_base_sha": snapshot.thread_audit_base_sha,
@@ -86,6 +88,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
         "base_sha": snapshot.base_sha,
         "head_sha": snapshot.head_sha,
         "checks_head_sha": snapshot.checks_head_sha,
+        "checks_base_sha": snapshot.checks_base_sha,
         "thread_audit_head_sha": snapshot.thread_audit_head_sha,
         "thread_audit_base_sha": snapshot.thread_audit_base_sha,
     }
@@ -142,6 +145,9 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     if snapshot.checks_head_sha != snapshot.head_sha:
         return _outcome(Status.UNKNOWN, "checks_head_mismatch", ConvergencePhase.CI_WAIT,
                         "CI証拠を同一head SHAへ束縛できません", evidence)
+    if snapshot.checks_base_sha != snapshot.base_sha:
+        return _outcome(Status.UNKNOWN, "checks_base_mismatch", ConvergencePhase.CI_WAIT,
+                        "CI証拠を同一base SHAへ束縛できません", evidence)
     if (
         not isinstance(snapshot.unresolved_threads, int)
         or isinstance(snapshot.unresolved_threads, bool)

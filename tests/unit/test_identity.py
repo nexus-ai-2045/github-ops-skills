@@ -339,6 +339,18 @@ def test_probe_blocks_divergent_push_repository(tmp_path) -> None:
     assert outcome.code == "push_repository_mismatch"
 
 
+def test_probe_validates_push_repository_without_expected_login(tmp_path) -> None:
+    runner = FakeRunner(
+        [
+            CommandResult(0, "https://github.com/example-org/tooling.git\n", ""),
+            CommandResult(0, "https://github.com/example-org/other.git\n", ""),
+        ]
+    )
+    outcome = IdentityProbe(runner).probe(tmp_path, expected_owner="example-org")
+    assert outcome.status.value == "BLOCKED"
+    assert outcome.code == "push_repository_mismatch"
+
+
 def test_probe_blocks_multiple_push_urls(tmp_path) -> None:
     runner = FakeRunner(
         [

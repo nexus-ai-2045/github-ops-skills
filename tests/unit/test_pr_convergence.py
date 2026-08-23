@@ -19,6 +19,7 @@ def snapshot(**overrides) -> ConvergenceSnapshot:
         "pr_state": "OPEN",
         "checks_state": "success",
         "checks_head_sha": HEAD,
+        "checks_base_sha": "b" * 40,
         "unresolved_threads": 0,
         "thread_audit_head_sha": HEAD,
         "thread_audit_base_sha": "b" * 40,
@@ -104,6 +105,12 @@ def test_checks_must_match_exact_head() -> None:
     result = decide_next_step(snapshot(checks_head_sha="d" * 40))
     assert result.status.value == "UNKNOWN"
     assert result.code == "checks_head_mismatch"
+
+
+def test_checks_must_match_exact_base() -> None:
+    result = decide_next_step(snapshot(checks_base_sha="c" * 40))
+    assert result.status.value == "UNKNOWN"
+    assert result.code == "checks_base_mismatch"
 
 
 def test_repeated_failure_exhausts_repair_budget() -> None:

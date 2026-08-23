@@ -1,16 +1,16 @@
 {
   "schema_version": "fact-provenance/v1",
-  "thread_id": "github-ops-hardening-2026-08-06",
-  "recorded_at": "2026-08-06T12:00:00+09:00",
-  "recorded_by": "grok",
+  "thread_id": "01a02985-1152-7962-a858-fb7eb0379333",
+  "recorded_at": "2026-08-23T09:00:53+09:00",
+  "recorded_by": "codex",
   "claims": [
     {
       "classification": "fact",
-      "claim": "offline tests passed: 162",
+      "claim": "offline tests passed: 276",
       "source": "py -3.13 -m pytest -q --basetemp <repo外temp>",
       "actor": "pytest",
-      "event_time": "2026-08-06T12:00:00+09:00",
-      "observed_at": "2026-08-06T12:00:00+09:00",
+      "event_time": "2026-08-23T09:00:53+09:00",
+      "observed_at": "2026-08-23T09:00:53+09:00",
       "scope": "github-ops-skills codex/ops-hardening-drift-absorb"
     },
     {
