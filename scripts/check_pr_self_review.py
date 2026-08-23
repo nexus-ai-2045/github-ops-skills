@@ -88,7 +88,10 @@ def verify_artifact(root: Path) -> tuple[str, str]:
 
 def _artifact_digest(root: Path) -> str:
     path = _regular_file(root, _DOC_RELATIVE)
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    # GitHub checkout uses LF while Windows worktrees may use CRLF; the
+    # trusted identity is over canonical UTF-8 content, not checkout style.
+    canonical = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _trusted_digests(base_root: Path) -> set[str]:

@@ -1,4 +1,4 @@
 # Complete-file SHA-256 digests approved by the trusted base workflow.
 # Update this file in a separately reviewed trusted change before distributing
 # a newly generated docs/pr-self-review.md artifact.
-6fd0e08d612424bf08e77e79fefd6f433fe8764569affea369d971220ff1a8f6
+c10495d383e2286a1edf938b3143dfc4d2c12afa46261e732c8c3ff6864cd0c0

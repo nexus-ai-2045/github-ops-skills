@@ -96,7 +96,7 @@ def test_trusted_check_allows_a_preapproved_replacement(tmp_path: Path) -> None:
             encoding="utf-8",
         )
     digest = hashlib.sha256(
-        (tmp_path / "docs/pr-self-review.md").read_bytes()
+        (tmp_path / "docs/pr-self-review.md").read_bytes().replace(b"\r\n", b"\n")
     ).hexdigest()
     allowlist = tmp_path / "docs/pr-self-review-trusted-digests.txt"
     allowlist.write_text(allowlist.read_text(encoding="utf-8") + f"{digest}\n", encoding="utf-8")
