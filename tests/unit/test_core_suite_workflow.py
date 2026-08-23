@@ -19,6 +19,7 @@ def test_core_suite_workflow_covers_local_verification_without_write_permissions
         'git diff --check "$BASE_SHA"..HEAD',
         "python adapters/codex/verify_adapter.py",
         "python adapters/claude/verify_adapter.py",
+        "python adapters/grok/verify_adapter.py",
     ):
         assert required in text
     action_refs = re.findall(r"uses:\s*[^@\s]+@([^\s]+)", text)

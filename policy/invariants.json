@@ -2,7 +2,7 @@
   "schema_version": "github-ops/invariants/v1",
   "invariants": [
     {"id": "GHO-TYPE-001", "title": "外部整数はboolを拒否する", "enforcement": "test", "test_paths": ["tests/unit/test_pr_convergence.py"]},
-    {"id": "GHO-ID-001", "title": "expected identityとobserved identityを直接比較する", "enforcement": "test", "test_paths": ["tests/unit/test_identity.py", "tests/unit/test_skill_local_identity_probe.py"]},
+    {"id": "GHO-ID-001", "title": "expected identityとobserved identityを直接比較する", "enforcement": "test", "test_paths": ["tests/unit/test_identity.py", "tests/unit/test_github_cli_ops_guard.py"]},
     {"id": "GHO-ID-002", "title": "実効transportの認証overrideをfail-closedで検査する", "enforcement": "test", "test_paths": ["tests/unit/test_identity.py"]},
     {"id": "GHO-PATH-001", "title": "再帰走査前にrootと全path componentを検査する", "enforcement": "test", "test_paths": ["tests/unit/test_skill_drift.py"]},
     {"id": "GHO-PROV-001", "title": "配布manifestのtarget digestをCIで自己検証する", "enforcement": "ci", "test_paths": ["tests/unit/test_source_manifest.py"]}

@@ -13,51 +13,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-COMMAND_TIMEOUT_SECONDS = 30
-TOKEN_PATTERNS = (
-    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
-    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
-)
-
-
-def redact(text: str | None) -> str | None:
-    if text is None:
-        return None
-    result = text
-    for pattern in TOKEN_PATTERNS:
-        result = pattern.sub("[REDACTED]", result)
-    return result
-
-
-def run(
-    cmd: list[str],
-    cwd: Path,
-    *,
-    input_text: str | None = None,
-    env: dict[str, str] | None = None,
-) -> tuple[int, str, str]:
-    try:
-        proc = subprocess.run(
-            cmd,
-            cwd=str(cwd),
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            input=input_text,
-            env=env,
-            shell=False,
-            timeout=COMMAND_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-        return (
-            124,
-            stdout.strip(),
-            f"command timed out after {COMMAND_TIMEOUT_SECONDS}s",
-        )
-    except (OSError, subprocess.SubprocessError, ValueError) as exc:
-        return 127, "", f"command failed: {exc}"
+def run(cmd: list[str], cwd: Path) -> tuple[int, str, str]:
+    proc = subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, shell=False)
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
@@ -77,61 +34,104 @@ def git_value_with_origin(cwd: Path, key: str) -> tuple[str | None, str | None]:
 def parse_remote_owner(remote_url: str | None) -> tuple[str | None, str | None]:
     if not remote_url:
         return None, None
+    value = remote_url.strip()
+    ssh_match = re.fullmatch(
+        r"git@github\.com:(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?",
+        value,
+    )
+    if ssh_match:
+        return ssh_match.group("owner"), ssh_match.group("repo")
 
-    def owner_repo(path: str) -> tuple[str | None, str | None]:
-        if path.startswith("/"):
-            path = path[1:]
-        if path.endswith("/"):
-            return None, None
-        parts = path.split("/")
-        if len(parts) != 2 or any(
-            not part or any(char.isspace() for char in part) for part in parts
-        ):
-            return None, None
-        owner, repo = parts
-        if repo.endswith(".git"):
-            repo = repo[:-4]
-        return (owner, repo) if owner and repo else (None, None)
-
-    # The scp-like SSH form is not a URL, so parse it with a strict full match.
-    scp_match = re.fullmatch(r"git@github\.com:(?P<path>[^\s?#]+)", remote_url)
-    if scp_match:
-        return owner_repo(scp_match.group("path"))
-
+    # Keep the raw scheme exact. urlparse() normalizes it, but Git transport
+    # helper lookup can preserve case and reject e.g. HTTPS:// on Linux.
+    scheme_match = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value)
+    if not scheme_match or scheme_match.group(0) not in {"https:", "ssh:"}:
+        return None, None
     try:
-        parsed = urlparse(remote_url)
-        hostname = parsed.hostname
+        parsed = urlparse(value)
+    except ValueError:
+        return None, None
+    try:
         explicit_port = parsed.port
     except ValueError:
         return None, None
-    if hostname != "github.com" or explicit_port is not None or parsed.query or parsed.fragment:
+    if parsed.scheme.casefold() == "ssh":
+        if (
+            parsed.hostname != "github.com"
+            or parsed.username != "git"
+            or parsed.password is not None
+            or explicit_port not in {None, 22}
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None, None
+    elif (
+        parsed.hostname != "github.com"
+        or explicit_port is not None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
         return None, None
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) != 2:
+        return None, None
+    owner, repo = parts[0], parts[1].removesuffix(".git")
+    if not owner or not repo or any(char.isspace() for char in owner + repo):
+        return None, None
+    return owner, repo
+
+
+def inspect_push_remote(
+    cwd: Path,
+    *,
+    fetch_owner: str | None,
+    fetch_repo: str | None,
+) -> dict[str, str]:
+    """Validate the effective origin push URL without exposing its value."""
+    push_remote = git_value(cwd, "remote", "get-url", "--all", "--push", "origin")
+    if not push_remote:
+        return {
+            "status": "error",
+            "value": "unavailable",
+            "detail": "originの実効push URLを確認できません",
+        }
+    push_urls = [line.strip() for line in push_remote.splitlines() if line.strip()]
+    if len(push_urls) != 1:
+        return {
+            "status": "error",
+            "value": f"count:{len(push_urls)}",
+            "detail": "originの実効push URLが1件に確定していません",
+        }
+    push_owner, push_repo = parse_remote_owner(push_urls[0])
+    if not push_owner or not push_repo:
+        return {
+            "status": "error",
+            "value": "configured",
+            "detail": "originの実効push URLが安全なGitHub remoteではありません",
+        }
+    push_repository = f"{push_owner}/{push_repo}"
     if (
-        parsed.scheme.lower() == "https"
-        and not parsed.username
-        and not parsed.password
+        push_owner.casefold(),
+        push_repo.casefold(),
+    ) != (
+        fetch_owner.casefold() if fetch_owner else None,
+        fetch_repo.casefold() if fetch_repo else None,
     ):
-        return owner_repo(parsed.path)
-    if (
-        parsed.scheme.lower() == "ssh"
-        and parsed.username == "git"
-        and not parsed.password
-    ):
-        return owner_repo(parsed.path)
-    return None, None
+        return {
+            "status": "error",
+            "value": push_repository,
+            "detail": "originの実効push先がfetch先repositoryと一致しません",
+        }
+    return {"status": "ok", "value": push_repository}
 
 
 def gh_active_login(cwd: Path) -> tuple[str | None, str | None]:
-    env = os.environ.copy()
-    env["GH_HOST"] = "github.com"
-    code, out, err = run(
-        ["gh", "api", "user", "--jq", ".login"], cwd, env=env
-    )
+    code, out, err = run(["gh", "api", "user", "--jq", ".login"], cwd)
     if code == 0 and out:
         return out, None
-    status_code, status_out, status_err = run(
-        ["gh", "auth", "status", "--hostname", "github.com"], cwd, env=env
-    )
+    status_code, status_out, status_err = run(["gh", "auth", "status", "--hostname", "github.com"], cwd)
     combined = "\n".join(part for part in [status_out, status_err] if part)
     active = None
     for line in combined.splitlines():
@@ -147,124 +147,18 @@ def gh_active_login(cwd: Path) -> tuple[str | None, str | None]:
     return None, err or status_err or f"gh auth status exited {status_code}"
 
 
-def git_credential_login(
-    cwd: Path, remote_url: str | None
-) -> tuple[str | None, str | None, str | None]:
-    parsed = urlparse(remote_url or "")
-    try:
-        explicit_port = parsed.port
-    except ValueError:
-        return None, None, "invalid remote port"
-    if (
-        parsed.scheme.casefold() != "https"
-        or parsed.hostname != "github.com"
-        or explicit_port is not None
-    ):
-        if explicit_port is not None:
-            return None, None, "unsupported explicit remote port"
-        return None, None, None
-    code, out, err = run(
-        ["git", "credential", "fill"],
-        cwd,
-        input_text=(
-            f"protocol=https\nhost=github.com\npath={parsed.path.lstrip('/')}\n\n"
-        ),
-    )
-    if code != 0:
-        return None, None, err or "git credential fill failed"
-    fields = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
-    token = fields.get("password")
-    if not token:
-        return fields.get("username"), None, "credential token is unavailable"
-    token_env = os.environ.copy()
-    token_env.pop("GITHUB_TOKEN", None)
-    token_env["GH_TOKEN"] = token
-    token_env["GH_HOST"] = "github.com"
-    code, login, err = run(
-        ["gh", "api", "user", "--jq", ".login"], cwd, env=token_env
-    )
-    if code != 0 or not login:
-        return fields.get("username"), None, err or "credential identity lookup failed"
-    return fields.get("username"), login, None
-
-
-def push_transport_identity(
-    cwd: Path, push_url: str | None
-) -> tuple[str | None, str | None, str | None]:
-    parsed = urlparse(push_url or "")
-    try:
-        explicit_port = parsed.port
-    except ValueError:
-        return None, None, "invalid remote port"
-    if explicit_port is not None:
-        return None, None, "unsupported explicit remote port"
-    is_https = parsed.scheme.casefold() == "https" and parsed.hostname == "github.com"
-    is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url or "")) or (
-        parsed.scheme.casefold() == "ssh"
-        and parsed.hostname == "github.com"
-        and parsed.username == "git"
-    )
-    if is_https:
-        code, out, err = run(
-            [
-                "git",
-                "config",
-                "--get-urlmatch",
-                "http.extraheader",
-                push_url,
-            ],
-            cwd,
-        )
-        if code not in {0, 1}:
-            return None, None, err or "HTTP authorization override is unverified"
-        if code == 0 and "authorization:" in out.casefold():
-            return None, None, "HTTP Authorization extraheader is unsupported"
-        return git_credential_login(cwd, push_url)
-    if is_ssh:
-        code, out, err = run(["git", "config", "--get", "core.sshCommand"], cwd)
-        if code not in {0, 1}:
-            return None, None, err or "SSH transport config is unverified"
-        overrides = [
-            name for name in ("GIT_SSH_COMMAND", "GIT_SSH") if os.environ.get(name)
-        ]
-        if code == 0 and out:
-            overrides.append("core.sshCommand")
-        if overrides:
-            return None, None, "SSH transport override is unsupported"
-        code, out, err = run(["ssh", "-T", "git@github.com"], cwd)
-        greeting = "\n".join(part for part in (out, err) if part)
-        match = re.search(r"Hi\s+([^!\s]+)!", greeting)
-        if code not in {0, 1} or not match:
-            return None, None, "SSH login could not be verified"
-        return None, match.group(1), None
-    return None, None, "unsupported push transport"
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe gh active identity against a local GitHub repo.")
     parser.add_argument("--repo", default=".", help="local repository root")
-    parser.add_argument("--expected-owner", help="expected GitHub repository owner; defaults to remote owner")
-    parser.add_argument("--expected-login", help="expected authenticated GitHub login")
+    parser.add_argument("--expected-owner", help="expected GitHub owner/login; defaults to remote owner")
     parser.add_argument("--json", action="store_true", help="emit JSON")
     args = parser.parse_args()
 
     cwd = Path(args.repo).resolve()
     remote_url = git_value(cwd, "remote", "get-url", "origin")
     remote_owner, remote_repo = parse_remote_owner(remote_url)
-    push_urls_text = git_value(
-        cwd, "remote", "get-url", "--push", "--all", "origin"
-    )
-    push_urls = push_urls_text.splitlines() if push_urls_text else []
-    push_url = push_urls[0] if len(push_urls) == 1 else None
-    push_owner, push_repo = parse_remote_owner(push_url)
     expected_owner = args.expected_owner or remote_owner
-    expected_login = args.expected_login
-    credential_username, credential_login, credential_error = push_transport_identity(
-        cwd, push_url
-    )
-    credential_required = bool(
-        expected_login and push_url
-    )
+    credential_username, credential_origin = git_value_with_origin(cwd, "credential.https://github.com.username")
     branch = git_value(cwd, "branch", "--show-current")
     git_author_name = git_value(cwd, "config", "--get", "user.name")
     git_author_email = git_value(cwd, "config", "--get", "user.email")
@@ -275,13 +169,7 @@ def main() -> int:
     repo_view_error = None
     visibility = None
     if repo_full_name:
-        host_env = os.environ.copy()
-        host_env["GH_HOST"] = "github.com"
-        code, out, err = run(
-            ["gh", "repo", "view", repo_full_name, "--json", "nameWithOwner,visibility"],
-            cwd,
-            env=host_env,
-        )
+        code, out, err = run(["gh", "repo", "view", repo_full_name, "--json", "nameWithOwner,visibility"], cwd)
         if code == 0 and out:
             repo_view_ok = True
             try:
@@ -294,39 +182,22 @@ def main() -> int:
 
     token_env_present = any(os.environ.get(name) for name in ["GITHUB_TOKEN", "GH_TOKEN"])
     checks = {
-        # Never expose URL userinfo, query, or fragments. The strict parser
-        # already reduced a supported remote to owner/repository.
-        "remote_url": {"status": "ok" if remote_url else "error", "value": repo_full_name},
-        "remote_owner": {
-            "status": "ok" if remote_owner and remote_owner == expected_owner else "error",
-            "value": remote_owner,
+        "remote_url": {
+            "status": "ok" if remote_url else "error",
+            "value": "configured" if remote_url else None,
+            "detail": None if remote_url else "origin remoteを確認できません",
         },
-        "push_url": {
-            "status": "ok" if (
-                len(push_urls) == 1
-                and push_owner == remote_owner
-                and push_repo == remote_repo
-            ) else "error",
-            "value": (
-                f"{push_owner}/{push_repo}" if push_owner and push_repo else None
-            ),
-            "detail": None if len(push_urls) == 1 else "exactly one push URL is required",
-        },
+        "remote_owner": {"status": "ok" if remote_owner else "error", "value": remote_owner},
         "expected_owner": {"status": "ok" if expected_owner else "error", "value": expected_owner},
         "gh_active_login": {
-            "status": "ok" if active_login and (not expected_login or active_login == expected_login) else "error",
+            "status": "ok" if active_login and (not expected_owner or active_login == expected_owner) else "error",
             "value": active_login,
             "detail": active_error,
         },
         "credential_username": {
-            # HTTPS usernames (including x-access-token) are not identities;
-            # verify the effective credential token through the API instead.
-            "status": "ok" if (
-                credential_error is None
-                and (not credential_required or credential_login == expected_login)
-            ) else "error",
-            "value": redact(credential_username),
-            "detail": credential_error,
+            "status": "ok" if not credential_username or not expected_owner or credential_username == expected_owner else "error",
+            "value": credential_username,
+            "detail": credential_origin,
         },
         "repo_view": {
             "status": "ok" if repo_view_ok else "error",
@@ -340,6 +211,11 @@ def main() -> int:
             "detail": "GITHUB_TOKEN/GH_TOKEN can override expected gh auth behavior; do not print token values.",
         },
     }
+    checks["push_remote"] = inspect_push_remote(
+        cwd,
+        fetch_owner=remote_owner,
+        fetch_repo=remote_repo,
+    )
     status = "ok"
     if any(item["status"] == "error" for item in checks.values()):
         status = "error"
@@ -347,10 +223,12 @@ def main() -> int:
         status = "warning"
 
     next_command = None
-    if expected_login and active_login and active_login != expected_login:
-        next_command = f"gh auth switch --hostname github.com --user {expected_login}"
-    elif expected_login and not active_login:
-        next_command = f"gh auth login --hostname github.com --git-protocol https  # then select/login {expected_login}"
+    if expected_owner and active_login and active_login != expected_owner:
+        next_command = f"gh auth switch --hostname github.com --user {expected_owner}"
+    elif expected_owner and credential_username and credential_username != expected_owner:
+        next_command = f"git config --local credential.https://github.com.username {expected_owner}"
+    elif expected_owner and not active_login:
+        next_command = f"gh auth login --hostname github.com --git-protocol https  # then select/login {expected_owner}"
 
     result = {
         "status": status,

@@ -1,16 +1,25 @@
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 from .command import CommandRunner
-from .redaction import redact
 from .result import Outcome, Status
 
 
 TOKEN_ENV_NAMES = {"GH_TOKEN", "GITHUB_TOKEN"}
+
+
+def _has_exact_https_scheme(remote_url: str) -> bool:
+    """Check the raw URL for the lowercase HTTPS scheme Git expects.
+
+    ``urllib.parse.urlparse`` normalizes schemes to lowercase, but Git's
+    transport helper lookup can preserve the original case. Inspecting the
+    raw prefix keeps this preflight aligned with the URL Git will operate on.
+    """
+    match = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", remote_url)
+    return match is not None and match.group(0) == "https:"
 
 
 class IdentityProbe:
@@ -94,6 +103,7 @@ class IdentityProbe:
         expected_host: str | None = None,
     ) -> Outcome:
         resolved_repo = repo.resolve()
+        # Remote URL may embed a credential. Parse the raw value, never echo it.
         remote = self.runner.run(
             ["git", "remote", "get-url", "origin"],
             cwd=resolved_repo,
@@ -113,7 +123,9 @@ class IdentityProbe:
             parsed_remote = urlparse(remote_url)
         except ValueError:
             parsed_remote = None
-        if parsed_remote is not None and parsed_remote.scheme.casefold() == "https" and (
+        # Existing Core Suite contract (ops-hardening): embedded HTTPS userinfo is
+        # not identity proof and must not yield READY.
+        if parsed_remote is not None and _has_exact_https_scheme(remote_url) and (
             parsed_remote.username is not None or parsed_remote.password is not None
         ):
             return Outcome(
@@ -134,7 +146,7 @@ class IdentityProbe:
                 recovery="HTTPSまたはSSHのGitHub remoteを確認してください",
                 evidence={"remote_kind": "unsupported"},
             )
-        if expected_owner and owner != expected_owner:
+        if expected_owner and owner.casefold() != expected_owner.casefold():
             return Outcome(
                 status=Status.BLOCKED,
                 code="remote_owner_mismatch",
@@ -144,7 +156,9 @@ class IdentityProbe:
                 evidence={"expected_owner": expected_owner, "remote_owner": owner},
             )
 
-        push_url = remote.stdout.strip()
+        # Existing ops-hardening contract: always validate the effective push
+        # URL(s), not only the fetch URL. Read-only identity probes must not
+        # report READY for a repository whose later push path is unsafe.
         push_remote = self.runner.run(
             ["git", "remote", "get-url", "--all", "--push", "origin"],
             cwd=resolved_repo,
@@ -159,7 +173,9 @@ class IdentityProbe:
                 recovery="remote.origin.pushurlとorigin URLを確認してください",
                 evidence={"repository": f"{owner}/{name}"},
             )
-        push_urls = [line.strip() for line in push_remote.stdout.splitlines() if line.strip()]
+        push_urls = [
+            line.strip() for line in push_remote.stdout.splitlines() if line.strip()
+        ]
         if len(push_urls) != 1:
             return Outcome(
                 status=Status.BLOCKED,
@@ -174,9 +190,13 @@ class IdentityProbe:
             parsed_push_candidate = urlparse(push_url)
         except ValueError:
             parsed_push_candidate = None
-        if parsed_push_candidate is not None and parsed_push_candidate.scheme.casefold() == "https" and (
-            parsed_push_candidate.username is not None
-            or parsed_push_candidate.password is not None
+        if (
+            parsed_push_candidate is not None
+            and _has_exact_https_scheme(push_url)
+            and (
+                parsed_push_candidate.username is not None
+                or parsed_push_candidate.password is not None
+            )
         ):
             return Outcome(
                 status=Status.BLOCKED,
@@ -196,7 +216,10 @@ class IdentityProbe:
                 recovery="HTTPSまたはSSHのGitHub push URLを使用してください",
                 evidence={"push_remote_kind": "unsupported"},
             )
-        if (push_owner, push_name) != (owner, name):
+        if (push_owner.casefold(), push_name.casefold()) != (
+            owner.casefold(),
+            name.casefold(),
+        ):
             return Outcome(
                 status=Status.BLOCKED,
                 code="push_repository_mismatch",
@@ -208,171 +231,6 @@ class IdentityProbe:
                     "push_repository": f"{push_owner}/{push_name}",
                 },
             )
-
-        credential_username: str | None = None
-        ssh_login: str | None = None
-        try:
-            parsed_push_transport = urlparse(push_url)
-        except ValueError:
-            return Outcome(
-                status=Status.BLOCKED,
-                code="unsupported_push_remote",
-                cause="push URLを安全に解析できません",
-                impact="未検証のpush先への書き込みを止めています",
-                recovery="HTTPSまたはSSHのGitHub push URLを使用してください",
-                evidence={"push_remote_kind": "unsupported"},
-            )
-        push_is_https = parsed_push_transport.scheme.casefold() == "https"
-        push_is_ssh = bool(re.fullmatch(r"git@github\.com:.+", push_url)) or (
-            parsed_push_transport.scheme.casefold() == "ssh"
-            and parsed_push_transport.hostname == "github.com"
-            and parsed_push_transport.username == "git"
-        )
-        if expected_login and push_is_https:
-            extra_headers = self.runner.run(
-                [
-                    "git",
-                    "config",
-                    "--get-urlmatch",
-                    "http.extraheader",
-                    push_url,
-                ],
-                cwd=resolved_repo,
-            )
-            if extra_headers.returncode not in {0, 1}:
-                return Outcome(
-                    status=Status.UNKNOWN,
-                    code="http_auth_override_unverified",
-                    cause="Git HTTP header overrideを確認できません",
-                    impact="HTTPS pushの実効identityを確定できないため書き込みを止めています",
-                    recovery="Git HTTP設定を確認してください",
-                    evidence={"repository": f"{owner}/{name}"},
-                )
-            if extra_headers.returncode == 0 and "authorization:" in extra_headers.stdout.casefold():
-                return Outcome(
-                    status=Status.BLOCKED,
-                    code="http_auth_override_unsupported",
-                    cause="Git HTTP Authorization header overrideが設定されています",
-                    impact="credential probeと実際のpushで別identityを使う事故を止めています",
-                    recovery="対象scopeのhttp.extraHeaderを解除し、検証済みcredential経路を使用してください",
-                    evidence={"repository": f"{owner}/{name}"},
-                )
-            credential_protocol = parsed_push_transport.scheme.casefold()
-            credential_host = parsed_push_transport.hostname or "github.com"
-            credential_path = parsed_push_transport.path.lstrip("/")
-            credential = self.runner.run(
-                ["git", "credential", "fill"],
-                cwd=resolved_repo,
-                input_text=(
-                    f"protocol={credential_protocol}\n"
-                    f"host={credential_host}\n"
-                    f"path={credential_path}\n\n"
-                ),
-                redact_stdout=False,
-            )
-            if credential.returncode != 0:
-                return Outcome(
-                    status=Status.UNKNOWN,
-                    code="credential_unavailable",
-                    cause="Git credentialを確認できません",
-                    impact="git pushの実行名義を確定できないため書き込みを止めています",
-                    recovery="GitHub credential helperを確認してください",
-                    evidence={"repository": f"{owner}/{name}"},
-                )
-            credential_fields = dict(
-                line.split("=", 1)
-                for line in credential.stdout.splitlines()
-                if "=" in line
-            )
-            credential_username = credential_fields.get("username")
-            credential_token = credential_fields.get("password")
-            if not credential_token:
-                return Outcome(
-                    status=Status.UNKNOWN,
-                    code="credential_token_unavailable",
-                    cause="Git credential tokenを取得できません",
-                    impact="git pushの認証accountを確定できないため書き込みを止めています",
-                    recovery="GitHub credential helperを確認してください",
-                    evidence={"repository": f"{owner}/{name}"},
-                )
-            credential_token_outcome = self.validate_token_login(
-                expected_login=expected_login,
-                token=credential_token,
-                expected_host=expected_host or "github.com",
-                cwd=resolved_repo,
-            )
-            if credential_token_outcome.status is not Status.READY:
-                return credential_token_outcome
-        elif expected_login and push_is_ssh:
-            ssh_command = self.runner.run(
-                ["git", "config", "--get", "core.sshCommand"],
-                cwd=resolved_repo,
-            )
-            if ssh_command.returncode not in {0, 1}:
-                return Outcome(
-                    status=Status.UNKNOWN,
-                    code="ssh_transport_config_unverified",
-                    cause="GitのSSH transport設定を確認できません",
-                    impact="identity probeとgit pushの実効SSH commandを同一と証明できないため書き込みを止めています",
-                    recovery="core.sshCommandとGit設定を確認してください",
-                    evidence={"repository": f"{owner}/{name}"},
-                )
-            override_sources = []
-            if ssh_command.returncode == 0 and ssh_command.stdout.strip():
-                override_sources.append("core.sshCommand")
-            override_sources.extend(
-                key for key in ("GIT_SSH_COMMAND", "GIT_SSH") if os.environ.get(key)
-            )
-            if override_sources:
-                return Outcome(
-                    status=Status.BLOCKED,
-                    code="ssh_transport_override_unsupported",
-                    cause="git pushが標準ssh以外のtransport設定を使用します",
-                    impact="identity probeと実際のpushで別keyを使う事故を止めています",
-                    recovery="SSH overrideを解除するか、検証済みHTTPS token経路を使用してください",
-                    evidence={"override_sources": override_sources},
-                )
-            ssh_identity = self.runner.run(
-                [
-                    "ssh",
-                    "-T",
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "ConnectTimeout=10",
-                    "-o",
-                    "StrictHostKeyChecking=yes",
-                    "git@github.com",
-                ],
-                cwd=resolved_repo,
-            )
-            message = "\n".join((ssh_identity.stdout, ssh_identity.stderr))
-            match = re.search(
-                r"Hi (?P<login>[^!\r\n]+)! You've successfully authenticated",
-                message,
-            )
-            if not match:
-                return Outcome(
-                    status=Status.UNKNOWN,
-                    code="ssh_login_unverified",
-                    cause="SSH pushに使用するGitHub loginを確認できません",
-                    impact="git pushの認証accountを確定できないため書き込みを止めています",
-                    recovery="ssh -T git@github.com とSSH key設定を確認してください",
-                    evidence={"repository": f"{owner}/{name}"},
-                )
-            ssh_login = match.group("login")
-            if ssh_login != expected_login:
-                return Outcome(
-                    status=Status.BLOCKED,
-                    code="ssh_login_mismatch",
-                    cause="SSH push loginがexpected loginと一致しません",
-                    impact="git pushを別accountで実行する事故を止めています",
-                    recovery="対象account用のSSH keyまたはhost設定を使用してください",
-                    evidence={
-                        "expected_login": expected_login,
-                        "ssh_login": ssh_login,
-                    },
-                )
 
         if token and expected_login:
             token_outcome = self.validate_token_login(
@@ -423,13 +281,6 @@ class IdentityProbe:
                 "remote_owner": owner,
                 "login": login,
                 "identity_mode": mode,
-                "credential_username": redact(credential_username)
-                if push_is_https and credential_username is not None
-                else None,
-                "ssh_login": ssh_login
-                if push_is_ssh
-                else None,
-                "push_repository": f"{owner}/{name}",
             },
         )
 
@@ -444,25 +295,25 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     try:
         parsed = urlparse(remote_url)
     except ValueError:
+        # Redacted or otherwise malformed netloc must stay fail-closed.
         return None, None
     try:
         explicit_port = parsed.port
     except ValueError:
         return None, None
-    if (
-        parsed.scheme.casefold() == "ssh"
-        and parsed.hostname == "github.com"
-        and parsed.username == "git"
-        and explicit_port is None
-        and not parsed.password
-        and not parsed.query
-        and not parsed.fragment
-    ):
-        parts = [part for part in parsed.path.strip("/").split("/") if part]
-        if len(parts) == 2:
-            return parts[0], parts[1].removesuffix(".git")
-    if (
-        parsed.scheme.casefold() != "https"
+    if parsed.scheme.casefold() == "ssh":
+        if (
+            not re.match(r"^ssh:", remote_url)
+            or parsed.hostname != "github.com"
+            or parsed.username != "git"
+            or parsed.password is not None
+            or explicit_port not in {None, 22}
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None, None
+    elif (
+        not _has_exact_https_scheme(remote_url)
         or parsed.hostname != "github.com"
         or explicit_port is not None
         or parsed.username is not None
@@ -474,4 +325,7 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     parts = [part for part in parsed.path.strip("/").split("/") if part]
     if len(parts) != 2:
         return None, None
-    return parts[0], parts[1].removesuffix(".git")
+    owner, name = parts[0], parts[1].removesuffix(".git")
+    if not owner or not name or any(char.isspace() for char in owner + name):
+        return None, None
+    return owner, name

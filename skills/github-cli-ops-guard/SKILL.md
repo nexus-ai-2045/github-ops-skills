@@ -43,6 +43,8 @@ python scripts/gh_identity_probe.py --repo <repo-root> --json
 python skills/github-cli-ops-guard/scripts/gh_identity_probe.py --repo <repo-root> --expected-owner <owner> --expected-login <login> --json
 ```
 
+   このprobeはfetch URLだけでなく、`git remote get-url --all --push origin`で実効push URLを1件取得し、credential埋め込み・GitHub scheme不正・fetch先とのrepository不一致を検査する。push URLを確定できない場合は`error`として停止する。
+
 3. If the repo has a stronger local preflight, run it too. Prefer repo-local or shared scripts over ad hoc parsing.
 4. Treat `status=error` / `BLOCKED` / `UNKNOWN` as a hard stop for GitHub writes. Do not push, create/edit PRs, merge, tag, release, or change settings.
 5. If the only problem is active-account drift and the expected account is already authenticated, run the exact switch command shown by the probe, then rerun the probe:

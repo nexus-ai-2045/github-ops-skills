@@ -15,6 +15,7 @@ def test_all_adapters_resolve_the_same_skill_root() -> None:
     grok = verify_grok(repo)
     assert codex["skill_root"] == claude["skill_root"] == grok["skill_root"]
     assert codex["skill_count"] == 8
+    assert grok["status"] == "READY"
     assert codex["manifest_sha256"] == claude["manifest_sha256"] == grok["manifest_sha256"]
     assert "public-repo-readiness" in codex["skills"]
     assert (repo / "skills/public-repo-readiness/manifest.yaml").is_file()

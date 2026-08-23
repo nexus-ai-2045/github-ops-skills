@@ -77,27 +77,27 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
       "target_path": "skills/github-cli-ops-guard/scripts/gh_identity_probe.py",
-      "sha256": "3c171e0336b20f54cb27b0a80444285ff011cf1bbadbdf0f0e2a94f7b46cdb47",
+      "sha256": "62822738005ebbfc6c2f1c7f995825e563c405b1028ce5aa518fd2ddadd4f42f",
       "source_sha256": "011a3f206bc1e5f4d59d55913b54f990cd2aafc5e57a7de454cbd6cbabec477b",
-      "target_sha256": "3c171e0336b20f54cb27b0a80444285ff011cf1bbadbdf0f0e2a94f7b46cdb47",
+      "target_sha256": "62822738005ebbfc6c2f1c7f995825e563c405b1028ce5aa518fd2ddadd4f42f",
       "normalized": true
     },
     {
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/SKILL.md",
       "target_path": "skills/github-cli-ops-guard/SKILL.md",
-      "sha256": "a30f13e6330cbe7d3e23683ea5e24c62cf5801f61ef2d8a8c4663626fd9acec6",
+      "sha256": "c04be18afb42dfd8dcdd664974966b46bf06288a8d4e3a9c166399ad59dea51b",
       "source_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
-      "target_sha256": "a30f13e6330cbe7d3e23683ea5e24c62cf5801f61ef2d8a8c4663626fd9acec6",
+      "target_sha256": "c04be18afb42dfd8dcdd664974966b46bf06288a8d4e3a9c166399ad59dea51b",
       "normalized": true
     },
     {
       "source_root": "shared",
       "source_path": "skills/commit-push-pr/manifest.yaml",
       "target_path": "skills/commit-push-pr/manifest.yaml",
-      "sha256": "1cfbbc1d129ee121097ae63e3f78c9ab200df8ed7f78677f42d4830051bc79a0",
+      "sha256": "c8c2d6d59eac1151f99485d35ed293dec418f5075ca6e333d4cdea40b5256e5c",
       "source_sha256": "af52ddeef7d54a38cf46d69ca2e2313512adcbdf84f68b6a05f821f74eb22ab2",
-      "target_sha256": "1cfbbc1d129ee121097ae63e3f78c9ab200df8ed7f78677f42d4830051bc79a0",
+      "target_sha256": "c8c2d6d59eac1151f99485d35ed293dec418f5075ca6e333d4cdea40b5256e5c",
       "normalized": false
     },
     {
@@ -113,9 +113,9 @@
       "source_root": "shared",
       "source_path": "skills/commit-push-pr/SKILL.md",
       "target_path": "skills/commit-push-pr/SKILL.md",
-      "sha256": "c5305b73fc10fd23b0587013ca4afe90054dabfeec9dc4e03901495c4bc13953",
+      "sha256": "23a5b13bfd8c507e546373d7bc312d8df4bd878d18d3f79c58b1b6b7323ddeec",
       "source_sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
-      "target_sha256": "c5305b73fc10fd23b0587013ca4afe90054dabfeec9dc4e03901495c4bc13953",
+      "target_sha256": "23a5b13bfd8c507e546373d7bc312d8df4bd878d18d3f79c58b1b6b7323ddeec",
       "normalized": true
     },
     {
@@ -185,9 +185,9 @@
       "source_root": "shared",
       "source_path": "skills/post-merge-closeout/manifest.yaml",
       "target_path": "skills/post-merge-closeout/manifest.yaml",
-      "sha256": "66e7c0df107b969c96ebb0da71f28516596fa8277027d76afab2a0c804753068",
+      "sha256": "d74080f8f1ce501e9b6a12c58e135ebd564658c5ae83975a7bbc3444cf2b78ad",
       "source_sha256": "66e7c0df107b969c96ebb0da71f28516596fa8277027d76afab2a0c804753068",
-      "target_sha256": "66e7c0df107b969c96ebb0da71f28516596fa8277027d76afab2a0c804753068",
+      "target_sha256": "d74080f8f1ce501e9b6a12c58e135ebd564658c5ae83975a7bbc3444cf2b78ad",
       "normalized": true
     },
     {
@@ -212,9 +212,9 @@
       "source_root": "shared",
       "source_path": "skills/pr-convergence-loop/manifest.yaml",
       "target_path": "skills/pr-convergence-loop/manifest.yaml",
-      "sha256": "c7ebf10ede7d74053a2fc44bb164c8e0d19d171a608d2cb8c27838851d8888c3",
+      "sha256": "62f08fcec8c1f57ddfec6408001333df4cb0ec39589eafb57639b4bb1ef938fd",
       "source_sha256": "c7ebf10ede7d74053a2fc44bb164c8e0d19d171a608d2cb8c27838851d8888c3",
-      "target_sha256": "c7ebf10ede7d74053a2fc44bb164c8e0d19d171a608d2cb8c27838851d8888c3",
+      "target_sha256": "62f08fcec8c1f57ddfec6408001333df4cb0ec39589eafb57639b4bb1ef938fd",
       "normalized": true
     },
     {
