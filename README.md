@@ -4,7 +4,7 @@
 
 ## 目的
 
-GitHub へ書く直前に、「今どの owner の、どの repo に、どの権限で触ろうとしているか」を機械的に確定します。確定できない操作は実行しません。
+GitHub へ書く直前に、今どの owner の、どの repo に触ろうとしているかを identity と remote から確定します。write 権限の有無は照会しません。確定できない操作は実行しません。
 
 公開判断、テスト成功、Settings 変更は別の承認です。この repo はフル orchestrator ではなく、既存 skill を直列につなぐだけです。
 
@@ -13,7 +13,7 @@ GitHub へ書く直前に、「今どの owner の、どの repo に、どの権
 - GitHub CLI の active account と remote owner を照合する
 - PR の title/body が日本語境界を満たすか検査する
 - runtime skill が `skills/` 正本からずれていないか検査する
-- `tracked ∧ ignored` の新規増加を ai-ratchet-gate で止める
+- `tracked ∧ ignored` の新規増加を ai-ratchet-gate が CI で検出する（required check 未設定のため merge は機械強制しない）
 - review thread を本文推定せず、既存 audit 判定だけで扱う
 
 やらないこと: visibility 変更、自動 merge、token の保存、home 設定の書き換え。
@@ -34,8 +34,10 @@ python -m venv .venv
 GitHub へ書く直前:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --expected-owner nexus-ai-2045 --expected-login nexus-ai-2045 --json
+.\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --expected-owner <owner> --expected-login <login> --json
 ```
+
+`<owner>` と `<login>` は、今触っている clone の remote owner と `gh` login に置き換えてください。upstream 維持者専用の値ではありません。
 
 接続順の詳細は [運用カード](docs/operating-card.md) です。
 

@@ -2,17 +2,18 @@
 
 # 公開準備状況
 
-- 検査対象 HEAD: `05d7762c32c2ee3975d6fb2f4b6e2e2a4827f210`
+- 検査対象 parent HEAD: `05d7762c32c2ee3975d6fb2f4b6e2e2a4827f210`
+- 文書差分: PR #11（README / SECURITY / CONTRIBUTING / PREFLIGHT / PUBLIC_READY）
 - 確認日時: 2026-08-24
 - 判定: `blocked`
 
-この記録は検査対象 HEAD と、文書追加の後続 commit を分けて残します。
+parent の CI と、この PR の文書差分は別記録です。文書側は Codex review 吸収後の tip で再確認します。
 
 ## 確認済み
 
-- [x] README / LICENSE / SECURITY.md（この後続差分で CONTRIBUTING.md / PREFLIGHT.md を追加）
-- [x] test: main `05d7762` の Core Suite CI success（run 32658364419）
-- [x] ratchet: 同 SHA で ai-ratchet-gate success（run 32658364386）
+- [ ] README / LICENSE / SECURITY.md / CONTRIBUTING.md / PREFLIGHT.md（PR #11 の文書差分。parent scan だけでは未カバー）
+- [x] test: parent `05d7762` の Core Suite CI success（run 32658364419）。PR #11 の Python tests も pass
+- [x] ratchet: parent と同 PR で ai-ratchet-gate success
 - [x] secret pattern の working tree 検査（repo-preflight `secret_scan` pass、finding_count 0）
 - [ ] secret scanning / push protection（GitHub Settings。未設定）
 - [ ] private vulnerability reporting（`enabled: false`）

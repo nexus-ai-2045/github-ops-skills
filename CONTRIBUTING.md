@@ -16,9 +16,14 @@ python -m pytest -q
 python adapters/codex/verify_adapter.py --repo . --json
 python adapters/claude/verify_adapter.py --repo . --json
 python adapters/grok/verify_adapter.py --repo . --json
-python scripts/skill_drift_check.py --repo . --runtime grok --local-root $HOME/.grok/skills --json
 git diff --check
 git status --short --branch
+```
+
+Grok を使っている場合だけ、runtime 差分も見ます。`$HOME/.grok/skills` が無い checkout では省略してください。
+
+```powershell
+python scripts/skill_drift_check.py --repo . --runtime grok --local-root $HOME/.grok/skills --json
 ```
 
 `ai-ratchet-gate` は GitHub Actions が Release wheel を pin して実行します。ローカルで同じ検査をする場合も、PyPI 名ではなく公開 Release の wheel を使います。
