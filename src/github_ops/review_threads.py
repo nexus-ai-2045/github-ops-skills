@@ -8,11 +8,22 @@ merge product. This module only classifies reviewThreads resolution state.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import asdict, dataclass
 from typing import Any
 
 from .redaction import redact
+
+
+def github_com_env() -> dict[str, str]:
+    """Pin gh API calls to github.com (same contract as pr_create)."""
+    configured = os.environ.get("GH_HOST")
+    if configured and configured.casefold() != "github.com":
+        raise ValueError("GH_HOST is not github.com")
+    env = os.environ.copy()
+    env["GH_HOST"] = "github.com"
+    return env
 
 THREAD_QUERY = """
 query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
@@ -204,6 +215,7 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
         encoding="utf-8",
         errors="replace",
         timeout=GRAPHQL_TIMEOUT_SECONDS,
+        env=github_com_env(),
     )
     return json.loads(completed.stdout)
 

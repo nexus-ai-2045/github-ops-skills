@@ -60,7 +60,8 @@ python scripts/github_pr_review_thread_resolve.py --repo owner/name --pr N --jso
 ```
 
 - 既存判定が `error` / pagination 未完了 / 未解決 thread あり → resolve しない。未解決は materials として残す。
-- `--apply` は既存判定がすでに `isResolved` と判定した thread だけを対象にする（未解決の強制 close はしない）。
+- `--apply` は既存判定がすでに `isResolved` と判定した thread の確認だけ（未解決の強制 close はしない）。確認は audit snapshot の read-only 判定であり、`resolveReviewThread` mutation は発行しない。
+- `--apply` には既存 write 契約どおり `--confirm` と IdentityProbe 入力（`--repo-root` / `--expected-owner` / `--expected-login`）が必要。`GH_HOST` は github.com に固定する。
 - raw `resolveReviewThread` や本文推定での close は使わない。
 
 ## Stop Lines

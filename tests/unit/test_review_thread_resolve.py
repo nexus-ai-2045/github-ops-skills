@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from github_ops.review_thread_resolve import apply_resolve, plan_resolve
+import pytest
+
+from github_ops.review_thread_resolve import apply_resolve, plan_resolve, run_resolve
 from github_ops.review_threads import AuditResult, ThreadSummary, error_result
 
 
@@ -114,22 +116,61 @@ def test_apply_ready_without_ids_is_noop_success() -> None:
     assert result["resolved"] == []
 
 
-def test_apply_confirms_already_resolved_ids_only() -> None:
+def test_apply_confirms_already_resolved_without_mutation() -> None:
     audit = _audit(_thread(thread_id="t1", state="resolved"))
     plan = plan_resolve(audit, proposed_thread_ids=("t1",))
-    calls: list[str] = []
+    result = apply_resolve(deepcopy(plan), apply=True, resolver=None)
+    assert result["applied"] is True
+    assert result["resolved"] == [
+        {"id": "t1", "isResolved": True, "confirmed": "audit_snapshot"}
+    ]
 
-    def fake_resolve(thread_id: str) -> dict:
-        calls.append(thread_id)
+
+def test_apply_injected_resolver_must_confirm_thread() -> None:
+    audit = _audit(_thread(thread_id="t1", state="resolved"))
+    plan = plan_resolve(audit, proposed_thread_ids=("t1",))
+
+    def bad_resolve(thread_id: str) -> dict:
         return {
             "data": {
                 "resolveReviewThread": {
-                    "thread": {"id": thread_id, "isResolved": True}
+                    "thread": {"id": thread_id, "isResolved": False}
                 }
             }
         }
 
-    result = apply_resolve(deepcopy(plan), apply=True, resolver=fake_resolve)
-    assert result["applied"] is True
-    assert calls == ["t1"]
-    assert result["resolved"] == [{"id": "t1", "isResolved": True}]
+    with pytest.raises(ValueError, match="did not confirm"):
+        apply_resolve(deepcopy(plan), apply=True, resolver=bad_resolve)
+
+
+def test_run_resolve_converts_apply_failure_to_structured_error(monkeypatch) -> None:
+    audit = _audit(_thread(thread_id="t1", state="resolved"))
+
+    monkeypatch.setattr(
+        "github_ops.review_thread_resolve.fetch",
+        lambda repo, number: {"unused": True},
+    )
+    monkeypatch.setattr(
+        "github_ops.review_thread_resolve.summarize",
+        lambda payload: audit,
+    )
+
+    def bad(thread_id: str) -> dict:
+        return {
+            "data": {
+                "resolveReviewThread": {
+                    "thread": {"id": "other", "isResolved": True}
+                }
+            }
+        }
+
+    result = run_resolve(
+        "owner/name",
+        7,
+        proposed_thread_ids=("t1",),
+        apply=True,
+        resolver=bad,
+    )
+    assert result["decision"] == "error"
+    assert result["applied"] is False
+    assert any("resolve_apply_failed" in err for err in result["errors"])

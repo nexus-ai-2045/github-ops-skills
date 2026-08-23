@@ -15,7 +15,15 @@ import subprocess
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
-from .review_threads import AuditResult, ThreadSummary, error_result, fetch, summarize
+from .redaction import redact
+from .review_threads import (
+    AuditResult,
+    ThreadSummary,
+    error_result,
+    fetch,
+    github_com_env,
+    summarize,
+)
 
 RESOLVE_MUTATION = """
 mutation($threadId:ID!) {
@@ -168,7 +176,7 @@ def plan_resolve(
             errors=("unresolved_or_unjudgeable_threads",) if unique_materials else (),
         )
 
-    # Only already-resolved IDs (existing judge) — mutation is a no-op confirm.
+    # Only already-resolved IDs (existing judge) — confirmation is read-only.
     _ = resolved  # clarity: authorization came from resolved state only
     return ResolvePlan(
         decision="ready",
@@ -196,6 +204,7 @@ def resolve_thread(thread_id: str) -> dict[str, Any]:
         encoding="utf-8",
         errors="replace",
         timeout=GRAPHQL_TIMEOUT_SECONDS,
+        env=github_com_env(),
     )
     payload = json.loads(completed.stdout)
     if not isinstance(payload, dict):
@@ -205,13 +214,33 @@ def resolve_thread(thread_id: str) -> dict[str, Any]:
     return payload
 
 
+def _verified_mutation_thread(thread_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    thread = (
+        payload.get("data", {})
+        .get("resolveReviewThread", {})
+        .get("thread", {})
+    )
+    if not isinstance(thread, dict):
+        raise ValueError("resolve mutation thread payload is missing")
+    returned_id = thread.get("id")
+    is_resolved = thread.get("isResolved")
+    if returned_id != thread_id or is_resolved is not True:
+        raise ValueError("resolve mutation result did not confirm requested thread")
+    return {"id": returned_id, "isResolved": True}
+
+
 def apply_resolve(
     plan: ResolvePlan,
     *,
     apply: bool,
     resolver: Callable[[str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Apply only IDs authorized by plan_resolve. Never invents thread IDs."""
+    """Apply only IDs authorized by plan_resolve. Never invents thread IDs.
+
+    Already-resolved authorized IDs are confirmed from the audit snapshot
+    without calling resolveReviewThread. A reopen race must not be closed by a
+    stale mutation. An injected resolver is still verified fail-closed when used.
+    """
     result: dict[str, Any] = {
         "decision": plan.decision,
         "applied": False,
@@ -231,24 +260,37 @@ def apply_resolve(
         result["applied"] = True
         return result
 
-    run = resolver or resolve_thread
+    if resolver is None:
+        # Audit already judged these threads resolved; do not write.
+        result["applied"] = True
+        result["resolved"] = [
+            {"id": thread_id, "isResolved": True, "confirmed": "audit_snapshot"}
+            for thread_id in plan.resolve_thread_ids
+        ]
+        return result
+
     resolved: list[dict[str, Any]] = []
     for thread_id in plan.resolve_thread_ids:
-        payload = run(thread_id)
-        thread = (
-            payload.get("data", {})
-            .get("resolveReviewThread", {})
-            .get("thread", {})
-        )
-        resolved.append(
-            {
-                "id": thread.get("id", thread_id),
-                "isResolved": thread.get("isResolved"),
-            }
-        )
+        payload = resolver(thread_id)
+        resolved.append(_verified_mutation_thread(thread_id, payload))
     result["applied"] = True
     result["resolved"] = resolved
     return result
+
+
+def _audit_error_from_exc(exc: BaseException) -> AuditResult:
+    if isinstance(exc, ValueError):
+        return error_result(redact(str(exc)))
+    if isinstance(exc, subprocess.CalledProcessError):
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        return error_result(redact(f"gh_api_failed: {detail}"))
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return error_result("gh_api_timeout")
+    if isinstance(exc, OSError):
+        return error_result(redact(f"gh_launch_failed: {exc}"))
+    if isinstance(exc, (KeyError, TypeError, json.JSONDecodeError)):
+        return error_result(redact(f"unexpected_github_response: {exc}"))
+    return error_result(redact(f"resolve_failed: {exc}"))
 
 
 def run_resolve(
@@ -261,17 +303,36 @@ def run_resolve(
 ) -> dict[str, Any]:
     try:
         audit = summarize(fetch(repo, number))
-    except ValueError as exc:
-        audit = error_result(str(exc))
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or str(exc)).strip()
-        audit = error_result(f"gh_api_failed: {detail}")
-    except subprocess.TimeoutExpired:
-        audit = error_result("gh_api_timeout")
-    except OSError as exc:
-        audit = error_result(f"gh_launch_failed: {exc}")
-    except (KeyError, TypeError, json.JSONDecodeError) as exc:
-        audit = error_result(f"unexpected_github_response: {exc}")
+    except (
+        ValueError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+        KeyError,
+        TypeError,
+        json.JSONDecodeError,
+    ) as exc:
+        audit = _audit_error_from_exc(exc)
 
     plan = plan_resolve(audit, proposed_thread_ids=proposed_thread_ids)
-    return apply_resolve(plan, apply=apply, resolver=resolver)
+    try:
+        return apply_resolve(plan, apply=apply, resolver=resolver)
+    except (
+        ValueError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+        KeyError,
+        TypeError,
+        json.JSONDecodeError,
+    ) as exc:
+        # Mutation-stage failures become structured errors; do not continue IDs.
+        detail = redact(str(exc))
+        result = apply_resolve(plan, apply=False, resolver=None)
+        result["decision"] = "error"
+        result["applied"] = False
+        result["errors"] = list(result["errors"]) + [f"resolve_apply_failed: {detail}"]
+        result["materials"] = list(result["materials"]) + [
+            {"kind": "resolve_apply_failed", "message": detail}
+        ]
+        return result

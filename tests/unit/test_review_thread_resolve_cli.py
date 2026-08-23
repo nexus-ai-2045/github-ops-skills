@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+from github_ops.result import Outcome, Status
+
 
 SCRIPT = (
     Path(__file__).resolve().parents[2]
@@ -44,18 +46,98 @@ def test_resolve_cli_surfaces_materials_without_mutating(monkeypatch, capsys) ->
     assert out["materials"][0]["id"] == "thread-1"
 
 
+def test_resolve_cli_apply_requires_confirm(monkeypatch, capsys) -> None:
+    cli = _load_cli()
+    called = {"count": 0}
+
+    def fake_run_resolve(*args, **kwargs):
+        called["count"] += 1
+        return {
+            "decision": "ready",
+            "applied": True,
+            "resolved": [],
+            "materials": [],
+            "errors": [],
+            "audit": {"decision": "pass"},
+        }
+
+    monkeypatch.setattr(cli, "run_resolve", fake_run_resolve)
+    assert cli.main(["--repo", "owner/name", "--pr", "3", "--apply", "--json"]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["decision"] == "error"
+    assert out["errors"] == ["approval_missing"]
+    assert called["count"] == 0
+
+
+def test_resolve_cli_apply_runs_identity_preflight(monkeypatch, capsys, tmp_path) -> None:
+    cli = _load_cli()
+    seen: dict = {}
+
+    class FakeProbe:
+        def probe(self, repo, **kwargs):
+            seen["repo"] = repo
+            seen["kwargs"] = kwargs
+            return Outcome(
+                status=Status.READY,
+                code="identity_verified",
+                cause="ok",
+                impact="ok",
+                recovery="none",
+                evidence={"repository": "owner/name", "login": "example-user"},
+            )
+
+    monkeypatch.setattr(cli, "IdentityProbe", FakeProbe)
+
+    def fake_run_resolve(*args, **kwargs):
+        seen["run"] = kwargs
+        return {
+            "decision": "ready",
+            "applied": True,
+            "resolved": [],
+            "materials": [],
+            "errors": [],
+            "audit": {"decision": "pass"},
+        }
+
+    monkeypatch.setattr(cli, "run_resolve", fake_run_resolve)
+    assert (
+        cli.main(
+            [
+                "--repo",
+                "owner/name",
+                "--pr",
+                "3",
+                "--apply",
+                "--confirm",
+                "--repo-root",
+                str(tmp_path),
+                "--expected-owner",
+                "owner",
+                "--expected-login",
+                "example-user",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    out = json.loads(capsys.readouterr().out)
+    assert out["decision"] == "ready"
+    assert seen["kwargs"]["expected_login"] == "example-user"
+    assert seen["run"]["apply"] is True
+
+
 def test_resolve_cli_ready_exits_zero(monkeypatch, capsys) -> None:
     cli = _load_cli()
     payload = {
         "decision": "ready",
-        "applied": True,
+        "applied": False,
         "resolved": [],
         "materials": [],
         "errors": [],
         "audit": {"decision": "pass"},
     }
     monkeypatch.setattr(cli, "run_resolve", lambda *args, **kwargs: payload)
-    assert cli.main(["--repo", "owner/name", "--pr", "3", "--apply", "--json"]) == 0
+    assert cli.main(["--repo", "owner/name", "--pr", "3", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["decision"] == "ready"
     assert out["materials"] == []
