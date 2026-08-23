@@ -16,7 +16,9 @@ runtimes:
       agents/openai.yaml: runtime/agents/openai.yaml
   grok:
     mode: copy
-    files: [SKILL.md]
+    files:
+      - SKILL.md
+      - references/pr-self-review.md
 duplication_guard:
   enabled: true
   max_overlap_lines: 2

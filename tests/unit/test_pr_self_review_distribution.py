@@ -10,7 +10,7 @@ def test_self_review_is_in_every_copy_runtime_manifest() -> None:
     manifest = yaml.safe_load(
         (ROOT / "skills/commit-push-pr/manifest.yaml").read_text(encoding="utf-8")
     )
-    for runtime in ("claude", "codex"):
+    for runtime in ("claude", "codex", "grok"):
         assert "references/pr-self-review.md" in manifest["runtimes"][runtime]["files"]
 
 

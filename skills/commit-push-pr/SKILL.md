@@ -44,6 +44,8 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
      例外は、対象・影響・期限を明記した人間のリスク承認を commit・push より前に記録した場合だけ
      とする（mainへのpushには適用しない）
    - この file は生成物。手で編集しない (CI が本文 hash と配布コピー一致で検出する)
+   - trusted gate workflow・検査器を変更する場合は、同じPRのhead側だけで承認しない。
+     base側のprotected gate比較で停止し、別のtrusted changeとして隔離検証する
 6. local検証とGitHub CIの対応を確認
    - 実行したtest、build、lint、adapter検証を列挙する
    - `.github/workflows/`とGitHub上のworkflow/checkを読み取り専用で確認する
