@@ -19,6 +19,15 @@ def test_bundled_parser_rejects_credentials_and_non_lowercase_scheme() -> None:
     assert gh_identity_probe.parse_remote_owner(
         "HTTPS://github.com/example-org/tooling.git"
     ) == (None, None)
+    assert gh_identity_probe.parse_remote_owner(
+        "https://github.com:443/example-org/tooling.git"
+    ) == (None, None)
+
+
+def test_bundled_parser_accepts_standard_ssh_url() -> None:
+    assert gh_identity_probe.parse_remote_owner(
+        "ssh://git@github.com/example-org/tooling.git"
+    ) == ("example-org", "tooling")
 
 
 def test_bundled_guard_checks_push_url_without_expected_login(monkeypatch, tmp_path: Path) -> None:
@@ -66,5 +75,20 @@ def test_bundled_guard_accepts_one_matching_push_url(monkeypatch, tmp_path: Path
         tmp_path,
         fetch_owner="example-org",
         fetch_repo="tooling",
+    )
+    assert result == {"status": "ok", "value": "example-org/tooling"}
+
+
+def test_bundled_guard_accepts_case_insensitive_ssh_push_url(monkeypatch, tmp_path: Path) -> None:
+    def fake_git_value(cwd: Path, *args: str) -> str | None:
+        if args == ("remote", "get-url", "--all", "--push", "origin"):
+            return "ssh://git@github.com/example-org/tooling.git"
+        raise AssertionError(f"unexpected git query: {args}")
+
+    monkeypatch.setattr(gh_identity_probe, "git_value", fake_git_value)
+    result = gh_identity_probe.inspect_push_remote(
+        tmp_path,
+        fetch_owner="Example-Org",
+        fetch_repo="Tooling",
     )
     assert result == {"status": "ok", "value": "example-org/tooling"}

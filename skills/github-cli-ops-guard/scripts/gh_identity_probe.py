@@ -45,14 +45,29 @@ def parse_remote_owner(remote_url: str | None) -> tuple[str | None, str | None]:
     # Keep the raw scheme exact. urlparse() normalizes it, but Git transport
     # helper lookup can preserve case and reject e.g. HTTPS:// on Linux.
     scheme_match = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value)
-    if not scheme_match or scheme_match.group(0) != "https:":
+    if not scheme_match or scheme_match.group(0) not in {"https:", "ssh:"}:
         return None, None
     try:
         parsed = urlparse(value)
     except ValueError:
         return None, None
-    if (
+    try:
+        explicit_port = parsed.port
+    except ValueError:
+        return None, None
+    if parsed.scheme.casefold() == "ssh":
+        if (
+            parsed.hostname != "github.com"
+            or parsed.username != "git"
+            or parsed.password is not None
+            or explicit_port is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None, None
+    elif (
         parsed.hostname != "github.com"
+        or explicit_port is not None
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query
@@ -97,7 +112,13 @@ def inspect_push_remote(
             "detail": "originの実効push URLが安全なGitHub remoteではありません",
         }
     push_repository = f"{push_owner}/{push_repo}"
-    if (push_owner, push_repo) != (fetch_owner, fetch_repo):
+    if (
+        push_owner.casefold(),
+        push_repo.casefold(),
+    ) != (
+        fetch_owner.casefold() if fetch_owner else None,
+        fetch_repo.casefold() if fetch_repo else None,
+    ):
         return {
             "status": "error",
             "value": push_repository,

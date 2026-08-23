@@ -146,7 +146,7 @@ class IdentityProbe:
                 recovery="HTTPSまたはSSHのGitHub remoteを確認してください",
                 evidence={"remote_kind": "unsupported"},
             )
-        if expected_owner and owner != expected_owner:
+        if expected_owner and owner.casefold() != expected_owner.casefold():
             return Outcome(
                 status=Status.BLOCKED,
                 code="remote_owner_mismatch",
@@ -216,7 +216,10 @@ class IdentityProbe:
                 recovery="HTTPSまたはSSHのGitHub push URLを使用してください",
                 evidence={"push_remote_kind": "unsupported"},
             )
-        if (push_owner, push_name) != (owner, name):
+        if (push_owner.casefold(), push_name.casefold()) != (
+            owner.casefold(),
+            name.casefold(),
+        ):
             return Outcome(
                 status=Status.BLOCKED,
                 code="push_repository_mismatch",
@@ -294,9 +297,25 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     except ValueError:
         # Redacted or otherwise malformed netloc must stay fail-closed.
         return None, None
-    if (
+    try:
+        explicit_port = parsed.port
+    except ValueError:
+        return None, None
+    if parsed.scheme.casefold() == "ssh":
+        if (
+            not re.match(r"^ssh:", remote_url)
+            or parsed.hostname != "github.com"
+            or parsed.username != "git"
+            or parsed.password is not None
+            or explicit_port is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None, None
+    elif (
         not _has_exact_https_scheme(remote_url)
         or parsed.hostname != "github.com"
+        or explicit_port is not None
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query
