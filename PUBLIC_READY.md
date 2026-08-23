@@ -14,3 +14,17 @@ canary、公開判断を別々に記録します。
 
 公開前にREADME、LICENSE、SECURITY.md、secret scan、personal path scan、
 commit history、送信file、`PUBLIC_READY.md`を人間が確認します。
+
+## 必須契約（公開判断前）
+
+公開判断の前に、READMEの「必須契約」が揃っていることを人間が確認します。
+
+- `repo-preflight` / `public-repo-readiness`
+- 本repoの GitHub ops suite（この Core Suite）
+- 必要時の `engineering-brain`
+- FDE（`fractal-decision-ecosystem` / skill内 FDE Packet）
+- `ai-ratchet-gate`
+- `nexus-management-os`
+- `nexus_ai` を mainline／最新参照として扱う（第二複製にしない）
+
+この節は契約名の明示だけです。新規scriptや新規protocolは定義しません。

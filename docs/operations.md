@@ -8,3 +8,6 @@ private canaryはreview packetだけを生成します。現versionは`--execute
 
 commit、push、PR作成は別々に人間確認を行います。PR作成時の日本語gateと作成後の
 read-back手順は[`pr-japanese-gate.md`](pr-japanese-gate.md)を参照してください。
+
+必須契約の一覧は[`README.md`](../README.md)の「必須契約」と
+[`PUBLIC_READY.md`](../PUBLIC_READY.md)を正とします。新規gateは追加しません。

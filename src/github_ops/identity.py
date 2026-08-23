@@ -11,6 +11,17 @@ from .result import Outcome, Status
 TOKEN_ENV_NAMES = {"GH_TOKEN", "GITHUB_TOKEN"}
 
 
+def _has_exact_https_scheme(remote_url: str) -> bool:
+    """Check the raw URL for the lowercase HTTPS scheme Git expects.
+
+    ``urllib.parse.urlparse`` normalizes schemes to lowercase, but Git's
+    transport helper lookup can preserve the original case. Inspecting the
+    raw prefix keeps this preflight aligned with the URL Git will operate on.
+    """
+    match = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", remote_url)
+    return match is not None and match.group(0) == "https:"
+
+
 class IdentityProbe:
     def __init__(self, runner: CommandRunner | None = None) -> None:
         self.runner = runner or CommandRunner()
@@ -92,9 +103,11 @@ class IdentityProbe:
         expected_host: str | None = None,
     ) -> Outcome:
         resolved_repo = repo.resolve()
+        # Remote URL may embed a credential. Parse the raw value, never echo it.
         remote = self.runner.run(
             ["git", "remote", "get-url", "origin"],
             cwd=resolved_repo,
+            redact_stdout=False,
         )
         if remote.returncode != 0:
             return Outcome(
@@ -105,7 +118,25 @@ class IdentityProbe:
                 recovery="originを設定するか、対象repositoryを明示してください",
                 evidence={"repo": resolved_repo.name},
             )
-        owner, name = parse_github_remote(remote.stdout.strip())
+        remote_url = remote.stdout.strip()
+        try:
+            parsed_remote = urlparse(remote_url)
+        except ValueError:
+            parsed_remote = None
+        # Existing Core Suite contract (ops-hardening): embedded HTTPS userinfo is
+        # not identity proof and must not yield READY.
+        if parsed_remote is not None and _has_exact_https_scheme(remote_url) and (
+            parsed_remote.username is not None or parsed_remote.password is not None
+        ):
+            return Outcome(
+                status=Status.BLOCKED,
+                code="embedded_remote_credential_unsupported",
+                cause="origin URLにcredentialが埋め込まれています",
+                impact="remote URLとcredential helperで別identityを使う事故を止めています",
+                recovery="credentialをURLから除去し、Git credential helperを使用してください",
+                evidence={"remote_kind": "https_with_userinfo"},
+            )
+        owner, name = parse_github_remote(remote_url)
         if not owner or not name:
             return Outcome(
                 status=Status.BLOCKED,
@@ -115,7 +146,7 @@ class IdentityProbe:
                 recovery="HTTPSまたはSSHのGitHub remoteを確認してください",
                 evidence={"remote_kind": "unsupported"},
             )
-        if expected_owner and owner != expected_owner:
+        if expected_owner and owner.casefold() != expected_owner.casefold():
             return Outcome(
                 status=Status.BLOCKED,
                 code="remote_owner_mismatch",
@@ -123,6 +154,82 @@ class IdentityProbe:
                 impact="GitHub操作は実行しません",
                 recovery="account mapまたはremoteを確認してください",
                 evidence={"expected_owner": expected_owner, "remote_owner": owner},
+            )
+
+        # Existing ops-hardening contract: always validate the effective push
+        # URL(s), not only the fetch URL. Read-only identity probes must not
+        # report READY for a repository whose later push path is unsafe.
+        push_remote = self.runner.run(
+            ["git", "remote", "get-url", "--all", "--push", "origin"],
+            cwd=resolved_repo,
+            redact_stdout=False,
+        )
+        if push_remote.returncode != 0:
+            return Outcome(
+                status=Status.UNKNOWN,
+                code="push_remote_unavailable",
+                cause="originの実効push URLを確認できません",
+                impact="実際のpush先を確定できないため書き込みを止めています",
+                recovery="remote.origin.pushurlとorigin URLを確認してください",
+                evidence={"repository": f"{owner}/{name}"},
+            )
+        push_urls = [
+            line.strip() for line in push_remote.stdout.splitlines() if line.strip()
+        ]
+        if len(push_urls) != 1:
+            return Outcome(
+                status=Status.BLOCKED,
+                code="push_remote_count_unsupported",
+                cause="originの実効push URLが1つに確定していません",
+                impact="複数または空のpush先への書き込みを止めています",
+                recovery="originのpush URLを対象repository 1件へ限定してください",
+                evidence={"push_url_count": len(push_urls)},
+            )
+        push_url = push_urls[0]
+        try:
+            parsed_push_candidate = urlparse(push_url)
+        except ValueError:
+            parsed_push_candidate = None
+        if (
+            parsed_push_candidate is not None
+            and _has_exact_https_scheme(push_url)
+            and (
+                parsed_push_candidate.username is not None
+                or parsed_push_candidate.password is not None
+            )
+        ):
+            return Outcome(
+                status=Status.BLOCKED,
+                code="embedded_push_credential_unsupported",
+                cause="push URLにcredentialが埋め込まれています",
+                impact="push URLとcredential helperで別identityを使う事故を止めています",
+                recovery="credentialをpush URLから除去し、Git credential helperを使用してください",
+                evidence={"push_remote_kind": "https_with_userinfo"},
+            )
+        push_owner, push_name = parse_github_remote(push_url)
+        if not push_owner or not push_name:
+            return Outcome(
+                status=Status.BLOCKED,
+                code="unsupported_push_remote",
+                cause="push URLをGitHub owner/nameへ解決できません",
+                impact="未検証のpush先への書き込みを止めています",
+                recovery="HTTPSまたはSSHのGitHub push URLを使用してください",
+                evidence={"push_remote_kind": "unsupported"},
+            )
+        if (push_owner.casefold(), push_name.casefold()) != (
+            owner.casefold(),
+            name.casefold(),
+        ):
+            return Outcome(
+                status=Status.BLOCKED,
+                code="push_repository_mismatch",
+                cause="push先repositoryがfetch先と一致しません",
+                impact="別repositoryへの誤pushを止めています",
+                recovery="remote.origin.pushurlをfetch先と同じrepositoryへ修正してください",
+                evidence={
+                    "fetch_repository": f"{owner}/{name}",
+                    "push_repository": f"{push_owner}/{push_name}",
+                },
             )
 
         if token and expected_login:
@@ -185,15 +292,40 @@ def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
     )
     if ssh_match:
         return ssh_match.group("owner"), ssh_match.group("name")
-    parsed = urlparse(remote_url)
-    if (
-        parsed.scheme != "https"
+    try:
+        parsed = urlparse(remote_url)
+    except ValueError:
+        # Redacted or otherwise malformed netloc must stay fail-closed.
+        return None, None
+    try:
+        explicit_port = parsed.port
+    except ValueError:
+        return None, None
+    if parsed.scheme.casefold() == "ssh":
+        if (
+            not re.match(r"^ssh:", remote_url)
+            or parsed.hostname != "github.com"
+            or parsed.username != "git"
+            or parsed.password is not None
+            or explicit_port not in {None, 22}
+            or parsed.query
+            or parsed.fragment
+        ):
+            return None, None
+    elif (
+        not _has_exact_https_scheme(remote_url)
         or parsed.hostname != "github.com"
-        or parsed.username
-        or parsed.password
+        or explicit_port is not None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
     ):
         return None, None
     parts = [part for part in parsed.path.strip("/").split("/") if part]
     if len(parts) != 2:
         return None, None
-    return parts[0], parts[1].removesuffix(".git")
+    owner, name = parts[0], parts[1].removesuffix(".git")
+    if not owner or not name or any(char.isspace() for char in owner + name):
+        return None, None
+    return owner, name
