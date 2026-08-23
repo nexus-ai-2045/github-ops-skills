@@ -13,12 +13,16 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
    - 一時 index に全部 stage して差分を取る。作業ツリーと本物の index は触らない
 
      ```bash
-     BASE=$(git merge-base origin/<base> HEAD)
-     TMPIDX=$(mktemp -u)
+     set -Eeuo pipefail
+     DIFF_BASE=$(git merge-base origin/<base> HEAD)
+     LIVE_BASE=$(git rev-parse origin/<base>)
+     TMPIDX_DIR=$(mktemp -d)
+     trap 'rm -rf "$TMPIDX_DIR"' EXIT
+     TMPIDX="$TMPIDX_DIR/index"
      GIT_INDEX_FILE="$TMPIDX" git read-tree HEAD
      GIT_INDEX_FILE="$TMPIDX" git add -A
-     GIT_INDEX_FILE="$TMPIDX" git diff --cached "$BASE"
-     rm -f "$TMPIDX"
+     GIT_INDEX_FILE="$TMPIDX" git diff --cached "$DIFF_BASE"
+     GIT_INDEX_FILE="$TMPIDX" git write-tree
      ```
 
    - `git add -A` を通すので、未 staged・staged・コミット済みに加えて
@@ -47,9 +51,13 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
    - CIが不足している場合は、PR作成前に「CIを追加するか」を必ずユーザーへ確認する
    - workflow追加とrequired check設定は別操作として扱い、settingsを自動変更しない
    - 5 または 6 の修正を行ったら、手順 1 の完全差分を取り直し、セルフレビューを最初から再実行する
-   - 最終レビューで、`BASE_SHA`、branch、prospective diff、`git write-tree` の `REVIEWED_TREE` を記録する。
+   - 最終レビューで、`DIFF_BASE`（差分の共通祖先）と `LIVE_BASE`（`git rev-parse origin/<base>` の現在値）を
+     分けて記録する。PR wrapperの `--expected-base-sha` には `LIVE_BASE` を使う。あわせて branch、prospective diff、
+     `git write-tree` の `REVIEWED_TREE` を記録する。
      commit直前に一時 index で同じ tree を再計算し、値が変わったら停止する。commit後は
-     `git rev-parse HEAD^{tree}` と `REVIEWED_TREE` が一致することを確認する
+     `git rev-parse HEAD^{tree}` と `REVIEWED_TREE` が一致することを確認する。PRのbase SHAが変わった場合は、
+     head SHAが同じでも旧レビューを再利用しない。`.github/workflows/pr-self-review-trusted.yml` の
+     `workflow_dispatch` にPR番号を指定して、base/head組を再検査する
 7. 承認されたら:
    - `git add` で関連ファイルをステージング（.env, credentials等は除外）
    - `git commit` でコミット（Co-Authored-By付き）。手順 5 の最終レビューと同じ tree であることを確認する

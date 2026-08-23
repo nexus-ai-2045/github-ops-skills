@@ -1,9 +1,9 @@
 """Verify the generated PR self-review document and its packaged copy.
 
-The candidate-side check proves only internal consistency.  The trusted
-base-side check also requires the candidate artifact to match the artifact
-from the base tree; this prevents a pull request from changing its own
-canonical input and verifier at the same time.
+The candidate-side check proves only internal consistency. The trusted
+base-side check requires an allowlisted complete-file digest and unchanged
+gate files from the base tree; this prevents a pull request from changing
+its own canonical input and verifier at the same time.
 """
 
 from __future__ import annotations
@@ -18,6 +18,11 @@ from pathlib import Path
 _VERSION_ROW = re.compile(r"^(\| rules_version \| `)([0-9a-f]{16})(` \|)$", re.MULTILINE)
 _DOC_RELATIVE = Path("docs/pr-self-review.md")
 _PACKAGE_RELATIVE = Path("skills/commit-push-pr/references/pr-self-review.md")
+_TRUSTED_DIGESTS_RELATIVE = Path("docs/pr-self-review-trusted-digests.txt")
+_PROTECTED_GATE_RELATIVES = (
+    Path(".github/workflows/pr-self-review-trusted.yml"),
+    Path("scripts/check_pr_self_review.py"),
+)
 
 
 class VerificationError(ValueError):
@@ -34,7 +39,27 @@ def _body_digest(text: str) -> str:
     return hashlib.sha256(text[start + 1 :].encode("utf-8")).hexdigest()[:16]
 
 
-def _read(path: Path) -> str:
+def _regular_file(root: Path, relative: Path) -> Path:
+    """Return a regular file below root without following symlink components."""
+    root = root.resolve()
+    path = root.joinpath(relative)
+    current = root
+    for component in relative.parts:
+        current = current / component
+        if current.is_symlink():
+            raise VerificationError(f"{current} is a symlink")
+    if not path.is_file():
+        raise VerificationError(f"{path} is not a regular file")
+    resolved = path.resolve(strict=True)
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise VerificationError(f"{path} resolves outside candidate root") from exc
+    return path
+
+
+def _read(root: Path, relative: Path) -> str:
+    path = _regular_file(root, relative)
     try:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
@@ -43,10 +68,10 @@ def _read(path: Path) -> str:
 
 def verify_artifact(root: Path) -> tuple[str, str]:
     """Return (declared version, computed version) after pair verification."""
-    document_path = root / _DOC_RELATIVE
-    package_path = root / _PACKAGE_RELATIVE
-    document = _read(document_path)
-    package = _read(package_path)
+    document_path = _regular_file(root, _DOC_RELATIVE)
+    package_path = _regular_file(root, _PACKAGE_RELATIVE)
+    document = _read(root, _DOC_RELATIVE)
+    package = _read(root, _PACKAGE_RELATIVE)
     if document != package:
         raise VerificationError(f"{package_path} differs from {document_path}")
     match = _VERSION_ROW.search(document)
@@ -61,29 +86,57 @@ def verify_artifact(root: Path) -> tuple[str, str]:
     return declared, computed
 
 
+def _artifact_digest(root: Path) -> str:
+    path = _regular_file(root, _DOC_RELATIVE)
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _trusted_digests(base_root: Path) -> set[str]:
+    text = _read(base_root, _TRUSTED_DIGESTS_RELATIVE)
+    digests = {
+        line.strip().lower()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    if not digests or any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in digests):
+        raise VerificationError("trusted digest allowlist is empty or malformed")
+    return digests
+
+
+def _verify_protected_gates(base_root: Path, candidate_root: Path) -> None:
+    for relative in _PROTECTED_GATE_RELATIVES:
+        base_path = _regular_file(base_root, relative)
+        candidate_path = _regular_file(candidate_root, relative)
+        if base_path.read_bytes() != candidate_path.read_bytes():
+            raise VerificationError(
+                f"protected gate changed: {relative}; validate replacement separately"
+            )
+
+
 def verify_candidate(candidate_root: Path, base_root: Path | None = None) -> tuple[str, str]:
     """Verify a candidate, optionally against a trusted base tree.
 
-    A missing base artifact is accepted only by the explicit candidate-side
-    bootstrap check.  The trusted workflow never passes that option, so a
-    newly introduced artifact cannot self-authorize in the base-side gate.
+    The trusted workflow accepts replacements only when their complete-file
+    digest is already present in an allowlist from the base tree.  The
+    allowlist and protected gate files therefore need a separate trusted
+    bootstrap/update before an artifact or gate replacement can land.
     """
     candidate_version = verify_artifact(candidate_root)
     if base_root is None:
         return candidate_version
-    base_document = base_root / _DOC_RELATIVE
-    base_package = base_root / _PACKAGE_RELATIVE
-    if not base_document.is_file() or not base_package.is_file():
+    try:
+        _verify_protected_gates(base_root, candidate_root)
+        trusted_digests = _trusted_digests(base_root)
+    except VerificationError as exc:
         raise VerificationError(
-            "trusted base has no PR self-review artifact; bootstrap requires human review"
-        )
-    base_version = verify_artifact(base_root)
-    if _read(candidate_root / _DOC_RELATIVE) != _read(base_document):
+            f"trusted base bootstrap/update is unavailable: {exc}"
+        ) from exc
+    digest = _artifact_digest(candidate_root)
+    if digest not in trusted_digests:
         raise VerificationError(
-            "candidate PR self-review differs from trusted base; regenerate from the source repository"
+            "candidate artifact digest is not in the trusted base allowlist; "
+            "update the allowlist in a separate trusted change"
         )
-    if candidate_version != base_version:
-        raise VerificationError("candidate and trusted-base rules_version values differ")
     return candidate_version
 
 
