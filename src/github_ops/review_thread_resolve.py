@@ -21,6 +21,7 @@ from .review_threads import (
     ThreadSummary,
     error_result,
     fetch,
+    github_com_api_argv,
     github_com_env,
     summarize,
 )
@@ -187,15 +188,13 @@ def plan_resolve(
 
 
 def resolve_thread(thread_id: str) -> dict[str, Any]:
-    command = [
-        "gh",
-        "api",
+    command = github_com_api_argv(
         "graphql",
         "-f",
         f"threadId={thread_id}",
         "-f",
         f"query={RESOLVE_MUTATION}",
-    ]
+    )
     completed = subprocess.run(
         command,
         check=True,

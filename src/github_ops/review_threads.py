@@ -25,6 +25,11 @@ def github_com_env() -> dict[str, str]:
     env["GH_HOST"] = "github.com"
     return env
 
+
+def github_com_api_argv(*parts: str) -> list[str]:
+    """Build `gh api` argv pinned to github.com via --hostname and GH_HOST."""
+    return ["gh", "api", "--hostname", "github.com", *parts]
+
 THREAD_QUERY = """
 query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
   repository(owner:$owner, name:$name) {
@@ -192,9 +197,7 @@ def error_result(message: str) -> AuditResult:
 
 def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]:
     owner, name = repo_parts(repo)
-    command = [
-        "gh",
-        "api",
+    command = github_com_api_argv(
         "graphql",
         "-f",
         f"owner={owner}",
@@ -204,7 +207,7 @@ def graphql(repo: str, number: int, cursor: str | None = None) -> dict[str, Any]
         f"number={number}",
         "-f",
         f"query={THREAD_QUERY}",
-    ]
+    )
     if cursor is not None:
         command.extend(["-f", f"cursor={cursor}"])
     completed = subprocess.run(

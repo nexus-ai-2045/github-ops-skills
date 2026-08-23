@@ -277,6 +277,7 @@ def test_graphql_omits_cursor_on_initial_request(monkeypatch) -> None:
     assert not any(str(item).startswith("cursor=") for item in captured["command"])
     assert captured.get("timeout") == 30
     assert captured["env"]["GH_HOST"] == "github.com"
+    assert captured["command"][:4] == ["gh", "api", "--hostname", "github.com"]
 
 
 def test_graphql_rejects_non_github_host(monkeypatch) -> None:
