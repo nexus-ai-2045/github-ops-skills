@@ -11,11 +11,15 @@
 
 ## ローカル確認
 
+Python 3.11 以上。token は環境変数だけに置き、file へ書きません。
+
 ```powershell
-python -m pytest -q
-python adapters/codex/verify_adapter.py --repo . --json
-python adapters/claude/verify_adapter.py --repo . --json
-python adapters/grok/verify_adapter.py --repo . --json
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe adapters/codex/verify_adapter.py --repo . --json
+.\.venv\Scripts\python.exe adapters/claude/verify_adapter.py --repo . --json
+.\.venv\Scripts\python.exe adapters/grok/verify_adapter.py --repo . --json
 git diff --check
 git status --short --branch
 ```

@@ -8,6 +8,21 @@ GitHub へ書く直前に、今どの owner の、どの repo に触ろうとし
 
 公開判断、テスト成功、Settings 変更は別の承認です。この repo はフル orchestrator ではなく、既存 skill を直列につなぐだけです。
 
+接続順の正本は [運用カード](docs/operating-card.md) です。判定の回帰は [tests/unit/test_write_preflight.py](tests/unit/test_write_preflight.py) です。
+
+```mermaid
+flowchart TD
+    開始["GitHubへ書きたい"] --> 場所["対象 repo と branch を確定"]
+    場所 --> 名義["gh login と remote owner を照合"]
+    名義 --> 判定{"判定"}
+    判定 -->|通る| 承認["人間の明示承認"]
+    判定 -->|止まる| 停止["実行しない"]
+    判定 -->|判断できない| 不明["成功扱いにしない"]
+    承認 --> 実行["push / PR / merge"]
+```
+
+機械の返り値は `READY` / `BLOCKED` / `UNKNOWN` の3状態です。`UNKNOWN` を成功扱いしません。右下の承認は自動では変わりません。
+
 ## できること
 
 - GitHub CLI の active account と remote owner を照合する
@@ -16,30 +31,17 @@ GitHub へ書く直前に、今どの owner の、どの repo に触ろうとし
 - `tracked ∧ ignored` の新規増加を ai-ratchet-gate が CI で検出する（required check 未設定のため merge は機械強制しない）
 - review thread を本文推定せず、既存 audit 判定だけで扱う
 
-やらないこと: visibility 変更、自動 merge、token の保存、home 設定の書き換え。
+やらないこと: visibility 変更の自動化、自動 merge、token の保存、home 設定の書き換え。
 
 ## クイックスタート
 
-Python 3.11 以上。token は環境変数だけに置き、file へ書きません。
+この repository を AI に読ませるときは、下の URL を貼ってください。
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe adapters/grok/verify_adapter.py --repo . --json
-```
+https://github.com/nexus-ai-2045/github-ops-skills
 
-結果は `READY` / `BLOCKED` / `UNKNOWN` の3状態です。`UNKNOWN` を成功扱いしません。
+貼った相手には、先に危険レビューを出してください。削除、GitHub write、visibility 変更、secret の取り扱い、unknown を安全と読まないこと。`READY` やテスト成功は公開承認ではありません。
 
-GitHub へ書く直前:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --expected-owner <owner> --expected-login <login> --json
-```
-
-`<owner>` と `<login>` は、今触っている clone の remote owner と `gh` login に置き換えてください。upstream 維持者専用の値ではありません。
-
-接続順の詳細は [運用カード](docs/operating-card.md) です。
+人の手元で pytest を回す手順は [CONTRIBUTING.md](CONTRIBUTING.md) です。
 
 ## 安全境界
 
@@ -48,7 +50,7 @@ GitHub へ書く直前:
 - token を file・引数・出力へ保存しません
 - push / PR / merge / repository 作成 / visibility 変更は、現在会話の明示承認が必要です
 - PR title/body は日本語 gate を通し、作成後に read-back します
-- required status checks と secret scanning は GitHub Settings であり、この repo の file 差分ではありません
+- required status checks は GitHub Settings であり、この repo の file 差分ではありません
 
 ## 必須契約
 
