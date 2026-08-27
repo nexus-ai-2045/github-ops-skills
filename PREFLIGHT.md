@@ -2,6 +2,17 @@
 
 # 公開準備状況
 
+## 2026-08-27 `v0.1.1`
+
+- 対象: public 化後の README 可視化（#13）と PUBLIC_READY live 記録（#12）を含む patch
+- pyproject version: `0.1.1`
+- 判定: 機械検査は pass。履歴の個人パス候補 2 blob と ruleset 未設定は残リスク
+- この記録の操作: version bump の PR。tag `v0.1.1` は merge 後。告知は含まない
+
+---
+
+# 2026-08-24 記録（PR #11）
+
 - 検査対象 parent HEAD: `05d7762c32c2ee3975d6fb2f4b6e2e2a4827f210`
 - 文書差分: PR #11（README / SECURITY / CONTRIBUTING / PREFLIGHT / PUBLIC_READY）
 - 確認日時: 2026-08-24

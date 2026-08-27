@@ -5,11 +5,11 @@
 この文書は公開許可そのものではない。visibility の live 実測と、残っている Settings を分けて記録する。
 
 2026-08-26 の `gh repo edit --visibility public` 後、未ログイン HTTP は 200、org public 一覧に載る。
-GitHub Release `v0.1.0`（tag `3a6688c`）も公開面から見える。
+GitHub Release `v0.1.0`（tag `3a6688c`）に続き、`v0.1.1` は公開後の README 可視化と live 記録を含む patch です。
 
 | 層 | 現在状態 | 根拠 |
 |---|---|---|
-| L1 静的契約 | READY | 2026-08-23、`05d7762` の Core Suite CI success。公開 HEAD は `3a6688c` |
+| L1 静的契約 | READY | 2026-08-23、`05d7762` の Core Suite CI success。`v0.1.1` の対象は README 可視化後の main |
 | L2 ローカル実行 | READY | Codex/Claude/Grok adapter と unit tests（2026-08-26、293 passed） |
 | L3 GitHub read-only | READY | 2026-08-26、`visibility=public`、未ログイン 200、identity probe READY。secret scanning enabled、push protection enabled、PVR enabled |
 | L4 private canary | 未実施 | mutation canary は別承認。ruleset は未設定（ADR-0002） |
