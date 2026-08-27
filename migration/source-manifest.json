@@ -176,9 +176,9 @@
       "source_root": "agent-skills",
       "source_path": "public-repo-readiness/SKILL.md",
       "target_path": "skills/public-repo-readiness/SKILL.md",
-      "sha256": "082cd31198607e347c8a01281e72c8f310777e678a9d1c160d74306b7c53104b",
+      "sha256": "7ce7ae9959fc87b84520a9570e67accb43edaa4d57bce0f1d72909f238f97a24",
       "source_sha256": "abce52a292552656150cad5d45d2157b75614c2c1ee66b81a34f4fe894f2aa0b",
-      "target_sha256": "082cd31198607e347c8a01281e72c8f310777e678a9d1c160d74306b7c53104b",
+      "target_sha256": "7ce7ae9959fc87b84520a9570e67accb43edaa4d57bce0f1d72909f238f97a24",
       "normalized": true
     },
     {

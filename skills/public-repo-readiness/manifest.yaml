@@ -3,6 +3,7 @@ owner_kind: skill
 ssot_pointers:
   - skills/public-repo-readiness/SKILL.md
   - scripts/public_identity_guard.py
+  - scripts/check_visibility_claim.py
   - PUBLIC_READY.md
   - SECURITY.md
   - LICENSE

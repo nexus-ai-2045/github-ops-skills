@@ -76,3 +76,8 @@ jobs:
         run: python adapters/claude/verify_adapter.py
       - name: Grok adapterを検証
         run: python adapters/grok/verify_adapter.py
+      - name: PUBLIC_READY宣言と未ログインHTTPを照合
+        shell: bash
+        run: |
+          status_code=$(curl -sS -o /dev/null -w "%{http_code}" "https://github.com/${GITHUB_REPOSITORY}")
+          python scripts/check_visibility_claim.py --public-ready PUBLIC_READY.md --status-code "$status_code" --json

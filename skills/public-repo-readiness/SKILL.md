@@ -68,6 +68,9 @@ description: >
 ```powershell
 python scripts/public_identity_guard.py --help
 python scripts/gh_identity_probe.py --repo . --json
+python scripts/check_visibility_claim.py --public-ready PUBLIC_READY.md --status-code <unauth-http-status> --json
 ```
+
+公開oracleは未ログインHTTP 200/404。ownerログインの `gh repo view` では公開判定しない。
 
 公開・visibility 変更・release は現在会話の明示承認なしに実行しない。
