@@ -11,14 +11,15 @@ GitHub Release `v0.1.0`（tag `3a6688c`）に続き、`v0.1.1` は公開後の R
 |---|---|---|
 | L1 静的契約 | READY | 2026-08-23、`05d7762` の Core Suite CI success。`v0.1.1` の対象は README 可視化後の main |
 | L2 ローカル実行 | READY | Codex/Claude/Grok adapter と unit tests（2026-08-26、293 passed） |
-| L3 GitHub read-only | READY | 2026-08-26、`visibility=public`、未ログイン 200、identity probe READY。secret scanning enabled、push protection enabled、PVR enabled |
+| L3 GitHub read-only | 一部 READY | 2026-08-26、`visibility=public`、未ログイン 200、identity probe READY。secret scanning enabled、push protection enabled、PVR enabled。`run_read_only_e2e.py` の public 再実測は未記録（権限・default-branch・PR読取は別証跡） |
 | L4 private canary | 未実施 | mutation canary は別承認。ruleset は未設定（ADR-0002） |
 
 ## 公開面に出ている残リスク
 
-- 現行 tree の identity scan は READY。履歴 commit `10941368c49e` / `5b9472760b08` に個人絶対パス候補が残る（現行ファイルでは placeholder に置換済み）。history rewrite はしていない。
+- 現行 tree の identity scan は READY。履歴 blob `10941368c49e` / `5b9472760b08` に個人絶対パス候補が残る（含む commit は `340dad9`/`578a3d3` と `4867513`/`578a3d3`。現行ファイルでは placeholder に置換済み）。history rewrite はしていない。
 - required status checks / ruleset は未設定。
 - dependabot security updates は disabled。
+- 未ログイン HTTP の 404 は既存 oracle（`public-repo-readiness`）どおり PRIVATE 観測として扱う。誤った URL の 404 との区別は人間材料。
 
 人間確認の対象: README、LICENSE、SECURITY.md、CONTRIBUTING.md、PREFLIGHT.md、
 secret scan、personal path scan、commit history、送信 file。

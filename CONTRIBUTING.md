@@ -13,6 +13,21 @@
 
 Python 3.11 以上。token は環境変数だけに置き、file へ書きません。
 
+POSIX（Linux / macOS）:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m pytest -q
+.venv/bin/python adapters/codex/verify_adapter.py --repo . --json
+.venv/bin/python adapters/claude/verify_adapter.py --repo . --json
+.venv/bin/python adapters/grok/verify_adapter.py --repo . --json
+git diff --check
+git status --short --branch
+```
+
+Windows（PowerShell）:
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
@@ -26,8 +41,8 @@ git status --short --branch
 
 Grok を使っている場合だけ、runtime 差分も見ます。`$HOME/.grok/skills` が無い checkout では省略してください。
 
-```powershell
-python scripts/skill_drift_check.py --repo . --runtime grok --local-root $HOME/.grok/skills --json
+```sh
+python3 scripts/skill_drift_check.py --repo . --runtime grok --local-root "$HOME/.grok/skills" --json
 ```
 
 `ai-ratchet-gate` は GitHub Actions が Release wheel を pin して実行します。ローカルで同じ検査をする場合も、PyPI 名ではなく公開 Release の wheel を使います。
