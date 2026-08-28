@@ -19,11 +19,17 @@ Open PR を「見たつもり」「直したつもり」「終わったつもり
 - `git-sync-worktree-gate`: dirty / divergence / worktree 境界確認
 - `mechanical-review-pdca`: 小さな修正と検証の PDCA
 
-Source pointers:
+Source pointers（この repository 内）:
 
-- `shared/skills/github-cli-ops-guard/SKILL.md`
+- `skills/github-cli-ops-guard/SKILL.md`
+
+前提条件（この repository には無い。host workspace 側にある）:
+
 - `shared/skills/done-verification-closeout/SKILL.md`
 - `shared/skills/status-sweep/SKILL.md`
+
+この repository を単体で clone した場合、上の 2 つは参照できない。
+見つからない時は代替を自作せず、そこで止めて報告する。
 
 ## FDE Packet
 

@@ -1,13 +1,14 @@
-# pr-convergence-loop の配布マニフェスト
-# SSOT: shared/skills/pr-convergence-loop/ (唯一の正本)
-# 配布エンジン: shared/scripts/skills_distribute.py
-# drift lint: shared/scripts/skills_lint.py
+# pr-convergence-loop
+# SSOT in this repository: skills/pr-convergence-loop/
+# 連携先のうち github-cli-ops-guard はこの repository にある。
+# done-verification-closeout と status-sweep は host workspace 側にあり、
+# この repository には無い。正本ではなく実行前提なので SKILL.md の
+# 「前提条件」に書く。ssot_pointers には書かない
 name: pr-convergence-loop
 owner_kind: skill
 ssot_pointers:
-  - shared/skills/github-cli-ops-guard/SKILL.md
-  - shared/skills/done-verification-closeout/SKILL.md
-  - shared/skills/status-sweep/SKILL.md
+  - skills/pr-convergence-loop/SKILL.md
+  - skills/github-cli-ops-guard/SKILL.md
 runtimes:
   claude:
     mode: copy

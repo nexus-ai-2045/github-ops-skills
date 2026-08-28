@@ -185,9 +185,9 @@
       "source_root": "shared",
       "source_path": "skills/post-merge-closeout/manifest.yaml",
       "target_path": "skills/post-merge-closeout/manifest.yaml",
-      "sha256": "d74080f8f1ce501e9b6a12c58e135ebd564658c5ae83975a7bbc3444cf2b78ad",
+      "sha256": "f17819b856df7753d6af1ab956f69894939bb7ee420246113800720a3cbd1114",
       "source_sha256": "66e7c0df107b969c96ebb0da71f28516596fa8277027d76afab2a0c804753068",
-      "target_sha256": "d74080f8f1ce501e9b6a12c58e135ebd564658c5ae83975a7bbc3444cf2b78ad",
+      "target_sha256": "f17819b856df7753d6af1ab956f69894939bb7ee420246113800720a3cbd1114",
       "normalized": true
     },
     {
@@ -203,18 +203,18 @@
       "source_root": "shared",
       "source_path": "skills/post-merge-closeout/SKILL.md",
       "target_path": "skills/post-merge-closeout/SKILL.md",
-      "sha256": "916f255cc72757a917b2e7ba987ceed14d8a6912bde9917cddbc8c990b8ed31c",
+      "sha256": "ec81d1304d95d0a9617a375208f30e966c175a6763c291a00f8d1f532bcb4034",
       "source_sha256": "916f255cc72757a917b2e7ba987ceed14d8a6912bde9917cddbc8c990b8ed31c",
-      "target_sha256": "916f255cc72757a917b2e7ba987ceed14d8a6912bde9917cddbc8c990b8ed31c",
+      "target_sha256": "ec81d1304d95d0a9617a375208f30e966c175a6763c291a00f8d1f532bcb4034",
       "normalized": true
     },
     {
       "source_root": "shared",
       "source_path": "skills/pr-convergence-loop/manifest.yaml",
       "target_path": "skills/pr-convergence-loop/manifest.yaml",
-      "sha256": "62f08fcec8c1f57ddfec6408001333df4cb0ec39589eafb57639b4bb1ef938fd",
+      "sha256": "36c1eb6678f0c39ab06bcc84206bf593540aa8af441ab54448a44da0c7328cfd",
       "source_sha256": "c7ebf10ede7d74053a2fc44bb164c8e0d19d171a608d2cb8c27838851d8888c3",
-      "target_sha256": "62f08fcec8c1f57ddfec6408001333df4cb0ec39589eafb57639b4bb1ef938fd",
+      "target_sha256": "36c1eb6678f0c39ab06bcc84206bf593540aa8af441ab54448a44da0c7328cfd",
       "normalized": true
     },
     {
@@ -230,9 +230,9 @@
       "source_root": "shared",
       "source_path": "skills/pr-convergence-loop/SKILL.md",
       "target_path": "skills/pr-convergence-loop/SKILL.md",
-      "sha256": "a2ed1310159ed67981beaba9ab9e6793f86ab76a8b1ddffb6f1fe2f293493bbf",
+      "sha256": "09e73f8ef78a2d88dbcd9928f9e1b8560c7397d299e4991f71fcfb65c046ffad",
       "source_sha256": "a691ab04c0a439c59490b28fa697dfccf59e82fba3d34037043ba28c86a547da",
-      "target_sha256": "a2ed1310159ed67981beaba9ab9e6793f86ab76a8b1ddffb6f1fe2f293493bbf",
+      "target_sha256": "09e73f8ef78a2d88dbcd9928f9e1b8560c7397d299e4991f71fcfb65c046ffad",
       "normalized": true
     }
   ]

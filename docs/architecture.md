@@ -1,7 +1,8 @@
 # アーキテクチャ
 
-設計判断は[ADR-0001: PR日本語gateは限定的な構文契約とする](adr/0001-pr-japanese-gate-boundary.md)と
-[ADR-0004: Review findingは不変条件へ昇格する](adr/0004-review-findings-to-invariants.md)に記録しています。
+設計判断は[ADR-0001: PR日本語gateは限定的な構文契約とする](adr/0001-pr-japanese-gate-boundary.md)、
+[ADR-0004: Review findingは不変条件へ昇格する](adr/0004-review-findings-to-invariants.md)、
+[ADR-0005: skill manifestのssot_pointersはこのrepositoryに実在すること](adr/0005-skill-manifest-pointers-must-exist-in-this-repository.md)に記録しています。
 
 `src/github_ops/`が結果契約、出力秘匿、コマンド実行、account overlay、identity、
 preflight、review-thread audit、skill drift比較を提供します。`scripts/`は薄いCLI、
