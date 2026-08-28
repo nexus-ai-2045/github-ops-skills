@@ -29,12 +29,16 @@ flowchart TD
 
 ## できること
 
-- GitHub CLI の active account と remote owner を照合する
-- PR の title/body が日本語境界を満たすか検査する
+- GitHub CLI の active account と remote owner を照合する（`scripts/gh_identity_probe.py` / `scripts/preflight_write_gate.py`）
+- PR の title/body が日本語境界を満たすか検査する（CI: `PR日本語gate`）
 - runtime skill が `skills/` 正本からずれていないか検査する
-- `tracked ∧ ignored` の新規増加を ai-ratchet-gate が CI で検出する（required check 未設定のため merge は機械強制しない）
+- `tracked ∧ ignored` の新規増加を `ai-ratchet-gate` が CI で検出する（required check 未設定のため merge は機械強制しない）
 - review thread を本文推定せず、既存 audit 判定だけで扱う
 - `PUBLIC_READY.md` の visibility 宣言を未ログイン HTTP（200=PUBLIC / 404=PRIVATE）と `scripts/check_visibility_claim.py` で CI 照合する。owner ログインの `gh repo view` は公開 oracle ではない。不一致は BLOCKED
+- 現行 tree の identity / secret pattern を `scripts/public_identity_guard.py` で検査する
+- GitHub read-only L3 は既存の `scripts/run_read_only_e2e.py`（repository 外 overlay）。手順は [docs/operations.md](docs/operations.md)。`UNKNOWN` を READY にしない
+
+既存 CI（file 側）: `Core Suite CI`（pytest / adapter / visibility claim 等）、`ai-ratchet-gate`、`PR日本語gate`、`PRセルフレビュー（base監査 advisory）`。required status checks は Settings。
 
 やらないこと: visibility 変更の自動化、自動 merge、token の保存、home 設定の書き換え。
 
