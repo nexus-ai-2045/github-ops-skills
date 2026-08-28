@@ -9,9 +9,9 @@ GitHub Release `v0.1.0`（tag `3a6688c`）に続き、`v0.1.1` は公開後の R
 
 | 層 | 現在状態 | 根拠 |
 |---|---|---|
-| L1 静的契約 | READY | 2026-08-23、`05d7762` の Core Suite CI success。`v0.1.1` の対象は README 可視化後の main |
-| L2 ローカル実行 | READY | Codex/Claude/Grok adapter と unit tests（2026-08-26、293 passed） |
-| L3 GitHub read-only | 一部 READY | 2026-08-26、`visibility=public`、未ログイン 200、identity probe READY。secret scanning enabled、push protection enabled、PVR enabled。`run_read_only_e2e.py` の public 再実測は未記録（権限・default-branch・PR読取は別証跡） |
+| L1 静的契約 | READY | 2026-08-28、main `6a10def` の Core Suite CI success（run `33215149396`）。jobs: Python tests / 静的契約とadapter検証。同 push の ai-ratchet-gate success（run `33215149344`） |
+| L2 ローカル実行 | READY | 2026-08-28、Codex/Claude/Grok adapter READY（skill_count=8）と `python -m pytest -q`（312 passed） |
+| L3 GitHub read-only | 一部 READY | visibility: 2026-08-28 未ログイン HTTP 200、`scripts/check_visibility_claim.py` READY。現行 tree の `scripts/public_identity_guard.py` READY。secret scanning enabled、push protection enabled、PVR enabled（2026-08-26 記録）。`scripts/run_read_only_e2e.py --json` の public 再実測は 2026-08-28 に実行し **UNKNOWN**（`live_read_failed`）。`gh repo view` / `gh pr list` は returncode 0 だが、既存 script が要する `gh api user`（active login）が integration token で 403 のため login 不変を確認できない。L3 全体を READY にしない |
 | L4 private canary | 未実施 | mutation canary は別承認。ruleset は未設定（ADR-0002） |
 
 ## 公開面に出ている残リスク
@@ -20,6 +20,7 @@ GitHub Release `v0.1.0`（tag `3a6688c`）に続き、`v0.1.1` は公開後の R
 - required status checks / ruleset は未設定。
 - dependabot security updates は disabled。
 - 未ログイン HTTP の 404 は既存 oracle（`public-repo-readiness`）どおり PRIVATE 観測として扱う。誤った URL の 404 との区別は人間材料。
+- L3 `run_read_only_e2e.py` は UNKNOWN のまま。人間アカウントの overlay（repository 外）と `gh api user` 可能な認証で再実測するまで、権限・default-branch・PR読取の L3 実行保証は未完了。
 
 人間確認の対象: README、LICENSE、SECURITY.md、CONTRIBUTING.md、PREFLIGHT.md、
 secret scan、personal path scan、commit history、送信 file。

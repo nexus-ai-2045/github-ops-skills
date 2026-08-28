@@ -47,6 +47,22 @@ Grok を使っている場合だけ、runtime 差分も見ます。`$HOME/.grok/
 
 `ai-ratchet-gate` は GitHub Actions が Release wheel を pin して実行します。ローカルで同じ検査をする場合も、PyPI 名ではなく公開 Release の wheel を使います。
 
+公開面・L3 の既存検査（新規 script は足さない）:
+
+```sh
+status_code=$(curl -sS -o /dev/null -w "%{http_code}" "https://github.com/nexus-ai-2045/github-ops-skills")
+.venv/bin/python scripts/check_visibility_claim.py --public-ready PUBLIC_READY.md --status-code "$status_code" --json
+# public_identity_guard は既定 --range HEAD（git ls-tree の committed tree のみ）。
+# dirty / 未commit は見ない。検査前に commit する。worktree 用の別 mode は無い。
+.venv/bin/python scripts/public_identity_guard.py --repo . --json
+# L3 read-only（repository外 overlay。未設定や auth 不能は BLOCKED/UNKNOWN）
+# 手順: docs/operations.md
+# GITHUB_OPS_LIVE_REPO / GITHUB_OPS_EXPECTED_OWNER / GITHUB_OPS_ACCOUNT_MAP
+.venv/bin/python scripts/run_read_only_e2e.py --json
+```
+
+PR 上の既存 workflow 名: `Core Suite CI`、`ai-ratchet-gate`、`PR日本語gate`、`PRセルフレビュー（base監査 advisory）`。件数の正本は最新の CI / ローカル pytest 出力と [PUBLIC_READY.md](PUBLIC_READY.md)。
+
 ## PR
 
 - title と本文は日本語。見出しは日本語。英語だけの見出しは不可
