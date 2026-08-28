@@ -52,6 +52,8 @@ Grok を使っている場合だけ、runtime 差分も見ます。`$HOME/.grok/
 ```sh
 status_code=$(curl -sS -o /dev/null -w "%{http_code}" "https://github.com/nexus-ai-2045/github-ops-skills")
 .venv/bin/python scripts/check_visibility_claim.py --public-ready PUBLIC_READY.md --status-code "$status_code" --json
+# public_identity_guard は既定 --range HEAD（git ls-tree の committed tree のみ）。
+# dirty / 未commit は見ない。検査前に commit する。worktree 用の別 mode は無い。
 .venv/bin/python scripts/public_identity_guard.py --repo . --json
 # L3 read-only（repository外 overlay。未設定や auth 不能は BLOCKED/UNKNOWN）
 # 手順: docs/operations.md

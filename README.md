@@ -36,7 +36,7 @@ flowchart TD
 - `tracked ∧ ignored` の新規増加を `ai-ratchet-gate` が CI で検出する（required check 未設定のため merge は機械強制しない）
 - review thread を本文推定せず、既存 audit 判定だけで扱う
 - `PUBLIC_READY.md` の visibility 宣言を未ログイン HTTP（200=PUBLIC / 404=PRIVATE）と `scripts/check_visibility_claim.py` で CI 照合する。owner ログインの `gh repo view` は公開 oracle ではない。不一致は BLOCKED
-- 現行 tree の identity / secret pattern を `scripts/public_identity_guard.py` で検査する
+- 現行 committed tree（既定 `--range HEAD`）の個人絶対パス pattern を `scripts/public_identity_guard.py` で検査する。`git show` 経由の blob は CommandRunner が先に `ghp_` / `github_pat_` 等を redact するため、この経路では committed GitHub token 形状を検出できない（秘匿は維持。token 検知を主張しない）
 - GitHub read-only L3 は既存の `scripts/run_read_only_e2e.py`（repository 外 overlay）。手順は [docs/operations.md](docs/operations.md)。`UNKNOWN` を READY にしない
 
 既存 CI（file 側）: `Core Suite CI`（pytest / adapter / skill manifest pointers / visibility claim 等）、`ai-ratchet-gate`、`PR日本語gate`、`PRセルフレビュー（base監査 advisory）`。required status checks は Settings。
