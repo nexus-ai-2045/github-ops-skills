@@ -26,6 +26,8 @@ GitHub を触る直前（この repo）
   repo-hygiene-cleanup（削除は承認付き）
 ```
 
+補足: `PUBLIC_READY` の visibility 宣言は CI で未ログイン HTTP と照合する（`scripts/check_visibility_claim.py`）。
+
 ## 1 コマンド（この Core Suite）
 
 ```powershell

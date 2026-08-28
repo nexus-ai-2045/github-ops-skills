@@ -30,6 +30,7 @@ flowchart TD
 - runtime skill が `skills/` 正本からずれていないか検査する
 - `tracked ∧ ignored` の新規増加を ai-ratchet-gate が CI で検出する（required check 未設定のため merge は機械強制しない）
 - review thread を本文推定せず、既存 audit 判定だけで扱う
+- `PUBLIC_READY.md` の visibility 宣言を未ログイン HTTP（200=PUBLIC / 404=PRIVATE）と `scripts/check_visibility_claim.py` で CI 照合する。owner ログインの `gh repo view` は公開 oracle ではない。不一致は BLOCKED
 
 やらないこと: visibility 変更の自動化、自動 merge、token の保存、home 設定の書き換え。
 
