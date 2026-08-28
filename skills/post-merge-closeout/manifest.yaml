@@ -1,11 +1,12 @@
-# post-merge-closeout の配布マニフェスト
-# SSOT: shared/skills/post-merge-closeout/ (唯一の正本)
-# 配布エンジン: shared/scripts/skills_distribute.py
-# drift lint: shared/scripts/skills_lint.py
+# post-merge-closeout
+# SSOT in this repository: skills/post-merge-closeout/
+# 手順が呼ぶ collector / cleanup script は host workspace 側にあり、
+# この repository には無い。正本ではなく実行前提なので SKILL.md の
+# 「前提条件」に書く。ssot_pointers には書かない
 name: post-merge-closeout
 owner_kind: skill
 ssot_pointers:
-  - shared/scripts/post_merge_closeout_report.py
+  - skills/post-merge-closeout/SKILL.md
 runtimes:
   claude:
     mode: copy

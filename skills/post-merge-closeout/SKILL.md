@@ -24,6 +24,23 @@ description: "PRマージ後に、残務ゼロ、マージ済み?, closeout, 運
 
 PR番号が不明な時は、browser ambient stateだけで断定しない。repoが分かっているならread-onlyのPR listで確認するか、短く1問だけ確認する。
 
+## 前提条件
+
+この手順が呼ぶ 2 つの script は **この repository には無い**。host workspace
+（`shared/scripts/` を持つ側）から実行することを前提とする。
+
+- `shared/scripts/post_merge_closeout_report.py` — merge 証跡の収集
+- `shared/scripts/post_merge_cleanup.py` — worktree / local branch の cleanup
+
+この repository を単体で clone しただけでは手順 3 以降は実行できない。
+script が見つからない時は **代替を自作せず、そこで止めて報告する**。
+自作すると同じ処理の実装が増え、どれが正本か分からなくなる。
+
+なお `post_merge_cleanup.py` は同名の script が複数ある。この手順が要求する
+`--check` と `--confirm-merged-branch` を持つのは host workspace 側のもので、
+fractal-decision-ecosystem の `scripts/post_merge_cleanup.py` は別実装であり
+これらの option を持たない。取り違えないこと。
+
 ## 手順
 
 1. 対象PR番号とrepoを確認する。

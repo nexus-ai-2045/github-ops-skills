@@ -72,6 +72,8 @@ jobs:
         run: python scripts/verify_source_manifest_targets.py
       - name: review invariant registryを検証
         run: python scripts/verify_invariant_registry.py
+      - name: skill manifestのssot_pointersがこのrepositoryに実在するか検証
+        run: python scripts/verify_skill_manifests.py
       - name: Claude adapterを検証
         run: python adapters/claude/verify_adapter.py
       - name: Grok adapterを検証
