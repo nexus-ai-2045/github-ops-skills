@@ -13,13 +13,17 @@ GitHub へ書く直前に、今どの owner の、どの repo に触ろうとし
 ```mermaid
 flowchart TD
     開始["GitHubへ書きたい"] --> 場所["対象 repo と branch を確定"]
-    場所 --> 名義["gh login と remote owner を照合"]
-    名義 --> 判定{"判定"}
+    場所 --> dirty["未承認 dirty path が無いか"]
+    dirty --> 名義["gh login と remote owner を照合"]
+    名義 --> default["current branch が remote default でないか"]
+    default --> 判定{"判定"}
     判定 -->|通る| 承認["人間の明示承認"]
     判定 -->|止まる| 停止["実行しない"]
     判定 -->|判断できない| 不明["成功扱いにしない"]
     承認 --> 実行["push / PR / merge"]
 ```
+
+図の判定は `scripts/preflight_write_gate.py`（location / dirty / identity / default-branch）全体です。identity 照合だけを通しても write には足りません。
 
 機械の返り値は `READY` / `BLOCKED` / `UNKNOWN` の3状態です。`UNKNOWN` を成功扱いしません。右下の承認は自動では変わりません。
 
