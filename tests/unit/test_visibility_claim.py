@@ -26,6 +26,16 @@ def test_parse_public_ready_visibility_private_claim() -> None:
     assert parse_public_ready_visibility(PUBLIC_READY_PRIVATE) == "PRIVATE"
 
 
+def test_parse_public_ready_visibility_negated_public_wording_is_private() -> None:
+    text = "状態: **非公開（公開済みではない）**\n"
+    assert parse_public_ready_visibility(text) == "PRIVATE"
+    result = evaluate_visibility_claim(text, 200)
+    assert result.status is Status.BLOCKED
+    assert result.code == "visibility_claim_mismatch"
+    assert result.evidence["claim"] == "PRIVATE"
+    assert result.evidence["observed"] == "PUBLIC"
+
+
 def test_parse_public_ready_visibility_empty_or_missing_status_is_unknown() -> None:
     assert parse_public_ready_visibility("") == "UNKNOWN"
     assert parse_public_ready_visibility("lockdown 一部完了\n") == "UNKNOWN"

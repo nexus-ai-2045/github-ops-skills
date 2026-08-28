@@ -14,10 +14,12 @@ def parse_public_ready_visibility(text: str) -> Visibility:
     if match is None:
         return "UNKNOWN"
     line = match.group(1)
-    if "公開済み" in line:
-        return "PUBLIC"
+    # Negated / private wording first: 「非公開（公開済みではない）」 must not
+    # match the positive 「公開済み」 token.
     if "PRIVATE" in line or "非公開" in line:
         return "PRIVATE"
+    if "公開済み" in line:
+        return "PUBLIC"
     return "UNKNOWN"
 
 
