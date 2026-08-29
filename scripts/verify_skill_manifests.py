@@ -59,7 +59,13 @@ def verify(repo: Path) -> list[str]:
     if not skills_root.is_dir():
         return [f"{SKILLS_DIRNAME}/ not found"]
 
-    for manifest in sorted(skills_root.glob(f"*/{MANIFEST_NAME}")):
+    manifests = sorted(skills_root.glob(f"*/{MANIFEST_NAME}"))
+    if not manifests:
+        # 0 件を pass にすると、skill を別の場所へ移した瞬間に保証が空虚に
+        # 満たされる。verify_adr_numbering と同じ型 (2026-08-29 review)
+        return [f"{SKILLS_DIRNAME}/ contains no {MANIFEST_NAME}"]
+
+    for manifest in manifests:
         rel = manifest.relative_to(repo).as_posix()
         try:
             text = manifest.read_text(encoding="utf-8")

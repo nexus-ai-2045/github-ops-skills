@@ -88,3 +88,64 @@ def test_empty_file_is_reported(tmp_path: Path) -> None:
 
 def test_missing_adr_directory_is_reported(tmp_path: Path) -> None:
     assert MODULE.verify(tmp_path) == ["docs/adr/ not found"]
+
+
+# --- 2026-08-29 セルフレビューで見つかった 4 件の回帰 --------------------------
+#
+# いずれも「検査が空振りしたのに status: pass を返す」型 (docs/pr-self-review.md R1)。
+# ADR を再編した瞬間に音もなく無効化される経路だった。
+
+
+def test_empty_adr_directory_is_not_a_pass(tmp_path: Path) -> None:
+    """0 件を pass にすると保証が空虚に満たされる。"""
+    (tmp_path / "docs" / "adr").mkdir(parents=True)
+    errors = MODULE.verify(tmp_path)
+    assert any("contains no files" in e for e in errors)
+
+
+def test_adr_in_a_subdirectory_is_reported(tmp_path: Path) -> None:
+    """下位ディレクトリへ整理し直すと検査対象が 0 になる経路を塞ぐ。"""
+    _adr(tmp_path, "0002-a.md", "# ADR-0002: a")
+    nested = tmp_path / "docs" / "adr" / "2026"
+    nested.mkdir()
+    (nested / "0002-b.md").write_text("# ADR-0002: b\n", encoding="utf-8")
+    errors = MODULE.verify(tmp_path)
+    assert any("not in a subdirectory" in e for e in errors)
+
+
+def test_uppercase_md_extension_is_reported(tmp_path: Path) -> None:
+    """`.MD` は Linux の glob("*.md") で列挙されず、判定が OS で割れる。"""
+    _adr(tmp_path, "0002-a.md", "# ADR-0002: a")
+    (tmp_path / "docs" / "adr" / "0002-B.MD").write_text(
+        "# ADR-0002: b\n", encoding="utf-8"
+    )
+    errors = MODULE.verify(tmp_path)
+    assert any("0002-B.MD" in e and "lowercase .md" in e for e in errors)
+
+
+def test_fullwidth_digits_do_not_create_a_second_numbering_space(tmp_path: Path) -> None:
+    """`\\d` は Unicode 数字を拾う。全角が別番号として素通りしないこと。"""
+    _adr(tmp_path, "0002-ascii.md", "# ADR-0002: ascii")
+    (tmp_path / "docs" / "adr" / "０００２-zenkaku.md").write_text(
+        "# ADR-０００２: zenkaku\n", encoding="utf-8"
+    )
+    errors = MODULE.verify(tmp_path)
+    assert any("zenkaku" in e for e in errors)
+
+
+def test_bom_does_not_hide_a_correct_heading(tmp_path: Path) -> None:
+    """BOM を付けるエディタで、正しい ADR が見出し無しと誤判定されないこと。"""
+    adr_dir = tmp_path / "docs" / "adr"
+    adr_dir.mkdir(parents=True)
+    (adr_dir / "0001-a.md").write_text(
+        "# ADR-0001: 正しい見出し\n", encoding="utf-8-sig"
+    )
+    assert MODULE.verify(tmp_path) == []
+
+
+def test_non_adr_file_in_the_directory_is_reported(tmp_path: Path) -> None:
+    """docs/adr/ は ADR だけを置く。形が違うものは黙って無視しない。"""
+    _adr(tmp_path, "0001-a.md", "# ADR-0001: a")
+    (tmp_path / "docs" / "adr" / "notes.txt").write_text("x\n", encoding="utf-8")
+    errors = MODULE.verify(tmp_path)
+    assert any("notes.txt" in e for e in errors)

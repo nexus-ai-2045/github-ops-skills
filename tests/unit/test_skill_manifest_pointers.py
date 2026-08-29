@@ -98,3 +98,10 @@ def test_inline_list_form_is_rejected_rather_than_silently_skipped(tmp_path: Pat
     )
     errors = MODULE.verify(tmp_path)
     assert any("block list form" in e for e in errors)
+
+
+def test_skills_directory_without_manifests_is_not_a_pass(tmp_path: Path) -> None:
+    """0 件を pass にしない。verify_adr_numbering と同じ型 (2026-08-29 review)。"""
+    (tmp_path / "skills" / "demo").mkdir(parents=True)
+    errors = MODULE.verify(tmp_path)
+    assert any("contains no manifest.yaml" in e for e in errors)

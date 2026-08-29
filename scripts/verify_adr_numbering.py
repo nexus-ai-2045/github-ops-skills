@@ -32,9 +32,12 @@ from pathlib import Path
 
 
 ADR_DIRNAME = "docs/adr"
-FILENAME_RE = re.compile(r"^(\d{4})-(?P<slug>[a-z0-9][a-z0-9-]*)\.md$")
+# `\d` は Unicode 数字にマッチするため使わない。全角 `０００２` が `\d{4}` を通ると
+# key の文字列比較で "0002" とは別番号になり、この検査が塞ぐはずの
+# 「番号で同定できない」状態そのものを素通りさせる (2026-08-29 review)
+FILENAME_RE = re.compile(r"^([0-9]{4})-(?P<slug>[a-z0-9][a-z0-9-]*)\.md$")
 # `# ADR-0002: ...` と `# ADR 0002: ...` の両方が現用。区切りを許容して番号だけ取る
-HEADING_RE = re.compile(r"^#\s*ADR[\s-]*(\d{4})\b")
+HEADING_RE = re.compile(r"^#\s*ADR[\s-]*([0-9]{4})\b")
 
 
 def verify(repo: Path) -> list[str]:
@@ -44,17 +47,28 @@ def verify(repo: Path) -> list[str]:
         return [f"{ADR_DIRNAME}/ not found"]
 
     by_number: dict[str, list[str]] = defaultdict(list)
-    for path in sorted(adr_root.glob("*.md")):
+    # glob("*.md") では拾えないものが多すぎる。`0002-B.MD` は Linux の
+    # case-sensitive glob で列挙されず (macOS では列挙される = 判定が OS で割れる)、
+    # 下位ディレクトリの ADR も見えない。iterdir で全部見て、形が違えば落とす
+    entries = sorted(adr_root.iterdir())
+    for path in entries:
         rel = path.relative_to(repo).as_posix()
+        if path.is_dir():
+            errors.append(
+                f"{rel}/: ADR must live directly under {ADR_DIRNAME}/, "
+                "not in a subdirectory"
+            )
+            continue
         match = FILENAME_RE.match(path.name)
         if match is None:
-            errors.append(f"{rel}: file name must be NNNN-slug.md")
+            errors.append(f"{rel}: file name must be NNNN-slug.md (lowercase .md)")
             continue
         number = match.group(1)
         by_number[number].append(rel)
 
         try:
-            first_line = path.read_text(encoding="utf-8").splitlines()[0]
+            # BOM を付けるエディタがある。BOM 無しの UTF-8 もこの指定で読める
+            first_line = path.read_text(encoding="utf-8-sig").splitlines()[0]
         except (OSError, UnicodeDecodeError) as exc:
             errors.append(f"{rel}: unreadable ({exc})")
             continue
@@ -64,12 +78,19 @@ def verify(repo: Path) -> list[str]:
 
         heading = HEADING_RE.match(first_line)
         if heading is None:
-            errors.append(f"{rel}: first line must be an 'ADR-NNNN:' heading")
+            errors.append(
+                f"{rel}: the first line must be an 'ADR-NNNN:' heading "
+                "(no leading blank line)"
+            )
         elif heading.group(1) != number:
             errors.append(
                 f"{rel}: heading says ADR-{heading.group(1)} "
                 f"but the file name says {number}"
             )
+
+    if not entries:
+        # 0 件を pass にすると、ADR を別の場所へ移した瞬間に保証が空虚に満たされる
+        errors.append(f"{ADR_DIRNAME}/ contains no files")
 
     for number, paths in sorted(by_number.items()):
         if len(paths) > 1:
