@@ -14,9 +14,26 @@ REQUIRED_IDS = {
 }
 ALLOWED_ENFORCEMENT = {"test", "ci"}
 
+# 検査対象。verify_checker_contracts.py がこれを使って
+# 「対象が無い / 空のとき素通りしないか」を機械で確認する
+SUBJECT = "policy/invariants.json"
+
 
 def verify(repo: Path) -> list[str]:
-    payload = json.loads((repo / "policy" / "invariants.json").read_text(encoding="utf-8"))
+    # 対象が無い・壊れている時に例外で死ぬと、所見を list で返す契約が破れ、
+    # 呼び出し側は traceback を受け取る (2026-08-29 review)
+    try:
+        raw = (repo / SUBJECT).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [f"{SUBJECT} not found"]
+    except (OSError, UnicodeDecodeError) as exc:
+        return [f"{SUBJECT}: unreadable ({exc})"]
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return [f"{SUBJECT}: invalid JSON ({exc})"]
+    if not isinstance(payload, dict):
+        return [f"{SUBJECT}: top level must be an object"]
     errors: list[str] = []
     if payload.get("schema_version") != "github-ops/invariants/v1":
         errors.append("invalid schema_version")

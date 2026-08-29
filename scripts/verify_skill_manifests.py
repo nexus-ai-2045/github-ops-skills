@@ -21,6 +21,8 @@ from pathlib import Path
 
 
 SKILLS_DIRNAME = "skills"
+# 検査対象。verify_checker_contracts.py が空振りを機械で確認する
+SUBJECT = SKILLS_DIRNAME
 MANIFEST_NAME = "manifest.yaml"
 # manifest ヘッダが「この repository の外」を正本と名乗っていないか見る。
 # 移植元のヘッダをそのまま持ち込むと、存在しない配布エンジンや lint を指す

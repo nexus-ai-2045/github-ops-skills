@@ -44,7 +44,19 @@ def verify_target_hashes(repo: Path) -> list[str]:
         manifest = _manifest_path(repo)
     except ValueError as exc:
         return [str(exc)]
-    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    # 対象が無い・壊れている時に例外で死ぬと、所見を list で返す契約が破れる
+    try:
+        raw = manifest.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ["migration/source-manifest.json not found"]
+    except (OSError, UnicodeDecodeError) as exc:
+        return [f"migration/source-manifest.json: unreadable ({exc})"]
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return [f"migration/source-manifest.json: invalid JSON ({exc})"]
+    if not isinstance(payload, dict):
+        return ["migration/source-manifest.json: top level must be an object"]
     errors: list[str] = []
     if payload.get("schema_version") != SCHEMA_VERSION:
         errors.append("invalid schema_version")
