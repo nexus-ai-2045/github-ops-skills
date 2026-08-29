@@ -74,6 +74,10 @@ jobs:
         run: python scripts/verify_invariant_registry.py
       - name: skill manifestのssot_pointersがこのrepositoryに実在するか検証
         run: python scripts/verify_skill_manifests.py
+      # ADR は path 無しの `ADR-NNNN` で参照される。番号が重複すると
+      # その参照が同定できない。採番を検査する lint は移植されていなかった
+      - name: ADRの採番が一意か検証
+        run: python scripts/verify_adr_numbering.py
       - name: Claude adapterを検証
         run: python adapters/claude/verify_adapter.py
       - name: Grok adapterを検証

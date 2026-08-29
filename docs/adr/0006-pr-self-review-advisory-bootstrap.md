@@ -1,4 +1,10 @@
-# ADR 0002: PRセルフレビューのbase監査とbootstrap境界
+# ADR 0006: PRセルフレビューのbase監査とbootstrap境界
+
+> 2026-08-29 に ADR-0002 から採番し直した。0002 は
+> `docs/adr/0002-github-write-review-runtime-fail-closed.md` が保持する。
+> path 無しの `ADR-0002` 参照 (`PREFLIGHT.md:31`, `PUBLIC_READY.md`,
+> `docs/adr/0003-pr-convergence-bounded-controller.md:65`) はすべて ruleset の
+> 話題であり、そちらを指していたため。決定内容は変えていない。
 
 - Status: accepted
 - Date: 2026-08-23
