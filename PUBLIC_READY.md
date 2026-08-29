@@ -12,7 +12,7 @@ GitHub Release `v0.1.0`（tag `3a6688c`）に続き、`v0.1.1` は公開後の R
 | L1 静的契約 | READY | 2026-08-28、main `6a10def` の Core Suite CI success（run `33215149396`）。jobs: Python tests / 静的契約とadapter検証。同 push の ai-ratchet-gate success（run `33215149344`） |
 | L2 ローカル実行 | READY | 2026-08-28、Codex/Claude/Grok adapter READY（skill_count=8）と `python -m pytest -q`（312 passed） |
 | L3 GitHub read-only | READY | visibility: 2026-08-28 未ログイン HTTP 200、`scripts/check_visibility_claim.py` READY。現行 tree の `scripts/public_identity_guard.py` READY。secret scanning enabled、push protection enabled、PVR enabled（2026-08-26 記録）。`scripts/run_read_only_e2e.py --json` の live E2E は 2026-08-29（JST）に人間アカウント overlay で再実測し **READY**（`live_read_only_verified`、active login `nexus-ai-2045`） |
-| L4 private canary | 未実施 | mutation canary は別承認。L4 packet は用意されたが repo が PUBLIC のため BLOCKED（実行していない）。ruleset は未設定（ADR-0002） |
+| L4 private canary | 未実施 | mutation canary は別承認。committed `docs/evidence/private-canary-review.json`（recorded_at 2026-07-28）は request.visibility PRIVATE、gate.status BLOCKED、gate.code `canary_confirmation_missing`、executed false。2026-08-29 の live packet（未 commit）は現行 visibility が PUBLIC のため BLOCKED。ruleset は未設定（ADR-0002） |
 
 ## 公開面に出ている残リスク
 
@@ -20,7 +20,7 @@ GitHub Release `v0.1.0`（tag `3a6688c`）に続き、`v0.1.1` は公開後の R
 - required status checks / ruleset は未設定。
 - dependabot security updates は disabled。
 - 未ログイン HTTP の 404 は既存 oracle（`public-repo-readiness`）どおり PRIVATE 観測として扱う。誤った URL の 404 との区別は人間材料。
-- L4 private canary は未実施。PUBLIC のため L4 packet は BLOCKED（mutation canary は実行していない）。
+- L4 private canary は未実施。committed packet は `canary_confirmation_missing` で BLOCKED（executed false）。2026-08-29 live packet（未 commit）は現行 PUBLIC のため BLOCKED。mutation canary は実行していない。
 
 人間確認の対象: README、LICENSE、SECURITY.md、CONTRIBUTING.md、PREFLIGHT.md、
 secret scan、personal path scan、commit history、送信 file。
