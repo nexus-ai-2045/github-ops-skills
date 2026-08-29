@@ -30,13 +30,29 @@ JSON ではなく traceback を受け取る。
 
 ## 決定
 
-1. `scripts/verify_*.py` は `SUBJECT`（検査対象の repo 相対 path）と
-   `verify(repo) -> list[str]` を公開する。
+1. `scripts/verify_*.py` は `SUBJECT`（検査対象の repo 相対 path。実在すること・
+   相対であること・`..` を含まないこと）と `verify(repo) -> list[str]` を公開する。
 2. 対象が**存在しない** repo、対象は存在するが**空**の repo のどちらでも、
-   所見を返す（＝合格にしない）。例外を投げない。
+   所見を返す（＝合格にしない）。例外を投げない。`sys.exit` もしない。
+   所見の各要素は空でない `str` とする。
 3. `scripts/verify_checker_contracts.py` を追加し、`core-suite-ci.yml` で必須化する。
-   この検査は**宣言を読むのではなく、壊れた repo を実際に作って `verify()` を呼ぶ**。
+   この検査は**宣言を読むのではなく、実際に `verify()` を呼ぶ**。
 4. 上表の 3 件を修正する。
+
+### probe は空 repo ではなく「正常な複製」から作る
+
+当初は空の tmp ディレクトリを repo に見立てて probe していたが、Codex review
+(2026-08-29) の指摘で**偽陰性**になることが分かった。実測で確認している。
+
+- 対象を一切見ない checker が、無関係な「あれが無い」という所見だけで
+  両方の probe を満たして合格する
+- 対象が file か dir かを suffix から推測していたため、`LICENSE` のような
+  拡張子無しの file が dir として作られ、checker が型違いで拒否した結果
+  「空の対象を拒否した」と誤判定される
+
+よって repo の正常な複製を作り、**先に所見ゼロを確認してから、宣言された対象
+だけを壊す**。file / dir の別も実在するエントリから決める。こうすると所見が
+変異に起因すると言い切れる。
 
 ## 代替案と却下理由
 
@@ -59,8 +75,12 @@ JSON ではなく traceback を受け取る。
 ## 保証と非保証
 
 - 保証: `scripts/verify_*.py` の**すべて**が、対象の不在と対象の空を合格にしないこと。
-  例外ではなく所見を返すこと。`SUBJECT` と `verify()` を公開していること。
+  例外でも `sys.exit` でもなく、空でない `str` の list で所見を返すこと。
+  `SUBJECT` と `verify()` を公開し、`SUBJECT` が repo 内に実在すること。
+  所見が変異に起因すること（正常な複製で所見ゼロであることを先に確認する）。
   `verify_*.py` が 0 件でもこの検査自身が合格にしないこと。CI で必須。
+- 保証: probe が複製の外へ書き込まないこと。`SUBJECT` が絶対 path や `..` を
+  含む場合は probe を実行せずに落とす。
 - 非保証: 対象を**正しく列挙できているか**。実測した 9 件のうち、下位ディレクトリの
   取りこぼし・`.MD`・全角数字（ADR-0007 参照）はこの検査では捕まらない。
   これらは各 checker 側のテストが受け持つ。
@@ -77,3 +97,7 @@ python scripts/verify_checker_contracts.py
 exit 1（`SUBJECT` 宣言のみ先に足した状態で実測）。修正後は exit 0。
 回帰は `tests/unit/test_checker_contracts.py` が固定する（本番の `scripts/` を
 検査する `test_this_repository_passes` を含む）。
+
+Codex review で見つかった 5 件（`sys.exit` の素通り、probe の複製外への書き込み、
+空文字の所見、suffix による型推測、無関係な所見で契約を満たす）も、**修正前の
+コードで新テスト 6 件が落ちることを実測してから**塞いでいる。

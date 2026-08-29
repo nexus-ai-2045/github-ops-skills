@@ -20,14 +20,24 @@ R14 が言う「型で再発する」の実例でもある。実際 `verify_skil
 
 ## 何をするか
 
-`scripts/verify_*.py` を列挙し、それぞれについて 2 つの壊れた repo を作って
-実際に `verify()` を呼ぶ。**宣言を読むのではなく実行して確かめる。**
+`scripts/verify_*.py` を列挙し、それぞれについて **repo の正常な複製を作り、
+宣言された対象 (`SUBJECT`) だけを壊して** 実際に `verify()` を呼ぶ。
+**宣言を読むのではなく実行して確かめる。**
 
-1. 対象 (`SUBJECT`) が存在しない repo
-2. 対象は存在するが空 (空ディレクトリ / 空ファイル) の repo
+1. 複製に対して `verify()` が所見ゼロを返すことを先に確認する
+   (ここが汚れていると、以降の所見が変異のせいだと言えない)
+2. 対象を**削除**した複製 → 所見が出ること
+3. 対象を**空**にした複製 → 所見が出ること
 
-どちらでも所見が空なら「空振りを pass にした」として落とす。
-例外が出た場合も落とす (所見を list で返す契約が破れているため)。
+空 repo をゼロから作ると、対象と無関係な「あれが無い」という所見でも契約を
+満たしてしまい、対象を一切見ていない checker が合格する (2026-08-29 Codex review)。
+だから正常な複製から**対象だけ**を壊す。対象が file か directory かも、
+suffix から推測せず**実在するエントリから決める**。
+
+所見が空なら「空振りを pass にした」として落とす。例外が出た場合も落とす
+(所見を list で返す契約が破れているため)。`SystemExit` も捕まえる ──
+`sys.exit(0)` は `Exception` を継承しないので、素通りするとこの検査自身が
+黙って exit 0 する。所見の要素が空でない str であることも見る。
 
 ## checker 側に要求する宣言
 
@@ -42,6 +52,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -51,6 +62,10 @@ from types import ModuleType
 SCRIPTS_DIRNAME = "scripts"
 CHECKER_GLOB = "verify_*.py"
 SELF_NAME = Path(__file__).name
+# 複製に持ち込まないもの。履歴とキャッシュは検査対象ではない
+SNAPSHOT_IGNORE = shutil.ignore_patterns(
+    ".git", "__pycache__", ".pytest_cache", ".venv", "node_modules", ".mypy_cache"
+)
 
 
 def _load(path: Path) -> ModuleType:
@@ -62,37 +77,88 @@ def _load(path: Path) -> ModuleType:
     return module
 
 
-def _make_broken_repo(root: Path, subject: str, *, present: bool) -> None:
-    """対象が無い repo / 対象はあるが空の repo を作る。"""
-    if not present:
-        return
-    target = root / subject
-    if target.suffix:
-        # file 形式の対象は空ファイルにする
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("", encoding="utf-8")
-    else:
-        target.mkdir(parents=True, exist_ok=True)
-
-
-def _probe(module: ModuleType, subject: str, *, present: bool) -> str | None:
-    """壊れた repo を 1 つ食わせる。問題があればその説明を返す。"""
-    label = "an empty subject" if present else "a missing subject"
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        _make_broken_repo(root, subject, present=present)
-        try:
-            errors = module.verify(root)
-        except Exception as exc:  # noqa: BLE001 - 例外の種類ではなく契約を見る
-            return (
-                f"raised {type(exc).__name__} on {label} "
-                "instead of returning findings"
-            )
-        if not isinstance(errors, list):
-            return f"returned {type(errors).__name__} on {label} instead of a list"
-        if not errors:
-            return f"accepted {label} (returned no findings)"
+def _subject_error(subject: str) -> str | None:
+    """SUBJECT が複製の外を指していないか。指していたら書き込み事故になる。"""
+    if Path(subject).is_absolute():
+        return f"SUBJECT must be repo-relative, got an absolute path ({subject})"
+    parts = Path(subject).parts
+    if not parts:
+        return "SUBJECT must not be empty"
+    if any(part in {"..", ""} for part in parts):
+        return f"SUBJECT must not contain a parent traversal ({subject})"
     return None
+
+
+def _call(module: ModuleType, root: Path, label: str) -> tuple[list[str] | None, str | None]:
+    """verify() を 1 回呼ぶ。契約違反があればその説明を返す。"""
+    try:
+        errors = module.verify(root)
+    except SystemExit as exc:
+        # sys.exit は BaseException 側なので except Exception を素通りする。
+        # 通すとこの検査自身が黙って終了コード 0 で終わる
+        return None, (
+            f"called sys.exit({exc.code!r}) on {label} instead of returning findings"
+        )
+    except Exception as exc:  # noqa: BLE001 - 例外の種類ではなく契約を見る
+        return None, f"raised {type(exc).__name__} on {label} instead of returning findings"
+    if not isinstance(errors, list):
+        return None, f"returned {type(errors).__name__} on {label} instead of a list"
+    bad = [item for item in errors if not isinstance(item, str) or not item]
+    if bad:
+        return None, (
+            f"returned a finding that is not a non-empty str on {label} ({bad[0]!r})"
+        )
+    return errors, None
+
+
+def _snapshot(repo: Path, into: Path) -> Path:
+    root = into / "repo"
+    shutil.copytree(repo, root, ignore=SNAPSHOT_IGNORE, symlinks=True)
+    return root
+
+
+def _break_subject(root: Path, subject: str, *, empty: bool) -> None:
+    """正常な複製の中で、対象だけを壊す。file / dir は実在から判定する。"""
+    target = root / subject
+    was_dir = target.is_dir() and not target.is_symlink()
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    if not empty:
+        return
+    if was_dir:
+        target.mkdir(parents=True)
+    else:
+        target.write_text("", encoding="utf-8")
+
+
+def _probe(module: ModuleType, repo: Path, subject: str) -> list[str]:
+    """正常な複製から対象だけを壊して食わせる。問題があればその説明を返す。"""
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        clean = _snapshot(repo, Path(tmp) / "clean")
+        errors, problem = _call(module, clean, "a valid repository")
+        if problem is not None:
+            return [problem]
+        if errors:
+            # ここが汚れていると、以降の所見が変異のせいだと言えない
+            return [
+                "reports findings on a valid repository, so the probes below "
+                f"cannot be attributed to the mutation ({errors[0]})"
+            ]
+
+    for empty in (False, True):
+        label = "an empty subject" if empty else "a missing subject"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _snapshot(repo, Path(tmp) / str(int(empty)))
+            _break_subject(root, subject, empty=empty)
+            errors, problem = _call(module, root, label)
+            if problem is not None:
+                problems.append(problem)
+            elif not errors:
+                problems.append(f"accepted {label} (returned no findings)")
+    return problems
 
 
 def verify(repo: Path) -> list[str]:
@@ -112,6 +178,9 @@ def verify(repo: Path) -> list[str]:
         rel = path.relative_to(repo).as_posix()
         try:
             module = _load(path)
+        except SystemExit as exc:
+            errors.append(f"{rel}: called sys.exit({exc.code!r}) at import time")
+            continue
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{rel}: cannot be imported ({type(exc).__name__}: {exc})")
             continue
@@ -122,14 +191,18 @@ def verify(repo: Path) -> list[str]:
                 f"{rel}: must declare SUBJECT (the repo-relative path it inspects)"
             )
             continue
+        subject_problem = _subject_error(subject)
+        if subject_problem is not None:
+            errors.append(f"{rel}: {subject_problem}")
+            continue
         if not callable(getattr(module, "verify", None)):
             errors.append(f"{rel}: must expose verify(repo) -> list[str]")
             continue
+        if not (repo / subject).exists():
+            errors.append(f"{rel}: declares SUBJECT {subject} which is not in this repository")
+            continue
 
-        for present in (False, True):
-            problem = _probe(module, subject, present=present)
-            if problem is not None:
-                errors.append(f"{rel}: {problem}")
+        errors.extend(f"{rel}: {problem}" for problem in _probe(module, repo, subject))
     return errors
 
 
