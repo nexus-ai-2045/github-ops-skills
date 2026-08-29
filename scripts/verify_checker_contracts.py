@@ -54,9 +54,9 @@ import importlib.util
 import json
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -64,6 +64,8 @@ from types import ModuleType
 SCRIPTS_DIRNAME = "scripts"
 CHECKER_GLOB = "verify_*.py"
 SELF_NAME = Path(__file__).name
+# 子プロセスが返らないときに CI を止めない上限
+PROBE_TIMEOUT_SECONDS = 120
 # 複製に持ち込まないもの。履歴とキャッシュは検査対象ではない
 SNAPSHOT_IGNORE_NAMES = (
     ".git",
@@ -151,26 +153,81 @@ def _symlink_component(root: Path, subject: str) -> str | None:
     return None
 
 
-def _call(module: ModuleType, root: Path, label: str) -> tuple[list[str] | None, str | None]:
-    """verify() を 1 回呼ぶ。契約違反があればその説明を返す。"""
+# probe を子プロセスで走らせる driver。結果は 1 行の JSON で返す。
+# checker は CI では「一発の CLI 実行」として動くので、その意味論に合わせる
+_DRIVER = r"""
+import importlib.util, json, sys
+from pathlib import Path
+
+script, repo, src = sys.argv[1], sys.argv[2], sys.argv[3]
+if src:
+    sys.path.insert(0, src)
+out = {}
+try:
+    spec = importlib.util.spec_from_file_location(Path(script).stem, script)
+    module = importlib.util.module_from_spec(spec)
+    # 通常の import 意味論を保つ。外すと dataclass や pickle が壊れる
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    errors = module.verify(Path(repo))
+except SystemExit as exc:
+    out = {"kind": "exit", "code": repr(exc.code)}
+except BaseException as exc:
+    out = {"kind": "raise", "type": type(exc).__name__}
+else:
+    if isinstance(errors, list):
+        bad = [e for e in errors if not isinstance(e, str) or not e]
+        out = {"kind": "ok", "count": len(errors), "bad": repr(bad[0]) if bad else None}
+    else:
+        out = {"kind": "badtype", "type": type(errors).__name__}
+sys.stdout.write("\x00RESULT\x00" + json.dumps(out))
+"""
+
+
+def _call(
+    script: Path, src: Path | None, root: Path, label: str
+) -> tuple[int | None, str | None]:
+    """verify() を **子プロセスで** 1 回呼ぶ。契約違反があればその説明を返す。
+
+    同一プロセスで呼ぶと何も隔離されない。module 級の状態、`src` 側 helper の
+    状態、`sys.modules` 登録、`sys.exit` がすべて probe 間と親へ漏れる。
+    実測 (2026-08-29 Codex review 第 3 巡) では、
+      - reload 中の `sys.exit(0)` が親を無出力 exit 0 で終わらせ、
+      - `src` 側 helper に状態を持つ checker が SUBJECT を一切見ずに合格した。
+    子プロセスなら実際の CI 実行と同じ「まっさらな 1 回」になる。
+    """
+    proc = subprocess.run(
+        [sys.executable, "-c", _DRIVER, str(script), str(root), str(src or "")],
+        capture_output=True,
+        text=True,
+        timeout=PROBE_TIMEOUT_SECONDS,
+    )
+    marker = "\x00RESULT\x00"
+    _, sep, payload = proc.stdout.partition(marker)
+    if not sep:
+        return None, (
+            f"produced no contract result on {label} "
+            f"(exit {proc.returncode}); the probe could not observe verify()"
+        )
     try:
-        errors = module.verify(root)
-    except SystemExit as exc:
-        # sys.exit は BaseException 側なので except Exception を素通りする。
-        # 通すとこの検査自身が黙って終了コード 0 で終わる
+        out = json.loads(payload)
+    except json.JSONDecodeError:
+        return None, f"produced an unreadable contract result on {label}"
+
+    kind = out.get("kind")
+    if kind == "exit":
         return None, (
-            f"called sys.exit({exc.code!r}) on {label} instead of returning findings"
+            f"called sys.exit({out['code']}) on {label} instead of returning findings"
         )
-    except Exception as exc:  # noqa: BLE001 - 例外の種類ではなく契約を見る
-        return None, f"raised {type(exc).__name__} on {label} instead of returning findings"
-    if not isinstance(errors, list):
-        return None, f"returned {type(errors).__name__} on {label} instead of a list"
-    bad = [item for item in errors if not isinstance(item, str) or not item]
-    if bad:
+    if kind == "raise":
+        return None, f"raised {out['type']} on {label} instead of returning findings"
+    if kind == "badtype":
+        return None, f"returned {out['type']} on {label} instead of a list"
+    if out.get("bad") is not None:
         return None, (
-            f"returned a finding that is not a non-empty str on {label} ({bad[0]!r})"
+            f"returned a finding that is not a non-empty str on {label} ({out['bad']})"
         )
-    return errors, None
+    return out["count"], None
 
 
 def _snapshot(repo: Path, into: Path) -> Path:
@@ -204,24 +261,24 @@ def _break_subject(root: Path, subject: str, *, empty: bool) -> None:
     target.write_text("", encoding="utf-8")
 
 
-def _probe(load: Callable[[], ModuleType], repo: Path, subject: str) -> list[str]:
+def _probe(script: Path, src: Path | None, repo: Path, subject: str) -> list[str]:
     """正常な複製から対象だけを壊して食わせる。問題があればその説明を返す。
 
-    変種ごとに `load()` で新しい module を取る。同一 instance を使い回すと、
-    module 級の呼び出し状態を持つ checker が「1 回目は []、以降は拒否」で
-    負例 probe をすり抜けられる。
+    variant ごとに **別プロセス** で呼ぶ。同一プロセスで回すと module 級の状態も
+    `src` 側 helper の状態も probe 間に漏れ、SUBJECT を一切見ない checker が
+    「1 回目は []、以降は拒否」で負例 probe をすり抜ける (実測)。
     """
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         clean = _snapshot(repo, Path(tmp) / "clean")
-        errors, problem = _call(load(), clean, "a valid repository")
+        errors, problem = _call(script, src, clean, "a valid repository")
         if problem is not None:
             return [problem]
         if errors:
             # ここが汚れていると、以降の所見が変異のせいだと言えない
             return [
                 "reports findings on a valid repository, so the probes below "
-                f"cannot be attributed to the mutation ({errors[0]})"
+                f"cannot be attributed to the mutation ({errors} finding(s))"
             ]
 
     for empty in (False, True):
@@ -240,7 +297,7 @@ def _probe(load: Callable[[], ModuleType], repo: Path, subject: str) -> list[str
                 # (所見を list で返す) を自分で破ることになる
                 problems.append(f"the probe could not break {subject} ({exc})")
                 continue
-            errors, problem = _call(load(), root, label)
+            errors, problem = _call(script, src, root, label)
             if problem is not None:
                 problems.append(problem)
             elif not errors:
@@ -254,6 +311,8 @@ def verify(repo: Path) -> list[str]:
     if not scripts_root.is_dir():
         return [f"{SCRIPTS_DIRNAME}/ not found"]
 
+    # checker には src/ 側の実装を読むものがある。子プロセスへ渡す
+    src_root: Path | None = repo / "src" if (repo / "src").is_dir() else None
     checkers = sorted(
         path for path in scripts_root.glob(CHECKER_GLOB) if path.name != SELF_NAME
     )
@@ -293,10 +352,9 @@ def verify(repo: Path) -> list[str]:
             errors.append(f"{rel}: declares SUBJECT {subject} which is not in this repository")
             continue
 
-        # SUBJECT 等の宣言確認は上で済んだ。probe は変種ごとに再読込する
+        # SUBJECT 等の宣言確認は上で済んだ。probe は変種ごとに別プロセスで走らせる
         errors.extend(
-            f"{rel}: {problem}"
-            for problem in _probe(lambda p=path: _load(p), repo, subject)
+            f"{rel}: {problem}" for problem in _probe(path, src_root, repo, subject)
         )
     return errors
 
@@ -307,7 +365,8 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     repo = args.repo.resolve()
-    # checker は src/ の実装を読むものがあるので、import path を揃える
+    # 宣言 (SUBJECT / verify) を読むための import に必要。probe 側は子プロセスが
+    # 自分で解決するので、ここの sys.path は probe の結果に影響しない
     src = str(repo / "src")
     if src not in sys.path:
         sys.path.insert(0, src)

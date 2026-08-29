@@ -38,6 +38,7 @@ JSON ではなく traceback を受け取る。
    所見の各要素は空でない `str` とする。
 3. `scripts/verify_checker_contracts.py` を追加し、`core-suite-ci.yml` で必須化する。
    この検査は**宣言を読むのではなく、実際に `verify()` を呼ぶ**。
+   呼び出しは **variant ごとに子プロセス**で行う（下記）。
 4. 上表の 3 件を修正する。
 
 ### probe は空 repo ではなく「正常な複製」から作る
@@ -73,6 +74,23 @@ JSON ではなく traceback を受け取る。
 - **各 checker に個別の空振りテストを書く**: 書き忘れを止められない。
   新しい checker を足した人が忘れた瞬間に穴が開く。列挙して機械で回すほうが強い。
 
+### probe は子プロセスで走らせる
+
+当初は同一プロセスで `verify()` を呼び、variant ごとに module を読み直していた。
+Codex review 第 3 巡（2026-08-29）で、**それでは何も隔離できない**ことが実測された。
+
+| 漏れるもの | 実測した症状 |
+|---|---|
+| 読み直し中の `sys.exit` | 親が**無出力で exit 0**。前巡で塞いだはずの型が、その修正で入った経路に再発した |
+| `src` 側 helper の状態 | `sys.modules` に残るため、**SUBJECT を一切見ない checker が合格**した |
+| `sys.modules` 登録 | 登録を外すと `@dataclass` や `pickle` を使う**正常な checker が誤検知**で落ちる |
+
+3 巡続けて同じテーマの指摘が出ており、個別パッチでは収束していなかった。
+よって probe を**別プロセス**にする。checker は CI では「一発の CLI 実行」として
+動くので、子プロセスがその意味論そのものになる。module 状態・helper 状態・
+`sys.modules`・`sys.exit` のいずれも probe 間と親へ漏れない。
+子プロセスの結果は 1 行の JSON で受け取り、契約違反は所見へ変換する。
+
 ## 保証と非保証
 
 - 保証: `scripts/verify_*.py`（`verify_checker_contracts.py` 自身を除く）が、
@@ -81,6 +99,9 @@ JSON ではなく traceback を受け取る。
   repo 内に実在すること。所見が変異に起因すること（正常な複製で所見ゼロである
   ことを先に確認する）。`verify_checker_contracts.py` 自身は glob から自己除外し、
   `verify_*.py` が 0 件なら合格にしないこと。CI で必須。
+- 保証: probe が**別プロセス**で走り、module 級の状態・`src` 側 helper の状態・
+  `sys.modules` 登録・`sys.exit` が probe 間および親へ漏れないこと。
+  子プロセスが結果を返さない場合も所見にする（`PROBE_TIMEOUT_SECONDS` で打ち切る）。
 - 保証: probe が複製の外へ書き込まないこと。`SUBJECT` が絶対 path、`..`、
   **途中の symlink** を含む場合は probe を実行せずに落とす。
   変異そのものに失敗した場合も、例外ではなく所見で返す。
