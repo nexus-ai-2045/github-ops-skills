@@ -22,6 +22,11 @@ def _unsafe_component(repo: Path, target: Path) -> bool:
         current /= part
         try:
             info = os.lstat(current)
+        except FileNotFoundError:
+            # 「単に存在しない」は symlink 攻撃ではない。ここを同じ signal に
+            # 畳むと、欠損が "unsafe manifest path" として報告され、
+            # 呼び出し側は不在と攻撃を区別できない (2026-08-29 review)
+            return False
         except OSError:
             return True
         attributes = getattr(info, "st_file_attributes", 0)

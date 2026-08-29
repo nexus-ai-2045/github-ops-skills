@@ -9,6 +9,7 @@ R14 に従って機械検査へ昇格させる。
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -201,3 +202,70 @@ def test_unimportable_checker_is_reported(tmp_path: Path) -> None:
     (scripts / "verify_broken.py").write_text("def (\n", encoding="utf-8")
     errors = MODULE.verify(tmp_path)
     assert any("cannot be imported" in e for e in errors)
+
+
+# --- 2026-08-29 セルフレビュー第 2 巡で見つかった件の回帰 ----------------------
+
+
+def test_subject_traversing_a_symlink_is_rejected_before_any_write(tmp_path: Path) -> None:
+    """`..` と絶対 path を塞いでも、repo 内 symlink 経由で外へ抜けられた。
+
+    実測では複製の外の実ディレクトリが rmtree された。read-only 契約の違反。
+    """
+    outside = tmp_path / "outside"
+    (outside / "precious").mkdir(parents=True)
+    (outside / "precious" / "a.txt").write_text("a\n", encoding="utf-8")
+
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "docs").mkdir()
+    (repo / "docs" / "link").symlink_to(outside, target_is_directory=True)
+    (repo / "scripts" / "verify_rmtree.py").write_text(
+        "from pathlib import Path\n"
+        'SUBJECT = "docs/link/precious"\n\n\n'
+        "def verify(repo: Path) -> list[str]:\n"
+        '    return [] if (repo / SUBJECT).is_dir() else ["gone"]\n',
+        encoding="utf-8",
+    )
+
+    errors = MODULE.verify(repo)
+    assert any("traverses a symlink" in e for e in errors), errors
+    # 複製の外の実データが消えていないこと
+    assert (outside / "precious" / "a.txt").is_file()
+
+
+def test_symlink_component_ignores_a_merely_absent_path(tmp_path: Path) -> None:
+    """「単に存在しない」を symlink 扱いにしない。M3 と同じ取り違えを持ち込まない。"""
+    assert MODULE._symlink_component(tmp_path, "docs/absent") is None
+
+
+def test_subject_excluded_from_the_snapshot_gets_its_own_message() -> None:
+    """複製に含まれない対象を、checker のせいにしない。"""
+    problem = MODULE._subject_error("node_modules/pkg")
+    assert problem is not None and "excluded from the probe snapshot" in problem
+
+
+def test_a_probe_that_cannot_mutate_is_a_finding_not_a_traceback(tmp_path: Path) -> None:
+    """変異に失敗しても、この検査が他へ課している契約を自分で破らないこと。"""
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    # 正常な複製では所見ゼロ。そうでないと変異まで到達しない
+    module = _fake("docs", lambda r: [] if (r / "docs").is_dir() else ["gone"])
+
+    def boom(root: Path, subject: str, *, empty: bool) -> None:
+        raise PermissionError("cannot remove")
+
+    original = MODULE._break_subject
+    MODULE._break_subject = boom
+    try:
+        problems = MODULE._probe(module, repo, "docs")
+    finally:
+        MODULE._break_subject = original
+    assert any("could not break docs" in p for p in problems), problems
+
+
+def test_sys_path_does_not_grow_on_repeated_runs() -> None:
+    """テストプロセスの sys.path を恒久的に汚さないこと。"""
+    before = len(sys.path)
+    for _ in range(3):
+        MODULE.verify(ROOT)
+    assert len(sys.path) == before

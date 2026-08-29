@@ -34,7 +34,7 @@ flowchart TD
 - runtime skill が `skills/` 正本からずれていないか検査する
 - skill manifest の `ssot_pointers` がこの repository に実在するかを `scripts/verify_skill_manifests.py` で CI 必須にする（[ADR-0005](docs/adr/0005-skill-manifest-pointers-must-exist-in-this-repository.md)）
 - ADR の採番が一意で、file 名と見出しの番号が一致するかを `scripts/verify_adr_numbering.py` で CI 必須にする（[ADR-0007](docs/adr/0007-adr-numbers-must-be-unique.md)）
-- 各 checker が「対象が無い / 空」を pass にしないことを、壊れた repo を実際に食わせて `scripts/verify_checker_contracts.py` で CI 必須にする（[ADR-0008](docs/adr/0008-checkers-must-reject-empty-subjects.md)）
+- `scripts/verify_*.py` が「対象が無い / 空」を pass にしないことを、repo の複製から対象だけを壊して実際に食わせ `scripts/verify_checker_contracts.py` で CI 必須にする（[ADR-0008](docs/adr/0008-checkers-must-reject-empty-subjects.md)。`adapters/*/verify_adapter.py` は返り値契約が異なるため対象外）
 - `tracked ∧ ignored` の新規増加を `ai-ratchet-gate` が CI で検出する（required check 未設定のため merge は機械強制しない）
 - review thread を本文推定せず、既存 audit 判定だけで扱う
 - `PUBLIC_READY.md` の visibility 宣言を未ログイン HTTP（200=PUBLIC / 404=PRIVATE）と `scripts/check_visibility_claim.py` で CI 照合する。owner ログインの `gh repo view` は公開 oracle ではない。不一致は BLOCKED

@@ -53,6 +53,7 @@ import argparse
 import importlib.util
 import json
 import shutil
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -63,17 +64,33 @@ SCRIPTS_DIRNAME = "scripts"
 CHECKER_GLOB = "verify_*.py"
 SELF_NAME = Path(__file__).name
 # 複製に持ち込まないもの。履歴とキャッシュは検査対象ではない
-SNAPSHOT_IGNORE = shutil.ignore_patterns(
-    ".git", "__pycache__", ".pytest_cache", ".venv", "node_modules", ".mypy_cache"
+SNAPSHOT_IGNORE_NAMES = (
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    ".venv",
+    "node_modules",
+    ".mypy_cache",
 )
+SNAPSHOT_IGNORE = shutil.ignore_patterns(*SNAPSHOT_IGNORE_NAMES)
 
 
 def _load(path: Path) -> ModuleType:
+    """checker を読み込む。import の副作用を呼び出し側へ漏らさない。
+
+    checker には import 時に無条件で `sys.path.insert` するものがあり
+    (`verify_source_manifest_targets.py`)、そのまま呼ぶと呼び出し側の
+    `sys.path` が 1 本ずつ伸びる。pytest プロセスを恒久的に汚すので戻す。
+    """
     spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot create a spec for {path.name}")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    saved = list(sys.path)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path[:] = saved
     return module
 
 
@@ -86,6 +103,39 @@ def _subject_error(subject: str) -> str | None:
         return "SUBJECT must not be empty"
     if any(part in {"..", ""} for part in parts):
         return f"SUBJECT must not contain a parent traversal ({subject})"
+    if any(part in SNAPSHOT_IGNORE_NAMES for part in parts):
+        # 複製に含まれないので、変異を作れない。checker のせいにしない
+        return f"SUBJECT is excluded from the probe snapshot ({subject})"
+    return None
+
+
+def _symlink_component(root: Path, subject: str) -> str | None:
+    """SUBJECT の途中に symlink が無いか。あると複製の外を消しに行く。
+
+    `..` と絶対 path を塞いでも、repo 内の symlink 経由で外へ抜けられる。
+    実測 (2026-08-29 self review) では複製の外の実ディレクトリが rmtree された。
+    判定は `src/github_ops/source_manifest.py::_unsafe_component` と同じ考え方で、
+    leaf を含む全 component を lstat する。ただし「単に存在しない」は
+    symlink ではないので区別する (M3 と同じ取り違えを持ち込まない)。
+    """
+    current = root
+    for part in Path(subject).parts:
+        current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            return f"cannot inspect {subject} ({exc})"
+        attributes = getattr(info, "st_file_attributes", 0)
+        if stat.S_ISLNK(info.st_mode) or attributes & getattr(
+            stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0
+        ):
+            rel = current.relative_to(root).as_posix()
+            return (
+                f"SUBJECT traverses a symlink ({rel}); the probe would mutate "
+                "outside the snapshot"
+            )
     return None
 
 
@@ -152,7 +202,18 @@ def _probe(module: ModuleType, repo: Path, subject: str) -> list[str]:
         label = "an empty subject" if empty else "a missing subject"
         with tempfile.TemporaryDirectory() as tmp:
             root = _snapshot(repo, Path(tmp) / str(int(empty)))
-            _break_subject(root, subject, empty=empty)
+            # 複製の中でも改めて見る。repo 側で通っても複製で symlink になりうる
+            escape = _symlink_component(root, subject)
+            if escape is not None:
+                problems.append(escape)
+                break
+            try:
+                _break_subject(root, subject, empty=empty)
+            except OSError as exc:
+                # ここで例外を上げると、この検査が他へ課している契約
+                # (所見を list で返す) を自分で破ることになる
+                problems.append(f"the probe could not break {subject} ({exc})")
+                continue
             errors, problem = _call(module, root, label)
             if problem is not None:
                 problems.append(problem)
@@ -198,6 +259,10 @@ def verify(repo: Path) -> list[str]:
         if not callable(getattr(module, "verify", None)):
             errors.append(f"{rel}: must expose verify(repo) -> list[str]")
             continue
+        escape = _symlink_component(repo, subject)
+        if escape is not None:
+            errors.append(f"{rel}: {escape}")
+            continue
         if not (repo / subject).exists():
             errors.append(f"{rel}: declares SUBJECT {subject} which is not in this repository")
             continue
@@ -213,7 +278,9 @@ def main() -> int:
     args = parser.parse_args()
     repo = args.repo.resolve()
     # checker は src/ の実装を読むものがあるので、import path を揃える
-    sys.path.insert(0, str(repo / "src"))
+    src = str(repo / "src")
+    if src not in sys.path:
+        sys.path.insert(0, src)
     errors = verify(repo)
     if args.json:
         print(

@@ -79,8 +79,12 @@ JSON ではなく traceback を受け取る。
   `SUBJECT` と `verify()` を公開し、`SUBJECT` が repo 内に実在すること。
   所見が変異に起因すること（正常な複製で所見ゼロであることを先に確認する）。
   `verify_*.py` が 0 件でもこの検査自身が合格にしないこと。CI で必須。
-- 保証: probe が複製の外へ書き込まないこと。`SUBJECT` が絶対 path や `..` を
-  含む場合は probe を実行せずに落とす。
+- 保証: probe が複製の外へ書き込まないこと。`SUBJECT` が絶対 path、`..`、
+  **途中の symlink** を含む場合は probe を実行せずに落とす。
+  変異そのものに失敗した場合も、例外ではなく所見で返す。
+- 非保証: `scripts/` 以外の場所にある `verify_*.py`。とくに
+  `adapters/*/verify_adapter.py` は名前が一致するが、返り値が `dict` で
+  `list[str]` 契約を原理的に満たさないため対象外。
 - 非保証: 対象を**正しく列挙できているか**。実測した 9 件のうち、下位ディレクトリの
   取りこぼし・`.MD`・全角数字（ADR-0007 参照）はこの検査では捕まらない。
   これらは各 checker 側のテストが受け持つ。
@@ -101,3 +105,15 @@ exit 1（`SUBJECT` 宣言のみ先に足した状態で実測）。修正後は 
 Codex review で見つかった 5 件（`sys.exit` の素通り、probe の複製外への書き込み、
 空文字の所見、suffix による型推測、無関係な所見で契約を満たす）も、**修正前の
 コードで新テスト 6 件が落ちることを実測してから**塞いでいる。
+
+さらにセルフレビュー第 2 巡で 5 件。とくに重かったのは、`..` と絶対 path を
+塞いでも **repo 内の symlink 経由で複製の外へ抜けられた**こと。実測で複製外の
+実ディレクトリが `rmtree` された。`src/github_ops/source_manifest.py` の
+`_unsafe_component` が同じ脅威を既に扱っていたのに、その防御が probe の
+書き込み経路へ適用されていなかった。同時に `_unsafe_component` 側の
+「lstat 失敗はすべて unsafe」も直した ── 単なる不在が symlink 攻撃と
+同じ signal になっており、`verify_target_hashes` が不在を報告できずに
+`"unsafe manifest path"` を返していた（この検査の「対象が無い」probe が
+**対象を読む前の別の理由**で満たされていた＝この ADR が塞ごうとしている
+偽陰性そのもの）。CI step 自体もテストで固定していなかったので、
+`tests/unit/test_core_suite_workflow.py` へ `verify_*` の 5 step を追加した。

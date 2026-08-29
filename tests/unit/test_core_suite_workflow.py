@@ -20,6 +20,13 @@ def test_core_suite_workflow_covers_local_verification_without_write_permissions
         "python adapters/codex/verify_adapter.py",
         "python adapters/claude/verify_adapter.py",
         "python adapters/grok/verify_adapter.py",
+        # verify_* の CI step を固定する。テストが無いと step を消しても
+        # 誰も気づかない = 宣言だけ残って執行が消える (ADR-0005 / 0007 と同じ型)
+        "python scripts/verify_source_manifest_targets.py",
+        "python scripts/verify_invariant_registry.py",
+        "python scripts/verify_skill_manifests.py",
+        "python scripts/verify_adr_numbering.py",
+        "python scripts/verify_checker_contracts.py",
     ):
         assert required in text
     action_refs = re.findall(r"uses:\s*[^@\s]+@([^\s]+)", text)
