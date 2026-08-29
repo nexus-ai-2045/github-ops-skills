@@ -10,6 +10,11 @@ if __package__ in {None, ""}:
 
 from github_ops.source_manifest import refresh_target_hashes, verify_target_hashes
 
+# 検査対象。verify_checker_contracts.py が空振りを機械で確認する
+SUBJECT = "migration/source-manifest.json"
+# 他の verify_* と同じ入口名で呼べるようにする。実装は src 側が正本
+verify = verify_target_hashes
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="source manifestのtarget hashを検証します")
