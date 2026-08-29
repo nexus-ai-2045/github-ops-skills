@@ -56,6 +56,7 @@ import shutil
 import stat
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -81,16 +82,27 @@ def _load(path: Path) -> ModuleType:
     checker には import 時に無条件で `sys.path.insert` するものがあり
     (`verify_source_manifest_targets.py`)、そのまま呼ぶと呼び出し側の
     `sys.path` が 1 本ずつ伸びる。pytest プロセスを恒久的に汚すので戻す。
+
+    `from __future__ import annotations` と `@dataclass` など module を見る
+    decorator は、exec 中に module が `sys.modules` へ入っていないと
+    Python 3.11 で AttributeError になる。通常の import と同じく一時登録する。
     """
     spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot create a spec for {path.name}")
     module = importlib.util.module_from_spec(spec)
+    name = spec.name
     saved = list(sys.path)
+    previous = sys.modules.get(name)
+    sys.modules[name] = module
     try:
         spec.loader.exec_module(module)
     finally:
         sys.path[:] = saved
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
     return module
 
 
@@ -168,27 +180,41 @@ def _snapshot(repo: Path, into: Path) -> Path:
 
 
 def _break_subject(root: Path, subject: str, *, empty: bool) -> None:
-    """正常な複製の中で、対象だけを壊す。file / dir は実在から判定する。"""
+    """正常な複製の中で、対象だけを壊す。file / dir は実在から判定する。
+
+    空にするときは削除して作り直さない。mode bit を落とすと、権限だけ見て
+    中身の空を無視する checker が「空の対象」probe をすり抜けられる。
+    """
     target = root / subject
     was_dir = target.is_dir() and not target.is_symlink()
-    if target.is_dir() and not target.is_symlink():
-        shutil.rmtree(target)
-    else:
-        target.unlink()
     if not empty:
+        if was_dir:
+            shutil.rmtree(target)
+        else:
+            target.unlink()
         return
     if was_dir:
-        target.mkdir(parents=True)
-    else:
-        target.write_text("", encoding="utf-8")
+        for child in list(target.iterdir()):
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        return
+    # 既存 file を truncate すれば mode は残る (作り直しは 0o644 になる)
+    target.write_text("", encoding="utf-8")
 
 
-def _probe(module: ModuleType, repo: Path, subject: str) -> list[str]:
-    """正常な複製から対象だけを壊して食わせる。問題があればその説明を返す。"""
+def _probe(load: Callable[[], ModuleType], repo: Path, subject: str) -> list[str]:
+    """正常な複製から対象だけを壊して食わせる。問題があればその説明を返す。
+
+    変種ごとに `load()` で新しい module を取る。同一 instance を使い回すと、
+    module 級の呼び出し状態を持つ checker が「1 回目は []、以降は拒否」で
+    負例 probe をすり抜けられる。
+    """
     problems: list[str] = []
     with tempfile.TemporaryDirectory() as tmp:
         clean = _snapshot(repo, Path(tmp) / "clean")
-        errors, problem = _call(module, clean, "a valid repository")
+        errors, problem = _call(load(), clean, "a valid repository")
         if problem is not None:
             return [problem]
         if errors:
@@ -214,7 +240,7 @@ def _probe(module: ModuleType, repo: Path, subject: str) -> list[str]:
                 # (所見を list で返す) を自分で破ることになる
                 problems.append(f"the probe could not break {subject} ({exc})")
                 continue
-            errors, problem = _call(module, root, label)
+            errors, problem = _call(load(), root, label)
             if problem is not None:
                 problems.append(problem)
             elif not errors:
@@ -267,7 +293,11 @@ def verify(repo: Path) -> list[str]:
             errors.append(f"{rel}: declares SUBJECT {subject} which is not in this repository")
             continue
 
-        errors.extend(f"{rel}: {problem}" for problem in _probe(module, repo, subject))
+        # SUBJECT 等の宣言確認は上で済んだ。probe は変種ごとに再読込する
+        errors.extend(
+            f"{rel}: {problem}"
+            for problem in _probe(lambda p=path: _load(p), repo, subject)
+        )
     return errors
 
 

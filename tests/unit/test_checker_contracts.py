@@ -47,7 +47,7 @@ def test_checker_accepting_an_empty_subject_is_reported(tmp_path: Path) -> None:
     """空の対象を pass にする checker を落とす。実際に起きていた形。"""
     repo = _repo_with_subject(tmp_path, "skills", is_dir=True)
     module = _fake("skills", lambda r: [] if (r / "skills").exists() else ["gone"])
-    problems = MODULE._probe(module, repo, "skills")
+    problems = MODULE._probe(lambda: module, repo, "skills")
     assert any("accepted an empty subject" in p for p in problems), problems
 
 
@@ -61,7 +61,11 @@ def test_checker_raising_on_a_missing_subject_is_reported(tmp_path: Path) -> Non
     def _raise():
         raise FileNotFoundError("policy/invariants.json")
 
-    problems = MODULE._probe(_fake("policy/invariants.json", boom), repo, "policy/invariants.json")
+    problems = MODULE._probe(
+        lambda: _fake("policy/invariants.json", boom),
+        repo,
+        "policy/invariants.json",
+    )
     assert any("raised FileNotFoundError" in p for p in problems), problems
 
 
@@ -77,12 +81,12 @@ def test_checker_that_rejects_both_is_accepted(tmp_path: Path) -> None:
             return ["skills/ is empty"]
         return []
 
-    assert MODULE._probe(_fake("skills", ok), repo, "skills") == []
+    assert MODULE._probe(lambda: _fake("skills", ok), repo, "skills") == []
 
 
 def test_checker_returning_a_non_list_is_reported(tmp_path: Path) -> None:
     repo = _repo_with_subject(tmp_path, "skills", is_dir=True)
-    problems = MODULE._probe(_fake("skills", lambda r: "broken"), repo, "skills")
+    problems = MODULE._probe(lambda: _fake("skills", lambda r: "broken"), repo, "skills")
     assert any("instead of a list" in p for p in problems), problems
 
 
@@ -96,7 +100,7 @@ def test_sys_exit_does_not_silently_end_the_run(tmp_path: Path) -> None:
     def exiter(r: Path) -> list[str]:
         raise SystemExit(0)
 
-    problems = MODULE._probe(_fake("docs", exiter), repo, "docs")
+    problems = MODULE._probe(lambda: _fake("docs", exiter), repo, "docs")
     assert any("called sys.exit(0)" in p for p in problems), problems
 
 
@@ -124,7 +128,7 @@ def test_subject_escape_is_caught_before_any_write(tmp_path: Path) -> None:
 def test_finding_that_is_not_a_non_empty_string_is_reported(tmp_path: Path) -> None:
     """契約は list[str]。[""] や [None] を通すと呼び出し側が壊れる。"""
     repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
-    problems = MODULE._probe(_fake("docs", lambda r: [""]), repo, "docs")
+    problems = MODULE._probe(lambda: _fake("docs", lambda r: [""]), repo, "docs")
     assert any("not a non-empty str" in p for p in problems), problems
 
 
@@ -137,7 +141,7 @@ def test_subject_type_comes_from_the_real_entry_not_the_suffix(tmp_path: Path) -
         # 「拒否した」と誤判定されてしまう
         return [] if (r / "LICENSE").is_file() else ["LICENSE is not a file"]
 
-    problems = MODULE._probe(_fake("LICENSE", only_checks_type), repo, "LICENSE")
+    problems = MODULE._probe(lambda: _fake("LICENSE", only_checks_type), repo, "LICENSE")
     assert any("accepted an empty subject" in p for p in problems), problems
 
 
@@ -148,7 +152,7 @@ def test_findings_on_a_valid_repository_are_reported(tmp_path: Path) -> None:
     def ignores_subject(r: Path) -> list[str]:
         return [] if (r / "unrelated.json").is_file() else ["unrelated.json not found"]
 
-    problems = MODULE._probe(_fake("docs", ignores_subject), repo, "docs")
+    problems = MODULE._probe(lambda: _fake("docs", ignores_subject), repo, "docs")
     assert any("cannot be attributed to the mutation" in p for p in problems), problems
 
 
@@ -257,7 +261,7 @@ def test_a_probe_that_cannot_mutate_is_a_finding_not_a_traceback(tmp_path: Path)
     original = MODULE._break_subject
     MODULE._break_subject = boom
     try:
-        problems = MODULE._probe(module, repo, "docs")
+        problems = MODULE._probe(lambda: module, repo, "docs")
     finally:
         MODULE._break_subject = original
     assert any("could not break docs" in p for p in problems), problems
@@ -269,3 +273,97 @@ def test_sys_path_does_not_grow_on_repeated_runs() -> None:
     for _ in range(3):
         MODULE.verify(ROOT)
     assert len(sys.path) == before
+
+
+# --- 2026-08-29 Codex review (1f0b158) の 3 件の回帰 --------------------------
+
+
+def test_empty_subject_probe_preserves_file_mode(tmp_path: Path) -> None:
+    """空 probe で mode を落とすと、権限だけ見て中身を無視する checker がすり抜ける。"""
+    repo = _repo_with_subject(tmp_path, "bin/tool", is_dir=False)
+    subject = repo / "bin" / "tool"
+    subject.chmod(0o755)
+    expected_mode = subject.stat().st_mode & 0o777
+
+    def permissions_only(r: Path) -> list[str]:
+        target = r / "bin" / "tool"
+        if not target.is_file():
+            return ["bin/tool is missing"]
+        if target.stat().st_mode & 0o777 != expected_mode:
+            return ["bin/tool has the wrong mode"]
+        # 中身の空は見ない ── mode を保った空 file ならここを通ってしまう
+        return []
+
+    problems = MODULE._probe(lambda: _fake("bin/tool", permissions_only), repo, "bin/tool")
+    assert any("accepted an empty subject" in p for p in problems), problems
+
+
+def test_empty_subject_probe_preserves_directory_mode(tmp_path: Path) -> None:
+    """dir を作り直すと mode が変わり、権限だけ見る checker が空 dir をすり抜ける。"""
+    repo = _repo_with_subject(tmp_path, "skills", is_dir=True)
+    subject = repo / "skills"
+    subject.chmod(0o700)
+    expected_mode = subject.stat().st_mode & 0o777
+
+    def permissions_only(r: Path) -> list[str]:
+        target = r / "skills"
+        if not target.is_dir():
+            return ["skills/ is missing"]
+        if target.stat().st_mode & 0o777 != expected_mode:
+            return ["skills/ has the wrong mode"]
+        return []
+
+    problems = MODULE._probe(lambda: _fake("skills", permissions_only), repo, "skills")
+    assert any("accepted an empty subject" in p for p in problems), problems
+
+
+def test_future_annotations_dataclass_checker_can_be_imported(tmp_path: Path) -> None:
+    """sys.modules 未登録のまま exec すると @dataclass + future annotations が落ちる。"""
+    repo = tmp_path
+    (repo / "docs").mkdir()
+    (repo / "docs" / "keep.txt").write_text("x\n", encoding="utf-8")
+    scripts = repo / "scripts"
+    scripts.mkdir()
+    (scripts / "verify_future_dc.py").write_text(
+        "from __future__ import annotations\n"
+        "from dataclasses import dataclass\n"
+        "from pathlib import Path\n\n"
+        "@dataclass\n"
+        "class Item:\n"
+        "    name: str\n\n"
+        'SUBJECT = "docs"\n\n\n'
+        "def verify(repo: Path) -> list[str]:\n"
+        '    _ = Item("x")\n'
+        '    target = repo / "docs"\n'
+        "    if not target.is_dir():\n"
+        '        return ["docs missing"]\n'
+        "    if not any(target.iterdir()):\n"
+        '        return ["docs empty"]\n'
+        "    return []\n",
+        encoding="utf-8",
+    )
+    assert MODULE.verify(repo) == []
+
+
+def test_module_level_state_does_not_leak_across_probes(tmp_path: Path) -> None:
+    """同一 module を使い回すと、1 回目の [] のあと拒否する checker がすり抜ける。"""
+    repo = tmp_path
+    (repo / "docs").mkdir()
+    (repo / "docs" / "keep.txt").write_text("x\n", encoding="utf-8")
+    scripts = repo / "scripts"
+    scripts.mkdir()
+    (scripts / "verify_oneshot.py").write_text(
+        "from pathlib import Path\n\n"
+        'SUBJECT = "docs"\n'
+        "_called = False\n\n\n"
+        "def verify(repo: Path) -> list[str]:\n"
+        "    global _called\n"
+        "    if not _called:\n"
+        "        _called = True\n"
+        "        return []\n"
+        '    return ["already called"]\n',
+        encoding="utf-8",
+    )
+    errors = MODULE.verify(repo)
+    assert any("accepted" in e for e in errors), errors
+    assert not any("cannot be imported" in e for e in errors), errors
