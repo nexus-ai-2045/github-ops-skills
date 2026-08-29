@@ -30,8 +30,9 @@ JSON ではなく traceback を受け取る。
 
 ## 決定
 
-1. `scripts/verify_*.py` は `SUBJECT`（検査対象の repo 相対 path。実在すること・
-   相対であること・`..` を含まないこと）と `verify(repo) -> list[str]` を公開する。
+1. `scripts/verify_*.py`（`verify_checker_contracts.py` 自身を除く）は `SUBJECT`
+   （検査対象の repo 相対 path。実在すること・相対であること・`..` を含まないこと）
+   と `verify(repo) -> list[str]` を公開する。
 2. 対象が**存在しない** repo、対象は存在するが**空**の repo のどちらでも、
    所見を返す（＝合格にしない）。例外を投げない。`sys.exit` もしない。
    所見の各要素は空でない `str` とする。
@@ -74,11 +75,12 @@ JSON ではなく traceback を受け取る。
 
 ## 保証と非保証
 
-- 保証: `scripts/verify_*.py` の**すべて**が、対象の不在と対象の空を合格にしないこと。
-  例外でも `sys.exit` でもなく、空でない `str` の list で所見を返すこと。
-  `SUBJECT` と `verify()` を公開し、`SUBJECT` が repo 内に実在すること。
-  所見が変異に起因すること（正常な複製で所見ゼロであることを先に確認する）。
-  `verify_*.py` が 0 件でもこの検査自身が合格にしないこと。CI で必須。
+- 保証: `scripts/verify_*.py`（`verify_checker_contracts.py` 自身を除く）が、
+  対象の不在と対象の空を合格にしないこと。例外でも `sys.exit` でもなく、空でない
+  `str` の list で所見を返すこと。`SUBJECT` と `verify()` を公開し、`SUBJECT` が
+  repo 内に実在すること。所見が変異に起因すること（正常な複製で所見ゼロである
+  ことを先に確認する）。`verify_checker_contracts.py` 自身は glob から自己除外し、
+  `verify_*.py` が 0 件なら合格にしないこと。CI で必須。
 - 保証: probe が複製の外へ書き込まないこと。`SUBJECT` が絶対 path、`..`、
   **途中の symlink** を含む場合は probe を実行せずに落とす。
   変異そのものに失敗した場合も、例外ではなく所見で返す。
