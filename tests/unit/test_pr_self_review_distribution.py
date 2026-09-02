@@ -38,7 +38,7 @@ def test_trusted_workflow_uses_base_only_verifier_and_read_permissions() -> None
     assert "scripts/check_pr_self_review.py" in workflow
     assert "--base-root" in workflow
     assert "--candidate-root" in workflow
-    adr = (ROOT / "docs/adr/0002-pr-self-review-advisory-bootstrap.md").read_text(
+    adr = (ROOT / "docs/adr/0006-pr-self-review-advisory-bootstrap.md").read_text(
         encoding="utf-8"
     )
     assert "advisory" in adr

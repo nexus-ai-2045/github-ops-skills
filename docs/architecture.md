@@ -1,8 +1,15 @@
 # アーキテクチャ
 
-設計判断は[ADR-0001: PR日本語gateは限定的な構文契約とする](adr/0001-pr-japanese-gate-boundary.md)、
-[ADR-0004: Review findingは不変条件へ昇格する](adr/0004-review-findings-to-invariants.md)、
-[ADR-0005: skill manifestのssot_pointersはこのrepositoryに実在すること](adr/0005-skill-manifest-pointers-must-exist-in-this-repository.md)に記録しています。
+設計判断は次の ADR に記録しています。番号は `docs/adr/` の全 file と一致します
+（`scripts/verify_adr_numbering.py` が採番の一意性を CI で検査します）。
+
+- [ADR-0001: PR日本語gateは限定的な構文契約とする](adr/0001-pr-japanese-gate-boundary.md)
+- [ADR-0002: GitHub write・review・runtime検査は実効状態をfail-closedで確認する](adr/0002-github-write-review-runtime-fail-closed.md)
+- [ADR-0003: PR収束は有界なコントローラで扱う](adr/0003-pr-convergence-bounded-controller.md)
+- [ADR-0004: Review findingは不変条件へ昇格する](adr/0004-review-findings-to-invariants.md)
+- [ADR-0005: skill manifestのssot_pointersはこのrepositoryに実在すること](adr/0005-skill-manifest-pointers-must-exist-in-this-repository.md)
+- [ADR-0006: PRセルフレビューのbase監査とbootstrap境界](adr/0006-pr-self-review-advisory-bootstrap.md)
+- [ADR-0007: ADRの採番は一意で機械検査に載せる](adr/0007-adr-numbers-must-be-unique.md)
 
 `src/github_ops/`が結果契約、出力秘匿、コマンド実行、account overlay、identity、
 preflight、review-thread audit、skill drift比較を提供します。`scripts/`は薄いCLI、
