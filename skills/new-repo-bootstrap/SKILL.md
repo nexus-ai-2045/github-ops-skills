@@ -4,8 +4,8 @@ description: >
   新しい GitHub repository を作る時の入口。「リポジトリを切る」「repo を新しく作る」「新規 repo」
   「git init したい」「gh repo create」「別リポジトリに分ける」「public で公開する repo を作る」と言われたら、
   自分で git init / gh repo create を組み立てず、必ずこの skill を使う。
-  置き場所の固定・commit 名義・公開前文書・repo-preflight 検査・owner の token での作成・canonical wrapper 経由の
-  初回 push・公開直後の lockdown・台帳登録・read-back を 1 本の script が順番に行う。
+  置き場所の固定・commit 名義・公開前文書・repo-preflight 検査・owner の token での作成・公開直後の lockdown・
+  canonical wrapper 経由の作業 branch push と API による main 作成・台帳登録・read-back を 1 本の script が順番に行う。
   Do NOT use for: 既存 repo への push / PR (commit-push-pr, github-cli-ops-guard)、公開判定の整備だけ (public-repo-readiness)。
 ---
 
@@ -52,7 +52,9 @@ python3 <skill dir>/scripts/bootstrap_repo.py --name <name> --visibility <public
    | `remote_absent: exists` | GitHub に同名 repo が既にある | 名前を変えるか、既存 repo を使う (この skill の対象外) |
    | `local_dir: has_origin` | 手元の directory に origin が既にある | 既存 repo。commit-push-pr を使う |
    | `commit_identity: mismatch` | 既存 commit が個人名義 | 公開 repo には出せない。作り直す |
-   | `preflight_script: missing` | repo-preflight の checkout が無い | `~/Projects/Documents/.repos/nexus_ai/repo-preflight` を clone する |
+   | `preflight_script: missing` | repo-preflight の checkout が無い (preflight はここで BLOCKED) | `~/Projects/Documents/.repos/nexus_ai/repo-preflight` を clone する。`--allow-no-preflight` は非推奨 |
+   | `local_dir: nested_in_other_repo` | 指定 directory が別 repo の中 | 別の場所を指定する |
+   | `remote_absent: exists_visibility_<x>` | `--resume` 先の remote の visibility が指定と違う | 指定を合わせるか、visibility 変更を別承認で行う |
 
 2. **CEO の承認を現在会話で確認**する (repo 名 / visibility / 説明)。前の会話や「全部推奨で」の一括承認は
    名前と visibility が言われていれば有効。言われていなければ 1 問だけ聞く。
@@ -64,16 +66,23 @@ python3 <skill dir>/scripts/bootstrap_repo.py --name <name> --visibility <public
 ```
 
    step は `preflight → prepare_local → set_identity → scaffold_docs → initial_commit → readiness_scan →
-   create_remote → add_remote → push → lockdown → register → verify` の順。途中で `fail` が出たら
-   それ以降は走らない。`steps` をそのまま報告し、失敗した step の `detail` を人間語に直して伝える。
+   create_remote → lockdown (public のみ、push より先) → add_remote → push → promote_main → register → verify` の順。
+   途中で `fail` が出たらそれ以降は走らない。`steps` をそのまま報告し、失敗した step の `detail` を人間語に直して伝える。
 
-4. **read-back を報告**する。`verify` の detail (`owner/name (visibility)`) と `register` の台帳 path を書く。
-   `push: skipped` なら、示された wrapper コマンドを次の一手として書く (自分で `git push` しない)。
+   push は main に直接行わない。`bootstrap/init` branch を canonical wrapper で push し (両方の push guard が
+   branch push だけを許可するため)、GitHub API でその commit から `main` を作って既定 branch にし、`bootstrap/init` を消す。
+   `verify` は remote の `main` が local HEAD と同じ sha であることまで確認する。
+
+   途中で止まった後は、同じ引数に `--resume` を足して再実行する (remote / origin / visibility が一致する時だけ続きから走る)。
+   push だけ別経路で済ませた場合は `--resume --skip-push`。
+
+4. **read-back を報告**する。`verify` の detail (`owner/name (visibility) main=<sha>`) と `register` の台帳 path を書く。
+   `push: fail` なら wrapper の deny 理由をそのまま書く (自分で `git push` しない)。
 
 ## 前提条件 (この repository の外にある実行前提)
 
 - `gh` に owner の token が入っていること (script は `gh auth token --user <owner>` で取り、対象 process の env にだけ渡す)
-- canonical push wrapper `~/Projects/shared/scripts/cc-push-resolved.sh` (無ければ push は skip され、手順が表示される)
+- canonical push wrapper `~/Projects/shared/scripts/cc-push-resolved.sh` (無ければ push は fail。`bootstrap/init` を別経路で push して `--resume --skip-push`)
 - repo-preflight の checkout `<local-root>/repo-preflight/scripts/readiness_scan.py` (無ければ fail-closed。`--allow-no-preflight` は非推奨)
 - account↔repo 台帳 `~/Projects/Documents/references/github-account-repo-map.md` (無ければ register は skip)
 
@@ -82,6 +91,6 @@ script が見つからない・止まった時は、別の手段で同じ操作�
 ## やらないこと
 
 - global の `gh auth switch`
-- `git push` を直接叩く (wrapper 経由のみ)
+- `git push` を直接叩く (wrapper 経由のみ)。main へ push しない (API で作る)
 - visibility の変更、repo の削除
 - 既存 repo への適用 (origin がある directory は対象外)

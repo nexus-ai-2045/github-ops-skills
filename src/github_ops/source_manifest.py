@@ -9,6 +9,11 @@ from pathlib import Path
 
 SCHEMA_VERSION = "github-ops/source-manifest/v1"
 
+# source_root value used for skills whose正本 is this repo itself
+# (source_path == target_path). import_legacy_sources.py references this
+# constant so the local root name stays defined in one place.
+LOCAL_SOURCE_ROOT = "github-ops-skills"
+
 
 def _portable_digest(path: Path) -> str:
     content = path.read_bytes().replace(b"\r\n", b"\n")
@@ -103,6 +108,11 @@ def refresh_target_hashes(repo: Path) -> int:
         digest = _portable_digest(target)
         record["sha256"] = digest
         record["target_sha256"] = digest
+        if (
+            record.get("source_root") == LOCAL_SOURCE_ROOT
+            and record.get("source_path") == record.get("target_path")
+        ):
+            record["source_sha256"] = digest
         count += 1
     manifest.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return count

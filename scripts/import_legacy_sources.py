@@ -14,6 +14,7 @@ if __package__ in {None, ""}:
 from github_ops.output import configure_utf8_stdout
 from github_ops.public_identity import scan_text
 from github_ops.result import Status
+from github_ops.source_manifest import LOCAL_SOURCE_ROOT
 
 
 SKILL_SOURCES = {
@@ -43,23 +44,28 @@ def main(argv: list[str] | None = None) -> int:
     roots = {
         "shared": args.shared_root.resolve(),
         "agent-skills": args.agent_skills_root.resolve(),
+        LOCAL_SOURCE_ROOT: args.repo.resolve(),
     }
     manifest_path = args.repo / "migration" / "source-manifest.json"
-    mappings = list(_expand_skill_mappings(roots))
     configure_utf8_stdout()
-    if args.dry_run:
-        print(json.dumps({"status": "dry-run", "files": mappings}, ensure_ascii=False, indent=2))
-        return 0
     if args.verify_only:
+        # verify-only checks existing manifest records against the roots; it
+        # must not require SKILL_SOURCES' legacy directories to exist (that
+        # is only needed to regenerate mappings for dry-run / actual import).
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
         errors = verify_records(payload["sources"], roots, args.repo)
         print(json.dumps({"status": "ok" if not errors else "error", "errors": errors}, ensure_ascii=False, indent=2))
         return 0 if not errors else 1
+    mappings = list(_expand_skill_mappings(roots))
+    if args.dry_run:
+        print(json.dumps({"status": "dry-run", "files": mappings}, ensure_ascii=False, indent=2))
+        return 0
     records = import_sources(
         mappings=mappings,
         source_roots=roots,
         target_root=args.repo,
     )
+    records = records + _load_local_records(manifest_path)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         json.dumps(
@@ -136,6 +142,30 @@ def verify_records(
         if not target.is_file() or _portable_sha256(target) != expected_target:
             errors.append(f"target hash mismatch: {record['target_path']}")
     return errors
+
+
+def _load_local_records(manifest_path: Path) -> list[dict[str, str]]:
+    """Return existing manifest records whose正本 is this repo (LOCAL_SOURCE_ROOT).
+
+    The normal (non --verify-only) import only regenerates legacy `shared` /
+    `agent-skills` records from SKILL_SOURCES. Records added separately for
+    skills whose source root is this repo itself must be preserved instead of
+    being dropped when the manifest is regenerated.
+    """
+    if not manifest_path.is_file():
+        return []
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    sources = payload.get("sources")
+    if not isinstance(sources, list):
+        return []
+    return [
+        record
+        for record in sources
+        if isinstance(record, dict) and record.get("source_root") == LOCAL_SOURCE_ROOT
+    ]
 
 
 def _expand_skill_mappings(

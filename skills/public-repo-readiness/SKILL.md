@@ -20,7 +20,7 @@ description: >
 
 | ファイル | 要点 |
 |---|---|
-| `PREFLIGHT.md` | 公開判定の記録 (repo-preflight v0.2.0 以降の必須名。先頭に `<!-- repo-preflight:review-record -->`)。ローカル確認済み項目 + GitHub 側未検証項目を分けて書く。旧名 `PUBLIC_READY.md` は既存 repo でだけ残す。新規 repo で両方作らない |
+| `PREFLIGHT.md` | 公開判定の記録 (repo-preflight v0.2.0 以降の必須名。先頭に `<!-- repo-preflight:review-record -->`)。ローカル確認済み項目 + GitHub 側未検証項目を分けて書く。旧名 `PUBLIC_READY.md` は既存 repo でだけ残す。新規 repo で両方作らない。本文に `状態: 公開済み` または `状態: 非公開（公開済みではない）` の行を置く (`check_visibility_claim.py` が読む) |
 | `SECURITY.md` | データ境界 / sensitive data 方針 / 報告経路 |
 | `LICENSE` | MIT (コード部分)。名義は **`Copyright (c) <year> nexus_ai`** — 個人名義は決して出さない |
 | `README.md` | 「ライセンスと出典」セクション |
@@ -71,7 +71,8 @@ description: >
 ```powershell
 python scripts/public_identity_guard.py --help
 python scripts/gh_identity_probe.py --repo . --json
-python scripts/check_visibility_claim.py --public-ready PUBLIC_READY.md --status-code <unauth-http-status> --json
+python scripts/check_visibility_claim.py --public-ready PREFLIGHT.md --status-code <unauth-http-status> --json
+# 旧 repo は --public-ready PUBLIC_READY.md
 ```
 
 公開oracleは未ログインHTTP 200/404。ownerログインの `gh repo view` では公開判定しない。

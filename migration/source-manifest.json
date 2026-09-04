@@ -176,9 +176,9 @@
       "source_root": "agent-skills",
       "source_path": "public-repo-readiness/SKILL.md",
       "target_path": "skills/public-repo-readiness/SKILL.md",
-      "sha256": "9bf65efb18a9a33a065fee28d90619f8c51a47d18767975fe6f76c6d8227a28d",
+      "sha256": "b88180289eb0b32897bba4658c9f243ce09c709e00b266bf4e535cbb8ea7dcd8",
       "source_sha256": "abce52a292552656150cad5d45d2157b75614c2c1ee66b81a34f4fe894f2aa0b",
-      "target_sha256": "9bf65efb18a9a33a065fee28d90619f8c51a47d18767975fe6f76c6d8227a28d",
+      "target_sha256": "b88180289eb0b32897bba4658c9f243ce09c709e00b266bf4e535cbb8ea7dcd8",
       "normalized": true
     },
     {
@@ -248,18 +248,18 @@
       "source_root": "github-ops-skills",
       "source_path": "skills/new-repo-bootstrap/SKILL.md",
       "target_path": "skills/new-repo-bootstrap/SKILL.md",
-      "sha256": "5e9a3fbeae74dffeb36a852c653489ff9e45424907aed95d11ac8aae329f002a",
-      "source_sha256": "5e9a3fbeae74dffeb36a852c653489ff9e45424907aed95d11ac8aae329f002a",
-      "target_sha256": "5e9a3fbeae74dffeb36a852c653489ff9e45424907aed95d11ac8aae329f002a",
+      "sha256": "12bd42db0e8ab3900b9616502138976ea376240c7ba88aef1515da998eed9e8f",
+      "source_sha256": "12bd42db0e8ab3900b9616502138976ea376240c7ba88aef1515da998eed9e8f",
+      "target_sha256": "12bd42db0e8ab3900b9616502138976ea376240c7ba88aef1515da998eed9e8f",
       "normalized": false
     },
     {
       "source_root": "github-ops-skills",
       "source_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
       "target_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
-      "sha256": "02127b9b3618c7f271bd601491f4092a98049713e88738f782519493a0b57dbb",
-      "source_sha256": "241460fe20e3b1d5fc736e66ee283d800d865f4c5ea51ebcfc8253a2fef907d3",
-      "target_sha256": "02127b9b3618c7f271bd601491f4092a98049713e88738f782519493a0b57dbb",
+      "sha256": "7f17f09d5225f49428b1d6571e07d0c33a784fbebac6d580cbd1bd83d805cc96",
+      "source_sha256": "7f17f09d5225f49428b1d6571e07d0c33a784fbebac6d580cbd1bd83d805cc96",
+      "target_sha256": "7f17f09d5225f49428b1d6571e07d0c33a784fbebac6d580cbd1bd83d805cc96",
       "normalized": false
     }
   ]
