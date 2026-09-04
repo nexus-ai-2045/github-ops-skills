@@ -14,7 +14,7 @@ def test_all_adapters_resolve_the_same_skill_root() -> None:
     claude = verify_claude(repo)
     grok = verify_grok(repo)
     assert codex["skill_root"] == claude["skill_root"] == grok["skill_root"]
-    assert codex["skill_count"] == 8
+    assert codex["skill_count"] == 9
     assert grok["status"] == "READY"
     assert codex["manifest_sha256"] == claude["manifest_sha256"] == grok["manifest_sha256"]
     assert "public-repo-readiness" in codex["skills"]
@@ -26,6 +26,7 @@ def test_adapter_blocks_when_required_skill_is_missing(tmp_path: Path) -> None:
     for name in {
         "commit-push-pr",
         "github-cli-ops-guard",
+        "new-repo-bootstrap",
         "post-merge-closeout",
         "pr-convergence-loop",
         "pr-status",

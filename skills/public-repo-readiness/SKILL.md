@@ -1,10 +1,10 @@
 ---
 name: public-repo-readiness
 description: >
-  公開 GitHub repo の lockdown 整備 (PUBLIC_READY.md / SECURITY.md / LICENSE / 出典表記) を行うスキル。
-  「公開repoを整備して」「PUBLIC_READY を作って」「lockdown 監査を通して」「repo を公開準備して」
+  公開 GitHub repo の lockdown 整備 (PREFLIGHT.md / SECURITY.md / LICENSE / 出典表記) を行うスキル。
+  「公開repoを整備して」「PREFLIGHT を作って」「PUBLIC_READY を作って」「lockdown 監査を通して」「repo を公開準備して」
   「公開repoのライセンス整備」と言われたら使用する。audit-public-repo-lockdown.ps1 の FAIL 解消にも使う。
-  Do NOT use for: private repo の整備、監査スクリプト自体の修正、repo の新規作成。
+  Do NOT use for: private repo の整備、監査スクリプト自体の修正。repo の新規作成は new-repo-bootstrap を使う。
 ---
 
 # public-repo-readiness — 公開 repo lockdown 整備フロー
@@ -12,12 +12,15 @@ description: >
 > 起源: 2026-07-19 nanyo-prompt-orchestrator PR #1 整備セッション。
 > Codex bot レビューで「宣言と実装の不一致」を 3 件指摘された教訓を含む。
 > 監査元は各マシンの public-repo lockdown 監査 script。個人 home path は repository に書かない。
+> 機械検査の正本は sibling の `repo-preflight/scripts/readiness_scan.py`。手書きで文書を揃える前に必ず一度回す
+> (2026-09-05: skill だけ見て `PUBLIC_READY.md` を書き、scan で `PREFLIGHT.md` 不在になった事故の再発防止)。
+> 新規 repo の作成そのものは `new-repo-bootstrap` が担う (置き場所・名義・文書雛形・scan・作成・push・lockdown・登録)。
 
 ## 必須ファイル
 
 | ファイル | 要点 |
 |---|---|
-| `PUBLIC_READY.md` | 公開判定メモ。ローカル確認済み項目 + GitHub 側未検証項目を分けて書く |
+| `PREFLIGHT.md` | 公開判定の記録 (repo-preflight v0.2.0 以降の必須名。先頭に `<!-- repo-preflight:review-record -->`)。ローカル確認済み項目 + GitHub 側未検証項目を分けて書く。旧名 `PUBLIC_READY.md` は既存 repo でだけ残す。新規 repo で両方作らない。本文に `状態: 公開済み` または `状態: 非公開（公開済みではない）` の行を置く (`check_visibility_claim.py` が読む) |
 | `SECURITY.md` | データ境界 / sensitive data 方針 / 報告経路 |
 | `LICENSE` | MIT (コード部分)。名義は **`Copyright (c) <year> nexus_ai`** — 個人名義は決して出さない |
 | `README.md` | 「ライセンスと出典」セクション |
@@ -53,8 +56,8 @@ description: >
 
 1. secret scanning / push protection を明示的に有効化し、実測する。
 2. Private vulnerability reporting を有効化する。
-3. `PUBLIC_READY.md` を公開後の実態に書き直す。
-4. 途中で落とした手順があれば理由を `PUBLIC_READY.md` に残す。
+3. `PREFLIGHT.md` (旧 repo は `PUBLIC_READY.md`) を公開後の実態に書き直す。
+4. 途中で落とした手順があれば理由を同じ file に残す。
 
 ## 検証クローズ
 
@@ -68,7 +71,8 @@ description: >
 ```powershell
 python scripts/public_identity_guard.py --help
 python scripts/gh_identity_probe.py --repo . --json
-python scripts/check_visibility_claim.py --public-ready PUBLIC_READY.md --status-code <unauth-http-status> --json
+python scripts/check_visibility_claim.py --public-ready PREFLIGHT.md --status-code <unauth-http-status> --json
+# 旧 repo は --public-ready PUBLIC_READY.md
 ```
 
 公開oracleは未ログインHTTP 200/404。ownerログインの `gh repo view` では公開判定しない。
