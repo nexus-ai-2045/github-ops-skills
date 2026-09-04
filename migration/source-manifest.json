@@ -176,9 +176,9 @@
       "source_root": "agent-skills",
       "source_path": "public-repo-readiness/SKILL.md",
       "target_path": "skills/public-repo-readiness/SKILL.md",
-      "sha256": "7ce7ae9959fc87b84520a9570e67accb43edaa4d57bce0f1d72909f238f97a24",
+      "sha256": "9bf65efb18a9a33a065fee28d90619f8c51a47d18767975fe6f76c6d8227a28d",
       "source_sha256": "abce52a292552656150cad5d45d2157b75614c2c1ee66b81a34f4fe894f2aa0b",
-      "target_sha256": "7ce7ae9959fc87b84520a9570e67accb43edaa4d57bce0f1d72909f238f97a24",
+      "target_sha256": "9bf65efb18a9a33a065fee28d90619f8c51a47d18767975fe6f76c6d8227a28d",
       "normalized": true
     },
     {
@@ -234,6 +234,33 @@
       "source_sha256": "a691ab04c0a439c59490b28fa697dfccf59e82fba3d34037043ba28c86a547da",
       "target_sha256": "09e73f8ef78a2d88dbcd9928f9e1b8560c7397d299e4991f71fcfb65c046ffad",
       "normalized": true
+    },
+    {
+      "source_root": "github-ops-skills",
+      "source_path": "skills/new-repo-bootstrap/manifest.yaml",
+      "target_path": "skills/new-repo-bootstrap/manifest.yaml",
+      "sha256": "1d87a31b3807ee4eed634e7416b7368ca167d8c7327e79542b2c113920714a8d",
+      "source_sha256": "1d87a31b3807ee4eed634e7416b7368ca167d8c7327e79542b2c113920714a8d",
+      "target_sha256": "1d87a31b3807ee4eed634e7416b7368ca167d8c7327e79542b2c113920714a8d",
+      "normalized": false
+    },
+    {
+      "source_root": "github-ops-skills",
+      "source_path": "skills/new-repo-bootstrap/SKILL.md",
+      "target_path": "skills/new-repo-bootstrap/SKILL.md",
+      "sha256": "5e9a3fbeae74dffeb36a852c653489ff9e45424907aed95d11ac8aae329f002a",
+      "source_sha256": "5e9a3fbeae74dffeb36a852c653489ff9e45424907aed95d11ac8aae329f002a",
+      "target_sha256": "5e9a3fbeae74dffeb36a852c653489ff9e45424907aed95d11ac8aae329f002a",
+      "normalized": false
+    },
+    {
+      "source_root": "github-ops-skills",
+      "source_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
+      "target_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
+      "sha256": "241460fe20e3b1d5fc736e66ee283d800d865f4c5ea51ebcfc8253a2fef907d3",
+      "source_sha256": "241460fe20e3b1d5fc736e66ee283d800d865f4c5ea51ebcfc8253a2fef907d3",
+      "target_sha256": "241460fe20e3b1d5fc736e66ee283d800d865f4c5ea51ebcfc8253a2fef907d3",
+      "normalized": false
     }
   ]
 }
