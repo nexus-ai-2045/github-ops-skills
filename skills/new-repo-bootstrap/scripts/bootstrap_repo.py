@@ -232,12 +232,13 @@ def insert_registry_row(text: str, row: str) -> str | None:
 
 class Bootstrapper:
     def __init__(self, plan: Plan, runner, *, today: date, allow_no_preflight: bool = False,  # noqa: ANN001
-                 resume: bool = False) -> None:
+                 resume: bool = False, skip_push: bool = False) -> None:
         self.plan = plan
         self.runner = runner
         self.today = today
         self.allow_no_preflight = allow_no_preflight
         self.resume = resume  # 途中で止まった後の再実行 (remote / origin が既にあっても一致すれば続ける)
+        self.skip_push = skip_push  # 初回 push を人の手で済ませた時だけ (public 空 remote は gate が main push を止める)
         self._token: str | None = None
         self._remote_exists = False
 
@@ -426,6 +427,8 @@ class Bootstrapper:
         return ("ok", self.plan.remote_url) if rc == 0 else ("fail", err.strip())
 
     def _push(self) -> tuple[str, str]:
+        if self.skip_push:
+            return "skipped", "--skip-push (初回 push は人の手で済ませた前提。remote の branch を verify で確認する)"
         wrapper = self.plan.push_wrapper
         if wrapper is None:
             return "skipped", (
@@ -495,6 +498,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-no-preflight", action="store_true", help="repo-preflight が無い環境で検査を skip する (非推奨)")
     parser.add_argument("--confirm", action="store_true", help="実際に作成する。無い時は preflight だけ")
     parser.add_argument("--resume", action="store_true", help="途中で止まった作成を続きから再実行する (remote / origin が一致している時だけ)")
+    parser.add_argument("--skip-push", action="store_true", help="初回 push を人の手で済ませた後に lockdown 以降だけを行う (--resume と併用)")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -517,7 +521,7 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
         print(json.dumps({"mode": "plan", "status": "BLOCKED", "cause": str(exc)}, ensure_ascii=False))
         return 1
     boot = Bootstrapper(plan, runner or SubprocessRunner(), today=today,
-                        allow_no_preflight=args.allow_no_preflight, resume=args.resume)
+                        allow_no_preflight=args.allow_no_preflight, resume=args.resume, skip_push=args.skip_push)
     if args.confirm:
         result = boot.execute()
         result["mode"] = "execute"

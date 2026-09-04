@@ -321,3 +321,23 @@ def test_main_resume_flag(module, home, capsys) -> None:
                        runner=runner, home=home, env={}, today=date(2026, 9, 5))
     out = json.loads(capsys.readouterr().out)
     assert code == 0 and out["status"] == "READY" and out["checks"]["remote_absent"] == "exists_resume"
+
+
+def test_skip_push_marks_push_skipped_and_continues(module, home) -> None:
+    """人の手で初回 push を済ませた後に --resume --skip-push で lockdown 以降だけを行う。"""
+    plan = module.build_plan(owner=OWNER, name="demo", visibility="public", description="デモ", home=home, env={})
+    plan.repo_dir.mkdir(parents=True)
+    responses = _happy_responses(plan.repo_dir)
+    responses[("gh", "repo", "view")] = (0, "{}", "")
+    responses[("git", "remote", "get-url", "origin")] = (0, plan.remote_url + "\n", "")
+    responses[("git", "rev-list", "--count", "HEAD")] = (0, "3\n", "")
+    responses[("gh", "api", "-X", "PATCH")] = (0, "{}", "")
+    responses[("gh", "api", "-X", "PUT")] = (0, "", "")
+    responses.update(_created("public"))
+    runner = FakeRunner(responses)
+    report = module.Bootstrapper(plan, runner, today=date(2026, 9, 5), allow_no_preflight=True, resume=True, skip_push=True).execute()
+    assert report["status"] == "READY", report
+    steps = {step["name"]: step for step in report["steps"]}
+    assert steps["push"]["status"] == "skipped" and "skip-push" in steps["push"]["detail"]
+    assert steps["lockdown"]["status"] == "ok"
+    assert not runner.called("bash")
