@@ -231,12 +231,15 @@ def insert_registry_row(text: str, row: str) -> str | None:
 # ---------- bootstrap ----------
 
 class Bootstrapper:
-    def __init__(self, plan: Plan, runner, *, today: date, allow_no_preflight: bool = False) -> None:  # noqa: ANN001
+    def __init__(self, plan: Plan, runner, *, today: date, allow_no_preflight: bool = False,  # noqa: ANN001
+                 resume: bool = False) -> None:
         self.plan = plan
         self.runner = runner
         self.today = today
         self.allow_no_preflight = allow_no_preflight
+        self.resume = resume  # 途中で止まった後の再実行 (remote / origin が既にあっても一致すれば続ける)
         self._token: str | None = None
+        self._remote_exists = False
 
     # -- helpers --
     def _git(self, *args: str) -> tuple[int, str, str]:
@@ -269,7 +272,8 @@ class Bootstrapper:
         checks["token_login"] = self._resolve_token()
         if checks["token_login"] == "ok":
             rc, _, _ = self._gh("repo", "view", self.plan.nwo, "--json", "nameWithOwner")
-            checks["remote_absent"] = "exists" if rc == 0 else "ok"
+            self._remote_exists = rc == 0
+            checks["remote_absent"] = "ok" if rc != 0 else ("exists_resume" if self.resume else "exists")
         else:
             checks["remote_absent"] = "unknown"
 
@@ -282,8 +286,13 @@ class Bootstrapper:
             if rc != 0 or out.strip() != "true":
                 checks["local_dir"] = "not_git"
             else:
-                rc, _, _ = self._git("remote", "get-url", "origin")
-                checks["local_dir"] = "has_origin" if rc == 0 else "git_no_origin"
+                rc, url, _ = self._git("remote", "get-url", "origin")
+                if rc != 0:
+                    checks["local_dir"] = "git_no_origin"
+                elif self.resume and url.strip() == self.plan.remote_url:
+                    checks["local_dir"] = "origin_matches"
+                else:
+                    checks["local_dir"] = "has_origin"
             rc, log, _ = self._git("log", "--format=%an|%ae")
             expected = f"{self.plan.commit_name}|{self.plan.commit_email}"
             authors = {line.strip() for line in log.splitlines() if line.strip()} if rc == 0 else set()
@@ -295,7 +304,7 @@ class Bootstrapper:
 
         blocking = (
             checks["token_login"] != "ok"
-            or checks["remote_absent"] != "ok"
+            or checks["remote_absent"] not in {"ok", "exists_resume"}
             or checks["local_dir"] in {"not_git", "has_origin"}
             or checks["commit_identity"] == "mismatch"
         )
@@ -402,12 +411,17 @@ class Bootstrapper:
         return "ok", "required_documents / secret / personal_path / identity pass"
 
     def _create_remote(self) -> tuple[str, str]:
+        if self.resume and self._remote_exists:
+            return "skipped", "remote は作成済み (resume)"
         rc, _, err = self._gh(
             "repo", "create", self.plan.nwo, f"--{self.plan.visibility}", "--description", self.plan.description,
         )
         return ("ok", self.plan.nwo) if rc == 0 else ("fail", err.strip())
 
     def _add_remote(self) -> tuple[str, str]:
+        rc, url, _ = self._git("remote", "get-url", "origin")
+        if rc == 0 and url.strip() == self.plan.remote_url:
+            return "skipped", "origin は設定済み"
         rc, _, err = self._git("remote", "add", "origin", self.plan.remote_url)
         return ("ok", self.plan.remote_url) if rc == 0 else ("fail", err.strip())
 
@@ -480,6 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--preflight-script", type=Path, help="既定: <local-root>/repo-preflight/scripts/readiness_scan.py")
     parser.add_argument("--allow-no-preflight", action="store_true", help="repo-preflight が無い環境で検査を skip する (非推奨)")
     parser.add_argument("--confirm", action="store_true", help="実際に作成する。無い時は preflight だけ")
+    parser.add_argument("--resume", action="store_true", help="途中で止まった作成を続きから再実行する (remote / origin が一致している時だけ)")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -501,7 +516,8 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
     except BootstrapError as exc:
         print(json.dumps({"mode": "plan", "status": "BLOCKED", "cause": str(exc)}, ensure_ascii=False))
         return 1
-    boot = Bootstrapper(plan, runner or SubprocessRunner(), today=today, allow_no_preflight=args.allow_no_preflight)
+    boot = Bootstrapper(plan, runner or SubprocessRunner(), today=today,
+                        allow_no_preflight=args.allow_no_preflight, resume=args.resume)
     if args.confirm:
         result = boot.execute()
         result["mode"] = "execute"

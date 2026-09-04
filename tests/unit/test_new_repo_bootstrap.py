@@ -276,3 +276,48 @@ def test_main_confirm_executes_and_reports_json(module, home, capsys) -> None:
     assert code == 0 and out["mode"] == "execute" and out["status"] == "READY"
     assert runner.called("gh", "repo", "create")
     assert TOKEN not in json.dumps(out)
+
+
+def test_resume_accepts_existing_remote_and_matching_origin(module, home) -> None:
+    """途中で止まった後の再実行: remote が既にあり origin が一致していれば続きから進める。"""
+    plan = module.build_plan(owner=OWNER, name="demo", visibility="private", description="デモ", home=home, env={})
+    plan.repo_dir.mkdir(parents=True)
+    responses = _happy_responses(plan.repo_dir)
+    responses[("gh", "repo", "view")] = (0, '{"nameWithOwner":"nexus-ai-2045/demo"}', "")
+    responses[("git", "remote", "get-url", "origin")] = (0, plan.remote_url + "\n", "")
+    responses[("git", "rev-list", "--count", "HEAD")] = (0, "3\n", "")
+    responses.update(_created("private"))
+    blocked = module.Bootstrapper(plan, FakeRunner(responses), today=date(2026, 9, 5), allow_no_preflight=True).preflight()
+    assert blocked["status"] == "BLOCKED"
+    runner = FakeRunner(responses)
+    boot = module.Bootstrapper(plan, runner, today=date(2026, 9, 5), allow_no_preflight=True, resume=True)
+    assert boot.preflight()["status"] == "READY"
+    report = boot.execute()
+    assert report["status"] == "READY", report
+    steps = {step["name"]: step for step in report["steps"]}
+    assert steps["create_remote"]["status"] == "skipped" and steps["add_remote"]["status"] == "skipped"
+    assert steps["initial_commit"]["status"] == "skipped"
+    assert not runner.called("gh", "repo", "create") and not runner.called("git", "remote", "add")
+
+
+def test_resume_still_blocks_when_origin_points_elsewhere(module, home) -> None:
+    plan = module.build_plan(owner=OWNER, name="demo", visibility="private", description="デモ", home=home, env={})
+    plan.repo_dir.mkdir(parents=True)
+    responses = _happy_responses(plan.repo_dir)
+    responses[("gh", "repo", "view")] = (0, "{}", "")
+    responses[("git", "remote", "get-url", "origin")] = (0, "https://github.com/x/y.git\n", "")
+    result = module.Bootstrapper(plan, FakeRunner(responses), today=date(2026, 9, 5), resume=True).preflight()
+    assert result["status"] == "BLOCKED" and result["checks"]["local_dir"] == "has_origin"
+
+
+def test_main_resume_flag(module, home, capsys) -> None:
+    plan_probe = module.build_plan(owner=OWNER, name="demo", visibility="private", description="デモ", home=home, env={})
+    plan_probe.repo_dir.mkdir(parents=True)
+    responses = _happy_responses(plan_probe.repo_dir)
+    responses[("gh", "repo", "view")] = (0, "{}", "")
+    responses[("git", "remote", "get-url", "origin")] = (0, plan_probe.remote_url + "\n", "")
+    runner = FakeRunner(responses)
+    code = module.main(["--name", "demo", "--visibility", "private", "--description", "デモ", "--resume", "--json"],
+                       runner=runner, home=home, env={}, today=date(2026, 9, 5))
+    out = json.loads(capsys.readouterr().out)
+    assert code == 0 and out["status"] == "READY" and out["checks"]["remote_absent"] == "exists_resume"
