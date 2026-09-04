@@ -268,6 +268,8 @@ def test_execute_order_lockdown_before_push_and_main_promotion(module, home, too
     assert "ref=refs/heads/main" in post and f"sha={SHA}" in post
     assert any("default_branch=main" in " ".join(c[0]) for c in runner.called("gh", "api", "-X", "PATCH"))
     assert runner.called("gh", "api", "-X", "DELETE")
+    assert runner.called("git", "config", "branch.main.remote", "origin") and not runner.called("git", "fetch")
+    assert runner.called("git", "update-ref", "refs/remotes/origin/main", SHA)
     assert f"`{OWNER}/demo`" in tools["registry_file"].read_text(encoding="utf-8")
     assert TOKEN not in json.dumps(report)
 

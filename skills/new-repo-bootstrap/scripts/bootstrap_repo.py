@@ -511,9 +511,11 @@ class Bootstrapper:
         if rc != 0:
             return "fail", f"{INIT_BRANCH} の削除: " + err.strip()
         self._git("branch", "-d", INIT_BRANCH)
-        self._git("fetch", "origin", "main")
-        self._git("branch", "--set-upstream-to=origin/main", "main")
-        return "ok", f"main = {sha[:12]} (default), {INIT_BRANCH} 削除"
+        # 追跡設定は network を使わずに config で置く (git fetch は owner token を持たず失敗し得る)
+        self._git("config", "branch.main.remote", "origin")
+        self._git("config", "branch.main.merge", "refs/heads/main")
+        self._git("update-ref", "refs/remotes/origin/main", sha)
+        return "ok", f"main = {sha[:12]} (default), {INIT_BRANCH} 削除, origin/main を追跡"
 
     def _register(self) -> tuple[str, str]:
         registry = self.plan.registry_file
