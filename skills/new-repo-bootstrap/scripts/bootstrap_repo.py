@@ -29,7 +29,8 @@ from typing import Any
 KNOWN_IDENTITIES: dict[str, tuple[str, str]] = {
     "nexus-ai-2045": ("nexus_ai", "273569186+nexus-ai-2045@users.noreply.github.com"),
 }
-DEFAULT_LOCAL_ROOT = Path("Projects/Documents/.repos/nexus_ai")
+WORKSPACE_ROOT = Path("Projects")
+DEFAULT_LOCAL_ROOT = WORKSPACE_ROOT / "Documents/.repos/nexus_ai"
 DEFAULT_REGISTRY = Path("Projects/Documents/references/github-account-repo-map.md")
 DEFAULT_PUSH_WRAPPER = Path("Projects/shared/scripts/cc-push-resolved.sh")
 REGISTRY_ANCHOR = "| 公開協業 repo 全般"
@@ -218,8 +219,21 @@ def scaffold_docs(plan: Plan, *, today: date) -> list[str]:
 
 # ---------- registry ----------
 
+def registry_local_path(plan: Plan) -> str:
+    """台帳の `local:` 表記。workspace root からの相対にする。
+
+    `~/Projects/...` のような home 起点の表記は、台帳を持つ workspace 側の
+    pre-commit `no_full_path_guard` に抵触して commit できない (2026-09-06 実測)。
+    既存行も `Documents/.repos/...` の相対表記で揃っている。
+    """
+    try:
+        return plan.repo_dir.resolve().relative_to((plan.home / WORKSPACE_ROOT).resolve()).as_posix()
+    except ValueError:
+        return plan.tilde(plan.repo_dir)
+
+
 def registry_row(plan: Plan, *, today: date) -> str:
-    local = plan.tilde(plan.repo_dir)
+    local = registry_local_path(plan)
     return (
         f"| `{plan.nwo}`（{plan.description}） | {plan.visibility} | **{plan.owner}** | "
         f"{today.isoformat()} bootstrap_repo.py で作成と同時登録。local: `{local}` |"

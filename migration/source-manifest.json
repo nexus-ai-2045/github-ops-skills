@@ -257,9 +257,9 @@
       "source_root": "github-ops-skills",
       "source_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
       "target_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
-      "sha256": "5d0070035c21eef6cb95d4f7a6eeb69b955e452d0b70d6715dc2cffaf778c345",
-      "source_sha256": "5d0070035c21eef6cb95d4f7a6eeb69b955e452d0b70d6715dc2cffaf778c345",
-      "target_sha256": "5d0070035c21eef6cb95d4f7a6eeb69b955e452d0b70d6715dc2cffaf778c345",
+      "sha256": "29796465b2d3c1bc9ad113556c1369951aa2d3835d0a2d1f84601ee2a3232945",
+      "source_sha256": "29796465b2d3c1bc9ad113556c1369951aa2d3835d0a2d1f84601ee2a3232945",
+      "target_sha256": "29796465b2d3c1bc9ad113556c1369951aa2d3835d0a2d1f84601ee2a3232945",
       "normalized": false
     }
   ]
