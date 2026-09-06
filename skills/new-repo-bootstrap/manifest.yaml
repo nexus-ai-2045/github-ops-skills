@@ -1,0 +1,31 @@
+# new-repo-bootstrap
+# SSOT in this repository: skills/new-repo-bootstrap/
+name: new-repo-bootstrap
+owner_kind: skill
+ssot_pointers:
+  - skills/new-repo-bootstrap/SKILL.md
+  - skills/new-repo-bootstrap/scripts/bootstrap_repo.py
+  - scripts/bootstrap_repo.py
+runtimes:
+  claude:
+    mode: copy
+    files:
+      - SKILL.md
+      - scripts/bootstrap_repo.py
+  codex:
+    mode: copy
+    files:
+      - SKILL.md
+      - scripts/bootstrap_repo.py
+  grok:
+    mode: copy
+    files:
+      - SKILL.md
+      - scripts/bootstrap_repo.py
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "New Repo Bootstrap"
+  short_description: "新規 repository の作成 (場所・名義・文書・検査・作成・push・lockdown・登録) を fail-closed で 1 本にする。"
+  default_prompt: "Use $new-repo-bootstrap whenever a new GitHub repository must be created instead of running git init or gh repo create by hand."
