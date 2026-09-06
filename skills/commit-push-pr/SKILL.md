@@ -128,9 +128,21 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
      hook に書き換えられたら **commit を巻き戻して手順 1 からやり直す** のが正しい復帰手順
    - コミット後、`git rev-list --count origin/main..HEAD` で未push数をチェック
    - 未pushが1件以上 → 「未push {N}件。pushする？」とユーザーに確認（未解決の停止条件があれば確認前に停止）
-   - 承認 → mainなら `git push origin main`、ブランチなら `git push -u origin <branch>`
+   - 承認 → **canonical push wrapper があれば必ずそれを経由する**。運用側に push gate を
+     置いている環境では、raw `git push` は branch と commit OID の束縛を伴わない直接
+     呼出しとして既定 policy に落ち、code を含む変更が deny される。wrapper は current
+     branch と OID を gate へ渡すため、同じ commit でも branch push が通る
+     （実測: 同一 commit で raw push は scope policy deny、wrapper 経由は ALLOW）。
+     wrapper が無い環境でのみ、mainなら `git push origin main`、ブランチなら
+     `git push -u origin <branch>` を使う
+   - deny されたら手段を変えて再試行しない。canonical wrapper や既定経路が既に無いかを
+     先に確認する（正規経路があるのに raw で当たって deny され、人間に手作業を振るのが
+     典型的な失敗）
    - 拒否 → pushスキップ（次のコミット時にまた聞く）
    - push失敗（オフライン等） → エラーを伝えて終了（次回に持ち越し）
+   - identity 検査が `Invalid revision range <remote>..<local>` で落ちるときは、remote head が
+     local に無い。該当 branch を fetch してから再実行する（別 session や GitHub 側の操作で
+     同 branch が進んでいる）
    - ブランチの場合、PR title/bodyを日本語でドラフトし、ユーザーへ提示して確認
    - PR title/bodyはUTF-8の一時ファイルへ保存し、shell展開を避けて次のgateを必ず実行する
      `python scripts/check_pr_japanese.py --title-file <title-file> --body-file <body-file> --json`
@@ -151,3 +163,11 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 - PR作成後はtitle/body/base/headをread-backし、承認済み入力との一致を確認する
 - `gh` CLIが使えない場合はgit push URLを表示して手動PR作成を案内
 - yuhitsu 等の公開協業 repo は push 前に local-verify-before-pr / yuhitsu-pr-local-identity-check (memory) を確認
+- **base 追随と identity gate は順序が両立しない。** GitHub の "Update branch" は base の
+  merge commit を GitHub 名義で head に積む。commit 名義を登録 identity に限定する push
+  gate は、以後その branch へのローカル push を「範囲内に他名義 commit が混在」として
+  deny する。ローカルで base を merge しても同じ結果になる。したがって:
+  - 追加 push の予定が残っている間は "Update branch" を押さない。先に push を済ませる
+  - 既に押していて追加変更が要るなら、base から作り直した branch に載せ替えて PR を
+    差し替える（force push で履歴を書き換えない）
+  - 追随が最後の 1 手なら "Update branch" で閉じてよい
