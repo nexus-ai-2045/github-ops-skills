@@ -175,3 +175,24 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
   - 既に押していて追加変更が要るなら、base から作り直した branch に載せ替えて PR を
     差し替える（force push で履歴を書き換えない）
   - 追随が最後の 1 手なら "Update branch" で閉じてよい
+
+## PR 作成 wrapper が BLOCKED になる典型と、正しい戻し方
+
+`create_pr_with_japanese_gate.py` が `BLOCKED` を返したとき、**PR を編集・再作成せず停止する**のは
+そのままでよい。ただし停止の原因は下の 5 件がほとんどで、いずれも設定変更なしで解消できる。
+原因を確かめずに「PR を作れない」と人へ返さない (2026-09-06 に 3 session が同じ壁で止まった)。
+
+| code | 原因 | 戻し方 |
+|---|---|---|
+| `account_map_invalid` | `--account-map` に Markdown 正本を渡した。frontmatter と本文で複数 YAML document になり parse に失敗する | machine-readable 投影 `Documents/references/github-account-repo-map.github-ops.yaml` を渡す。これは `shared/scripts/export_github_ops_account_map.py` が Markdown から生成し、`--check` で drift を検出できる |
+| `active_login_mismatch` | global の active account が期待 identity と違う | **`gh auth switch` は使わない** (他 session の GitHub 作業を巻き込む)。当該コマンドのプロセスにだけ `export GH_TOKEN=$(gh auth token -u <expected_login>)` を渡す。token を画面や log へ出さない |
+| `repository is not mapped` | 対象 repo が account map に未登録 | 台帳へ 1 行足す。**push_gate は owner 導出で通るのに wrapper は明示 entry を要求する**という非対称があり、未登録 repo では push は通って PR だけ作れない |
+| visibility 不一致 | `--expected-visibility` が実際と違う | 先に `gh repo view <owner/name> --json visibility` で確認する。visibility 自体は変更しない |
+| `worktree_not_clean` | untracked file (lockfile 等) が残っている | commit するか、PR 作成の間だけ退避して戻す。`.gitignore` を書き換えて回避しない |
+
+`push_gate` 側の identity 混在 (`range_identity`) で止まった場合:
+
+- 原因は多くの場合、`git merge` で作った merge commit が既定の個人名義になっていること
+- `git -c user.name=... -c user.email=... commit --amend --no-edit --reset-author` で名義を揃えてから push する
+- **push 済みの commit を amend しない**。force push が要る形になる。既に amend してしまったら
+  `git reset --soft <push 済み sha>` で戻し、訂正を追加 commit として積む
