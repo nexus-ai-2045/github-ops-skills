@@ -157,6 +157,10 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 - .env, credentials.json 等のシークレットファイルはステージングしない
 - コミットメッセージはユーザー確認後に実行
 - ユーザー向け文書とPR title/bodyは日本語を既定にする
+- PR body の**見出しも日本語を含める**。`## manifest hash` のような英語だけの見出しは
+  日本語 gate が「英語だけの見出しがあります」で落とす。落ちた後に body を直しても、
+  失敗した run を rerun するだけでは通らない（run は作成時点の body を再検査する）。
+  head を進めて check を作り直すか、body 修正後の新しい run で置き換える
 - `check_pr_japanese.py`を通さない直接の`gh pr create`は実行しない
 - wrapper内のidentity、期待visibility、権限、clean、local/remote head SHA、live base SHA preflightを省略しない
 - visibilityは既定`PRIVATE`とし、公開repositoryでは人間承認後に限り`--expected-visibility PUBLIC`を明示する。visibility自体は変更しない
