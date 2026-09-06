@@ -29,6 +29,7 @@ flowchart TD
 
 ## できること
 
+- 新規 repository の作成を 1 本の fail-closed 手順にする（`scripts/bootstrap_repo.py` / skill `new-repo-bootstrap`）。置き場所・commit 名義・公開前文書・repo-preflight 検査・owner token での作成・canonical wrapper 経由の初回 push・公開直後の lockdown・台帳登録・read-back を順番に行い、`--confirm` が無ければ preflight だけ
 - GitHub CLI の active account と remote owner を照合する（`scripts/gh_identity_probe.py` / `scripts/preflight_write_gate.py`）
 - PR の title/body が日本語境界を満たすか検査する（CI: `PR日本語gate`）
 - runtime skill が `skills/` 正本からずれていないか検査する
@@ -69,7 +70,8 @@ https://github.com/nexus-ai-2045/github-ops-skills
 
 | 契約 | この repo での扱い |
 |---|---|
-| `repo-preflight` / `public-repo-readiness` | 公開前の判断材料。visibility は自動変更しない |
+| `repo-preflight` / `public-repo-readiness` | 公開前の判断材料。visibility は自動変更しない。必須文書名は repo-preflight の `PREFLIGHT.md` に合わせる |
+| `new-repo-bootstrap` | 新規 repository の作成経路。`git init` / `gh repo create` を手で組み立てない |
 | この Core Suite | identity / 日本語 gate / adapter。正本は `skills/` |
 | `engineering-brain` | 判断が必要な作業のときだけ |
 | FDE | skill 内 FDE Packet と同じ契約 |

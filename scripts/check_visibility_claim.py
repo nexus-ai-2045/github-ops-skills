@@ -16,7 +16,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="PUBLIC_READYのvisibility宣言と未ログインHTTP観測を照合します。networkは呼びません。"
     )
-    parser.add_argument("--public-ready", required=True, type=Path)
+    parser.add_argument(
+        "--public-ready",
+        required=True,
+        type=Path,
+        help=(
+            "visibility宣言 (状態: 行) を含むfile。PREFLIGHT.mdか旧PUBLIC_READY.md"
+        ),
+    )
     parser.add_argument("--status-code", required=True, type=int)
     parser.add_argument("--json", action="store_true")
     return parser

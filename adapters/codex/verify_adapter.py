@@ -17,6 +17,7 @@ REQUIRED_SKILLS = {
     "commit-push-pr",
     "cross-repo-wip-ownership",
     "github-cli-ops-guard",
+    "new-repo-bootstrap",
     "post-merge-closeout",
     "pr-convergence-loop",
     "pr-status",

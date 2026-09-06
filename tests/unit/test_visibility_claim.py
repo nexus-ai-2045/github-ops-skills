@@ -117,3 +117,34 @@ def test_cli_checks_caller_supplied_status_code_without_network(
     assert payload["evidence"]["claim"] == "PUBLIC"
     assert payload["evidence"]["observed"] == "PRIVATE"
     assert payload["evidence"]["status_code"] == 404
+
+
+PREFLIGHT_PRIVATE = (
+    "<!-- repo-preflight:review-record -->\n"
+    "# PREFLIGHT\n"
+    "状態: 非公開（公開済みではない）\n"
+)
+
+
+def test_parse_preflight_md_format_status_line_is_private() -> None:
+    assert parse_public_ready_visibility(PREFLIGHT_PRIVATE) == "PRIVATE"
+    result = evaluate_visibility_claim(PREFLIGHT_PRIVATE, 404)
+    assert result.status is Status.READY
+    assert result.evidence["claim"] == "PRIVATE"
+    assert result.evidence["observed"] == "PRIVATE"
+
+
+def test_cli_accepts_preflight_md_filename(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    preflight = tmp_path / "PREFLIGHT.md"
+    preflight.write_text(PREFLIGHT_PRIVATE, encoding="utf-8")
+    exit_code = check_visibility_claim_main(
+        ["--public-ready", str(preflight), "--status-code", "404", "--json"]
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["status"] == "READY"
+    assert payload["evidence"]["claim"] == "PRIVATE"
+    assert payload["evidence"]["observed"] == "PRIVATE"
