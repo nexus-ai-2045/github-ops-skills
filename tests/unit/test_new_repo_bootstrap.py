@@ -219,11 +219,21 @@ def test_templates_scaffold_and_visibility_claim(module, home) -> None:
     assert str(home) not in (plan.repo_dir / "PREFLIGHT.md").read_text(encoding="utf-8")
 
 
+def test_registry_local_path_is_workspace_relative_and_falls_back(module, home, tmp_path) -> None:
+    """台帳の local: は workspace 相対。workspace の外なら ~ 表記へ落とす。"""
+    plan = _plan(module, home)
+    assert module.registry_local_path(plan) == "Documents/.repos/nexus_ai/demo"
+
+    outside = _plan(module, home, repo_dir=tmp_path / "elsewhere" / "demo")
+    assert module.registry_local_path(outside).startswith(("~/", "/"))
+
+
 def test_registry_row_dedup_by_repository_key(module, home) -> None:
     plan = _plan(module, home)
     row = module.registry_row(plan, today=TODAY)
     assert row.startswith(f"| `{OWNER}/demo`（デモ） | public | **{OWNER}** |")
-    assert "~/Projects/Documents/.repos/nexus_ai/demo" in row and str(home) not in row
+    assert "| `Documents/.repos/nexus_ai/demo`" in row.replace("local: ", "| ")
+    assert "~/" not in row and str(home) not in row
     text = "| a | b | c | d |\n| 公開協業 repo 全般 | - | x | y |\n"
     updated = module.insert_registry_row(text, row, key=f"{OWNER}/demo")
     assert updated is not None and updated.index(row) < updated.index("| 公開協業 repo 全般")
