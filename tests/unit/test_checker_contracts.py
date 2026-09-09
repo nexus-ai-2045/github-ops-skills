@@ -112,6 +112,28 @@ def test_checker_that_rejects_both_is_accepted(tmp_path: Path) -> None:
     assert problems == []
 
 
+def test_valid_empty_structured_subject_is_probed(tmp_path: Path) -> None:
+    """0-byte化の構文errorで、validだが空のJSONを拒否したと誤認しない。"""
+    repo = _repo_with_subject(tmp_path, "registry.json", is_dir=False)
+    (repo / "registry.json").write_text('{"items":["x"]}\n', encoding="utf-8")
+    _write_checker(
+        repo,
+        "structured_empty",
+        "import json\n"
+        "from pathlib import Path\n\n"
+        'SUBJECT = "registry.json"\n'
+        'EMPTY_SUBJECT = \'{"items":[]}\\n\'\n\n\n'
+        "def verify(repo: Path) -> list[str]:\n"
+        "    try:\n"
+        "        json.loads((repo / SUBJECT).read_text(encoding='utf-8'))\n"
+        "    except (FileNotFoundError, json.JSONDecodeError):\n"
+        "        return ['invalid']\n"
+        "    return []\n",
+    )
+    errors = MODULE.verify(repo)
+    assert any("accepted an empty subject" in error for error in errors), errors
+
+
 def test_checker_returning_a_non_list_is_reported(tmp_path: Path) -> None:
     repo = _repo_with_subject(tmp_path, "skills", is_dir=True)
     problems = _problems(repo, "notalist", "skills", 'return "broken"')

@@ -1,7 +1,7 @@
 import hashlib
 import json
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
 from github_ops.source_manifest import refresh_target_hashes, verify_target_hashes
 
@@ -105,6 +105,17 @@ def test_duplicate_target_is_rejected(tmp_path: Path) -> None:
     assert verify_target_hashes(tmp_path) == ["duplicate target path: skills/x/SKILL.md"]
 
 
+def test_empty_source_registry_is_rejected(tmp_path: Path) -> None:
+    """構文上validでもrecord 0件なら、manifest検査はfail-closedにする。"""
+    manifest = tmp_path / "migration" / "source-manifest.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps({"schema_version": "github-ops/source-manifest/v1", "sources": []}),
+        encoding="utf-8",
+    )
+    assert verify_target_hashes(tmp_path) == ["sources must be a non-empty list"]
+
+
 def test_parent_traversal_is_rejected(tmp_path: Path) -> None:
     manifest = tmp_path / "migration" / "source-manifest.json"
     manifest.parent.mkdir()
@@ -144,7 +155,7 @@ def test_unverifiable_path_component_fails_closed(tmp_path: Path) -> None:
     }), encoding="utf-8")
     real_lstat = __import__("os").lstat
 
-    def fail_target(path):  # noqa: ANN001, ANN202
+    def fail_target(path):
         if Path(path) == tmp_path / "skills":
             raise PermissionError("denied")
         return real_lstat(path)

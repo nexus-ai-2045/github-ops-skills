@@ -42,6 +42,7 @@ suffix から推測せず**実在するエントリから決める**。
 ## checker 側に要求する宣言
 
 - `SUBJECT`: 検査対象の repo 相対 path (str)
+- `EMPTY_SUBJECT`: file対象を構文上validな空状態にする内容 (optional str)
 - `verify(repo: Path) -> list[str]`
 
 read-only。標準ライブラリのみ。
@@ -155,10 +156,15 @@ try:
     spec.loader.exec_module(module)
     if action == "declare":
         subject = getattr(module, "SUBJECT", None)
+        has_empty_subject = hasattr(module, "EMPTY_SUBJECT")
+        empty_subject = getattr(module, "EMPTY_SUBJECT", None)
         out = {
             "kind": "declaration",
             "subject": subject if isinstance(subject, str) else None,
             "subject_type": type(subject).__name__,
+            "has_empty_subject": has_empty_subject,
+            "empty_subject": empty_subject if isinstance(empty_subject, str) else None,
+            "empty_subject_type": type(empty_subject).__name__,
             "has_verify": callable(getattr(module, "verify", None)),
         }
     else:
@@ -336,7 +342,9 @@ def _snapshot(repo: Path, into: Path) -> Path:
     return root
 
 
-def _break_subject(root: Path, subject: str, *, empty: bool) -> None:
+def _break_subject(
+    root: Path, subject: str, *, empty: bool, empty_content: str | None = None
+) -> None:
     """正常な複製の中で、対象だけを壊す。file / dir は実在から判定する。
 
     空にするときは削除して作り直さない。mode bit を落とすと、権限だけ見て
@@ -357,11 +365,18 @@ def _break_subject(root: Path, subject: str, *, empty: bool) -> None:
             else:
                 child.unlink()
         return
-    # 既存 file を truncate すれば mode は残る (作り直しは 0o644 になる)
-    target.write_text("", encoding="utf-8")
+    # 既存fileへ書けばmodeは残る。structured fileはcheckerが宣言した、
+    # 構文上validだが意味的に空の内容を使う。
+    target.write_text("" if empty_content is None else empty_content, encoding="utf-8")
 
 
-def _probe(script: Path, src: Path | None, repo: Path, subject: str) -> list[str]:
+def _probe(
+    script: Path,
+    src: Path | None,
+    repo: Path,
+    subject: str,
+    empty_subject: str | None = None,
+) -> list[str]:
     """正常な複製から対象だけを壊して食わせる。問題があればその説明を返す。
 
     variant ごとに **別プロセス** で呼ぶ。同一プロセスで回すと module 級の状態も
@@ -393,7 +408,12 @@ def _probe(script: Path, src: Path | None, repo: Path, subject: str) -> list[str
                 problems.append(escape)
                 break
             try:
-                _break_subject(root, subject, empty=empty)
+                if empty and empty_subject is not None:
+                    _break_subject(
+                        root, subject, empty=True, empty_content=empty_subject
+                    )
+                else:
+                    _break_subject(root, subject, empty=empty)
             except OSError as exc:
                 # ここで例外を上げると、この検査が他へ課している契約
                 # (所見を list で返す) を自分で破ることになる
@@ -453,17 +473,33 @@ def verify(repo: Path) -> list[str]:
         if not declaration.get("has_verify"):
             errors.append(f"{rel}: must expose verify(repo) -> list[str]")
             continue
+        has_empty_subject = declaration.get("has_empty_subject") is True
+        empty_subject = declaration.get("empty_subject")
+        if has_empty_subject and not isinstance(empty_subject, str):
+            errors.append(f"{rel}: EMPTY_SUBJECT must be a str when declared")
+            continue
         escape = _symlink_component(repo, subject)
         if escape is not None:
             errors.append(f"{rel}: {escape}")
             continue
-        if not (repo / subject).exists():
+        subject_path = repo / subject
+        if not subject_path.exists():
             errors.append(f"{rel}: declares SUBJECT {subject} which is not in this repository")
+            continue
+        if has_empty_subject and subject_path.is_dir():
+            errors.append(f"{rel}: EMPTY_SUBJECT is only valid for file subjects")
             continue
 
         # SUBJECT 等の宣言確認は上で済んだ。probe は変種ごとに別プロセスで走らせる
         errors.extend(
-            f"{rel}: {problem}" for problem in _probe(path, src_root, repo, subject)
+            f"{rel}: {problem}"
+            for problem in _probe(
+                path,
+                src_root,
+                repo,
+                subject,
+                empty_subject if has_empty_subject else None,
+            )
         )
     return errors
 
