@@ -63,6 +63,8 @@ CHECKER_GLOB = "verify_*.py"
 SELF_NAME = Path(__file__).name
 # 子プロセスが返らないときに CI を止めない上限
 PROBE_TIMEOUT_SECONDS = 120
+# checker から trusted driver へ返す構造化結果の上限。checker の出力は含めない
+PROBE_RESULT_MAX_BYTES = 64 * 1024
 # 複製に持ち込まないもの。履歴とキャッシュは検査対象ではない
 SNAPSHOT_IGNORE_NAMES = (
     ".git",
@@ -122,16 +124,23 @@ def _symlink_component(root: Path, subject: str) -> str | None:
     return None
 
 
-# 宣言読取りと probe を子プロセスで走らせる driver。
-# 結果は stdout ではなく専用 file へ返し、checker の終了時出力と分離する。
-_DRIVER = r"""
-import importlib.util, json, sys
+# checker を実行する非信頼側 worker。stdout / stderr は fd ごと DEVNULL へ
+# 接続し、構造化結果だけを複製済み fd へ 1 回書く。終了handlerの実行前にその
+# fdを閉じるため、atexit の通常出力が結果へ混ざらない。
+_WORKER = r"""
+import importlib.util, json, os, sys
 from pathlib import Path
 
-script, repo, src, action, result_path = sys.argv[1:6]
+script, repo, src, action = sys.argv[1:5]
 sys.path.insert(0, str(Path(script).parent))
 if src:
     sys.path.insert(1, src)
+
+result_fd = os.dup(sys.stdout.fileno())
+with open(os.devnull, "wb", buffering=0) as null:
+    os.dup2(null.fileno(), sys.stdout.fileno())
+    os.dup2(null.fileno(), sys.stderr.fileno())
+
 out = {}
 try:
     spec = importlib.util.spec_from_file_location(Path(script).stem, script)
@@ -162,8 +171,69 @@ else:
             out = {"kind": "ok", "count": len(errors), "bad": repr(bad[0]) if bad else None}
         else:
             out = {"kind": "badtype", "type": type(errors).__name__}
-Path(result_path).write_text(json.dumps(out), encoding="utf-8")
+payload = json.dumps(out).encode("utf-8")
+os.write(result_fd, payload)
+os.close(result_fd)
 """
+
+
+# trusted driver は checker と別processに留まり、worker終了後だけ親へ結果を返す。
+# checker はこのdriverのstdoutにも結果pathにもaccessできない。worker側pipeは
+# 上限までしかbufferせず、超過分は捨てながらdrainしてdeadlockを防ぐ。
+_DRIVER = (
+    "import json, subprocess, sys, threading\n"
+    f"WORKER = {_WORKER!r}\n"
+    r"""
+script, repo, src, action, timeout_text, limit_text = sys.argv[1:7]
+timeout = float(timeout_text)
+limit = int(limit_text)
+proc = subprocess.Popen(
+    [sys.executable, "-c", WORKER, script, repo, src, action],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+)
+assert proc.stdout is not None
+buffer = bytearray()
+oversized = [False]
+
+def drain() -> None:
+    while True:
+        chunk = proc.stdout.read(8192)
+        if not chunk:
+            return
+        room = limit + 1 - len(buffer)
+        if room > 0:
+            buffer.extend(chunk[:room])
+        if len(buffer) > limit:
+            oversized[0] = True
+
+reader = threading.Thread(target=drain, daemon=True)
+reader.start()
+timed_out = False
+try:
+    proc.wait(timeout=timeout)
+except subprocess.TimeoutExpired:
+    timed_out = True
+    proc.kill()
+    proc.wait()
+reader.join()
+
+if timed_out:
+    envelope = {"transport": "timeout"}
+elif oversized[0]:
+    envelope = {"transport": "oversized"}
+elif proc.returncode != 0:
+    envelope = {"transport": "exit", "code": proc.returncode}
+else:
+    try:
+        result = json.loads(bytes(buffer).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        envelope = {"transport": "unreadable"}
+    else:
+        envelope = {"transport": "ok", "result": result}
+sys.stdout.write(json.dumps(envelope))
+"""
+)
 
 
 def _run_driver(
@@ -173,44 +243,48 @@ def _run_driver(
     action: str,
     label: str,
 ) -> tuple[dict[str, object] | None, str | None]:
-    """隔離子プロセスを上限付きで走らせ、専用fileから結果を読む。"""
-    with tempfile.TemporaryDirectory() as tmp:
-        result_path = Path(tmp) / "result.json"
-        try:
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    _DRIVER,
-                    str(script),
-                    str(root),
-                    str(src or ""),
-                    action,
-                    str(result_path),
-                ],
-                capture_output=True,
-                check=False,
-                timeout=PROBE_TIMEOUT_SECONDS,
-            )
-        except subprocess.TimeoutExpired:
-            return None, f"timed out {label} after {PROBE_TIMEOUT_SECONDS} seconds"
-
-        try:
-            payload = result_path.read_text(encoding="utf-8")
-        except OSError:
-            return None, (
-                f"produced no contract result {label} "
-                f"(exit {proc.returncode}); the probe could not observe the checker"
-            )
-        try:
-            out = json.loads(payload)
-        except json.JSONDecodeError:
-            return None, f"produced an unreadable contract result {label}"
-        if not isinstance(out, dict):
-            return None, f"produced an unreadable contract result {label}"
-        if proc.returncode != 0:
-            return None, f"exited with status {proc.returncode} {label}"
-        return out, None
+    """checker と別processのdriverから、上限付き結果だけを読む。"""
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                _DRIVER,
+                str(script),
+                str(root),
+                str(src or ""),
+                action,
+                str(PROBE_TIMEOUT_SECONDS),
+                str(PROBE_RESULT_MAX_BYTES),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=PROBE_TIMEOUT_SECONDS + 5,
+        )
+    except subprocess.TimeoutExpired:
+        return None, f"timed out {label} after {PROBE_TIMEOUT_SECONDS} seconds"
+    if proc.returncode != 0:
+        return None, f"trusted driver exited with status {proc.returncode} {label}"
+    try:
+        envelope = json.loads(proc.stdout.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, f"produced an unreadable contract result {label}"
+    if not isinstance(envelope, dict):
+        return None, f"produced an unreadable contract result {label}"
+    transport = envelope.get("transport")
+    if transport == "timeout":
+        return None, f"timed out {label} after {PROBE_TIMEOUT_SECONDS} seconds"
+    if transport == "oversized":
+        return None, f"produced an oversized contract result {label}"
+    if transport == "exit":
+        return None, f"exited with status {envelope.get('code')} {label}"
+    if transport != "ok":
+        return None, f"produced an unreadable contract result {label}"
+    out = envelope.get("result")
+    if not isinstance(out, dict):
+        return None, f"produced an unreadable contract result {label}"
+    return out, None
 
 
 def _call(

@@ -536,3 +536,42 @@ def test_nonzero_exit_after_a_framed_result_is_rejected(tmp_path: Path) -> None:
         'return [] if target.is_dir() and any(target.iterdir()) else ["bad"]',
     )
     assert any("exited with status 1" in problem for problem in problems), problems
+
+
+def test_checker_cannot_overwrite_the_driver_result_at_exit(tmp_path: Path) -> None:
+    """checker に結果channelを渡すと、atexit で偽の合格へ上書きできる。"""
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    problems = _problems(
+        repo,
+        "forged_result",
+        "docs",
+        "import atexit, json, sys\n"
+        "from pathlib import Path\n"
+        "candidate = Path(sys.argv[-1])\n"
+        "if candidate.name == 'result.json':\n"
+        "    atexit.register(\n"
+        "        lambda: candidate.write_text(\n"
+        "            json.dumps({'kind': 'ok', 'count': 0, 'bad': None}),\n"
+        "            encoding='utf-8',\n"
+        "        )\n"
+        "    )\n"
+        "target = repo / 'docs'\n"
+        "return [] if target.is_dir() and any(target.iterdir()) else ['bad']",
+    )
+    assert problems == []
+
+
+def test_checker_output_is_discarded_without_buffering(tmp_path: Path) -> None:
+    """大量のstdout/stderrを結果bufferへ持ち込まず、契約結果だけを読むこと。"""
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    problems = _problems(
+        repo,
+        "noisy",
+        "docs",
+        "import sys\n"
+        "print('x' * 2_000_000)\n"
+        "print('y' * 2_000_000, file=sys.stderr)\n"
+        "target = repo / 'docs'\n"
+        "return [] if target.is_dir() and any(target.iterdir()) else ['bad']",
+    )
+    assert problems == []
