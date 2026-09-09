@@ -13,10 +13,13 @@ REQUIRED_IDS = {
     "GHO-CHECKER-001",
 }
 ALLOWED_ENFORCEMENT = {"test", "ci"}
+SCHEMA_VERSION = "github-ops/invariants/v1"
 
 # 検査対象。verify_checker_contracts.py がこれを使って
 # 「対象が無い / 空のとき素通りしないか」を機械で確認する
 SUBJECT = "policy/invariants.json"
+# 構文上validな0件registryをempty variantとして使う
+EMPTY_SUBJECT = json.dumps({"schema_version": SCHEMA_VERSION, "invariants": []}) + "\n"
 
 
 def verify(repo: Path) -> list[str]:
@@ -35,7 +38,7 @@ def verify(repo: Path) -> list[str]:
     if not isinstance(payload, dict):
         return [f"{SUBJECT}: top level must be an object"]
     errors: list[str] = []
-    if payload.get("schema_version") != "github-ops/invariants/v1":
+    if payload.get("schema_version") != SCHEMA_VERSION:
         errors.append("invalid schema_version")
     items = payload.get("invariants")
     if not isinstance(items, list) or not items:

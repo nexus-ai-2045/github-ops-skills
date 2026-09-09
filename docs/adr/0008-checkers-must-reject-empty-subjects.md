@@ -32,7 +32,8 @@ JSON ではなく traceback を受け取る。
 
 1. `scripts/verify_*.py`（`verify_checker_contracts.py` 自身を除く）は `SUBJECT`
    （検査対象の repo 相対 path。実在すること・相対であること・`..` を含まないこと）
-   と `verify(repo) -> list[str]` を公開する。
+   と `verify(repo) -> list[str]` を公開する。file対象がJSONなどの構造化形式なら、
+   optionalな `EMPTY_SUBJECT` で構文上validだが意味的に空の内容を宣言する。
 2. 対象が**存在しない** repo、対象は存在するが**空**の repo のどちらでも、
    所見を返す（＝合格にしない）。例外を投げない。`sys.exit` もしない。
    所見の各要素は空でない `str` とする。
@@ -55,6 +56,11 @@ JSON ではなく traceback を受け取る。
 よって repo の正常な複製を作り、**先に所見ゼロを確認してから、宣言された対象
 だけを壊す**。file / dir の別も実在するエントリから決める。こうすると所見が
 変異に起因すると言い切れる。
+
+fileを一律0-byte化すると、JSON parserの構文errorだけでempty probeを満たし、
+`sources: []` のような構文上validな空registryを合格にするcheckerを見逃す。
+そのため構造化fileではcheckerごとの `EMPTY_SUBJECT` を使い、形式を保った空状態を
+食わせる。宣言しない通常fileは従来どおり0-byteを空状態とする。
 
 ## 代替案と却下理由
 

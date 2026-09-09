@@ -8,10 +8,16 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from github_ops.source_manifest import refresh_target_hashes, verify_target_hashes
+from github_ops.source_manifest import (
+    SCHEMA_VERSION,
+    refresh_target_hashes,
+    verify_target_hashes,
+)
 
 # 検査対象。verify_checker_contracts.py が空振りを機械で確認する
 SUBJECT = "migration/source-manifest.json"
+# 0-byte JSONの構文errorではなく、構文上validな0-record registryをprobeする
+EMPTY_SUBJECT = json.dumps({"schema_version": SCHEMA_VERSION, "sources": []}) + "\n"
 # 他の verify_* と同じ入口名で呼べるようにする。実装は src 側が正本
 verify = verify_target_hashes
 

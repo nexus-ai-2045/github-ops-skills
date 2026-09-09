@@ -6,7 +6,6 @@ import os
 import stat
 from pathlib import Path
 
-
 SCHEMA_VERSION = "github-ops/source-manifest/v1"
 
 # source_root value used for skills whose正本 is this repo itself
@@ -71,8 +70,8 @@ def verify_target_hashes(repo: Path) -> list[str]:
     if payload.get("schema_version") != SCHEMA_VERSION:
         errors.append("invalid schema_version")
     records = payload.get("sources")
-    if not isinstance(records, list):
-        return errors + ["sources must be a list"]
+    if not isinstance(records, list) or not records:
+        return errors + ["sources must be a non-empty list"]
     seen: set[str] = set()
     for record in records:
         if not isinstance(record, dict):
