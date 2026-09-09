@@ -50,7 +50,6 @@ read-only。標準ライブラリのみ。
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import shutil
 import stat
@@ -58,8 +57,6 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from types import ModuleType
-
 
 SCRIPTS_DIRNAME = "scripts"
 CHECKER_GLOB = "verify_*.py"
@@ -78,38 +75,10 @@ SNAPSHOT_IGNORE_NAMES = (
 SNAPSHOT_IGNORE = shutil.ignore_patterns(*SNAPSHOT_IGNORE_NAMES)
 
 
-def _load(path: Path) -> ModuleType:
-    """checker を読み込む。import の副作用を呼び出し側へ漏らさない。
-
-    checker には import 時に無条件で `sys.path.insert` するものがあり
-    (`verify_source_manifest_targets.py`)、そのまま呼ぶと呼び出し側の
-    `sys.path` が 1 本ずつ伸びる。pytest プロセスを恒久的に汚すので戻す。
-
-    `from __future__ import annotations` と `@dataclass` など module を見る
-    decorator は、exec 中に module が `sys.modules` へ入っていないと
-    Python 3.11 で AttributeError になる。通常の import と同じく一時登録する。
-    """
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot create a spec for {path.name}")
-    module = importlib.util.module_from_spec(spec)
-    name = spec.name
-    saved = list(sys.path)
-    previous = sys.modules.get(name)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.path[:] = saved
-        if previous is None:
-            sys.modules.pop(name, None)
-        else:
-            sys.modules[name] = previous
-    return module
-
-
 def _subject_error(subject: str) -> str | None:
     """SUBJECT が複製の外を指していないか。指していたら書き込み事故になる。"""
+    if "\0" in subject:
+        return "SUBJECT contains an invalid NUL character"
     if Path(subject).is_absolute():
         return f"SUBJECT must be repo-relative, got an absolute path ({subject})"
     parts = Path(subject).parts
@@ -139,7 +108,7 @@ def _symlink_component(root: Path, subject: str) -> str | None:
             info = current.lstat()
         except FileNotFoundError:
             return None
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             return f"cannot inspect {subject} ({exc})"
         attributes = getattr(info, "st_file_attributes", 0)
         if stat.S_ISLNK(info.st_mode) or attributes & getattr(
@@ -153,35 +122,95 @@ def _symlink_component(root: Path, subject: str) -> str | None:
     return None
 
 
-# probe を子プロセスで走らせる driver。結果は 1 行の JSON で返す。
-# checker は CI では「一発の CLI 実行」として動くので、その意味論に合わせる
+# 宣言読取りと probe を子プロセスで走らせる driver。
+# 結果は stdout ではなく専用 file へ返し、checker の終了時出力と分離する。
 _DRIVER = r"""
 import importlib.util, json, sys
 from pathlib import Path
 
-script, repo, src = sys.argv[1], sys.argv[2], sys.argv[3]
+script, repo, src, action, result_path = sys.argv[1:6]
+sys.path.insert(0, str(Path(script).parent))
 if src:
-    sys.path.insert(0, src)
+    sys.path.insert(1, src)
 out = {}
 try:
     spec = importlib.util.spec_from_file_location(Path(script).stem, script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot create import spec")
     module = importlib.util.module_from_spec(spec)
     # 通常の import 意味論を保つ。外すと dataclass や pickle が壊れる
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    errors = module.verify(Path(repo))
+    if action == "declare":
+        subject = getattr(module, "SUBJECT", None)
+        out = {
+            "kind": "declaration",
+            "subject": subject if isinstance(subject, str) else None,
+            "subject_type": type(subject).__name__,
+            "has_verify": callable(getattr(module, "verify", None)),
+        }
+    else:
+        errors = module.verify(Path(repo))
 except SystemExit as exc:
     out = {"kind": "exit", "code": repr(exc.code)}
 except BaseException as exc:
     out = {"kind": "raise", "type": type(exc).__name__}
 else:
-    if isinstance(errors, list):
-        bad = [e for e in errors if not isinstance(e, str) or not e]
-        out = {"kind": "ok", "count": len(errors), "bad": repr(bad[0]) if bad else None}
-    else:
-        out = {"kind": "badtype", "type": type(errors).__name__}
-sys.stdout.write("\x00RESULT\x00" + json.dumps(out))
+    if action != "declare":
+        if isinstance(errors, list):
+            bad = [e for e in errors if not isinstance(e, str) or not e]
+            out = {"kind": "ok", "count": len(errors), "bad": repr(bad[0]) if bad else None}
+        else:
+            out = {"kind": "badtype", "type": type(errors).__name__}
+Path(result_path).write_text(json.dumps(out), encoding="utf-8")
 """
+
+
+def _run_driver(
+    script: Path,
+    src: Path | None,
+    root: Path,
+    action: str,
+    label: str,
+) -> tuple[dict[str, object] | None, str | None]:
+    """隔離子プロセスを上限付きで走らせ、専用fileから結果を読む。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        result_path = Path(tmp) / "result.json"
+        try:
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    _DRIVER,
+                    str(script),
+                    str(root),
+                    str(src or ""),
+                    action,
+                    str(result_path),
+                ],
+                capture_output=True,
+                check=False,
+                timeout=PROBE_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return None, f"timed out {label} after {PROBE_TIMEOUT_SECONDS} seconds"
+
+        try:
+            payload = result_path.read_text(encoding="utf-8")
+        except OSError:
+            return None, (
+                f"produced no contract result {label} "
+                f"(exit {proc.returncode}); the probe could not observe the checker"
+            )
+        try:
+            out = json.loads(payload)
+        except json.JSONDecodeError:
+            return None, f"produced an unreadable contract result {label}"
+        if not isinstance(out, dict):
+            return None, f"produced an unreadable contract result {label}"
+        if proc.returncode != 0:
+            return None, f"exited with status {proc.returncode} {label}"
+        return out, None
 
 
 def _call(
@@ -196,23 +225,10 @@ def _call(
       - `src` 側 helper に状態を持つ checker が SUBJECT を一切見ずに合格した。
     子プロセスなら実際の CI 実行と同じ「まっさらな 1 回」になる。
     """
-    proc = subprocess.run(
-        [sys.executable, "-c", _DRIVER, str(script), str(root), str(src or "")],
-        capture_output=True,
-        text=True,
-        timeout=PROBE_TIMEOUT_SECONDS,
-    )
-    marker = "\x00RESULT\x00"
-    _, sep, payload = proc.stdout.partition(marker)
-    if not sep:
-        return None, (
-            f"produced no contract result on {label} "
-            f"(exit {proc.returncode}); the probe could not observe verify()"
-        )
-    try:
-        out = json.loads(payload)
-    except json.JSONDecodeError:
-        return None, f"produced an unreadable contract result on {label}"
+    out, problem = _run_driver(script, src, root, "verify", f"on {label}")
+    if problem is not None:
+        return None, problem
+    assert out is not None
 
     kind = out.get("kind")
     if kind == "exit":
@@ -228,6 +244,13 @@ def _call(
             f"returned a finding that is not a non-empty str on {label} ({out['bad']})"
         )
     return out["count"], None
+
+
+def _declaration(
+    script: Path, src: Path | None, repo: Path
+) -> tuple[dict[str, object] | None, str | None]:
+    """SUBJECT / verify 宣言も親へimportせず、停止上限付きで読む。"""
+    return _run_driver(script, src, repo, "declare", "at import time")
 
 
 def _snapshot(repo: Path, into: Path) -> Path:
@@ -277,8 +300,10 @@ def _probe(script: Path, src: Path | None, repo: Path, subject: str) -> list[str
         if errors:
             # ここが汚れていると、以降の所見が変異のせいだと言えない
             return [
-                "reports findings on a valid repository, so the probes below "
-                f"cannot be attributed to the mutation ({errors} finding(s))"
+                (
+                    "reports findings on a valid repository, so the probes below "
+                    f"cannot be attributed to the mutation ({errors} finding(s))"
+                )
             ]
 
     for empty in (False, True):
@@ -322,16 +347,23 @@ def verify(repo: Path) -> list[str]:
 
     for path in checkers:
         rel = path.relative_to(repo).as_posix()
-        try:
-            module = _load(path)
-        except SystemExit as exc:
-            errors.append(f"{rel}: called sys.exit({exc.code!r}) at import time")
+        declaration, problem = _declaration(path, src_root, repo)
+        if problem is not None:
+            errors.append(f"{rel}: {problem}")
             continue
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{rel}: cannot be imported ({type(exc).__name__}: {exc})")
+        assert declaration is not None
+
+        kind = declaration.get("kind")
+        if kind == "exit":
+            errors.append(
+                f"{rel}: called sys.exit({declaration.get('code')}) at import time"
+            )
+            continue
+        if kind == "raise":
+            errors.append(f"{rel}: cannot be imported ({declaration.get('type')})")
             continue
 
-        subject = getattr(module, "SUBJECT", None)
+        subject = declaration.get("subject")
         if not isinstance(subject, str) or not subject:
             errors.append(
                 f"{rel}: must declare SUBJECT (the repo-relative path it inspects)"
@@ -341,7 +373,7 @@ def verify(repo: Path) -> list[str]:
         if subject_problem is not None:
             errors.append(f"{rel}: {subject_problem}")
             continue
-        if not callable(getattr(module, "verify", None)):
+        if not declaration.get("has_verify"):
             errors.append(f"{rel}: must expose verify(repo) -> list[str]")
             continue
         escape = _symlink_component(repo, subject)

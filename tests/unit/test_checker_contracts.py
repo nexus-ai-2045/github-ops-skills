@@ -437,3 +437,102 @@ def test_sys_path_does_not_grow_on_repeated_runs() -> None:
     for _ in range(3):
         MODULE.verify(ROOT)
     assert len(sys.path) == before
+
+
+# --- 実行境界の失敗を所見へ変換すること（PR #22 review 第4巡）-------------
+
+
+def test_probe_timeout_is_reported_as_a_contract_finding(tmp_path: Path) -> None:
+    """verify() の停止で契約検査自身が traceback 終了しないこと。"""
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    previous = MODULE.PROBE_TIMEOUT_SECONDS
+    MODULE.PROBE_TIMEOUT_SECONDS = 0.05
+    try:
+        problems = _problems(
+            repo,
+            "timeout",
+            "docs",
+            'import time\ntime.sleep(0.2)\nreturn []',
+        )
+    finally:
+        MODULE.PROBE_TIMEOUT_SECONDS = previous
+    assert any("timed out" in problem for problem in problems), problems
+
+
+def test_checker_can_import_a_helper_beside_its_script(tmp_path: Path) -> None:
+    """通常の `python scripts/x.py` と同じ import path を保つこと。"""
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    (repo / "scripts" / "helper.py").write_text(
+        "def findings(target):\n"
+        '    return [] if target.is_dir() and any(target.iterdir()) else ["bad"]\n',
+        encoding="utf-8",
+    )
+    _write_checker(
+        repo,
+        "local_helper",
+        "from pathlib import Path\n"
+        "from helper import findings\n\n"
+        'SUBJECT = "docs"\n\n\n'
+        "def verify(repo: Path) -> list[str]:\n"
+        "    return findings(repo / SUBJECT)\n",
+    )
+    assert MODULE.verify(repo) == []
+
+
+def test_declaration_import_timeout_is_reported(tmp_path: Path) -> None:
+    """宣言読取り時の停止も子プロセスの上限で閉じること。"""
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    _write_checker(
+        repo,
+        "slow_import",
+        "import time\n"
+        "from pathlib import Path\n\n"
+        "time.sleep(0.2)\n"
+        'SUBJECT = "docs"\n\n\n'
+        "def verify(repo: Path) -> list[str]:\n"
+        '    return [] if any((repo / SUBJECT).iterdir()) else ["empty"]\n',
+    )
+    previous = MODULE.PROBE_TIMEOUT_SECONDS
+    MODULE.PROBE_TIMEOUT_SECONDS = 0.05
+    try:
+        errors = MODULE.verify(repo)
+    finally:
+        MODULE.PROBE_TIMEOUT_SECONDS = previous
+    assert any("timed out at import time" in error for error in errors), errors
+
+
+def test_atexit_stdout_does_not_corrupt_the_contract_result(tmp_path: Path) -> None:
+    """結果送信後の stdout は専用結果チャネルへ混ざらないこと。"""
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    problems = _problems(
+        repo,
+        "shutdown_log",
+        "docs",
+        "import atexit\n"
+        'atexit.register(lambda: print("shutdown"))\n'
+        'target = repo / "docs"\n'
+        'return [] if target.is_dir() and any(target.iterdir()) else ["bad"]',
+    )
+    assert problems == []
+
+
+def test_invalid_subject_path_is_reported_before_lstat(tmp_path: Path) -> None:
+    """NULを含むpathをPath操作へ渡さないこと。"""
+    _checker(tmp_path, "invalid_nul", "\0", 'return ["bad"]')
+    errors = MODULE.verify(tmp_path)
+    assert any("invalid NUL" in error for error in errors), errors
+
+
+def test_nonzero_exit_after_a_framed_result_is_rejected(tmp_path: Path) -> None:
+    """結果を書いた後の異常終了を成功扱いしないこと。"""
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    problems = _problems(
+        repo,
+        "late_exit",
+        "docs",
+        "import atexit, os\n"
+        "atexit.register(lambda: os._exit(1))\n"
+        'target = repo / "docs"\n'
+        'return [] if target.is_dir() and any(target.iterdir()) else ["bad"]',
+    )
+    assert any("exited with status 1" in problem for problem in problems), problems

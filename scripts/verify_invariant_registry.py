@@ -4,13 +4,13 @@ import argparse
 import json
 from pathlib import Path
 
-
 REQUIRED_IDS = {
     "GHO-TYPE-001",
     "GHO-ID-001",
     "GHO-ID-002",
     "GHO-PATH-001",
     "GHO-PROV-001",
+    "GHO-CHECKER-001",
 }
 ALLOWED_ENFORCEMENT = {"test", "ci"}
 
