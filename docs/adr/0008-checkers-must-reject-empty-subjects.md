@@ -91,6 +91,21 @@ Codex review 第 3 巡（2026-08-29）で、**それでは何も隔離できな�
 `sys.modules`・`sys.exit` のいずれも probe 間と親へ漏れない。
 子プロセスの結果は 1 行の JSON で受け取り、契約違反は所見へ変換する。
 
+### trust境界
+
+この契約検査が対象にするcheckerは、repository内でreviewされる **cooperative code**
+である。停止・終了handler・大量出力・共有moduleの偶発的な変更をfail-closedにするが、
+任意悪意Python codeをsandboxするものではない。checker自身が直接 `return []` したり、
+frame introspection、fd操作、native codeなどでworker processを支配したりする場合、
+同じprocess内のwrapperだけで返り値の真実性を保証することはできない。
+
+したがって「trusted driver」「checkerから書込み不能な結果channel」とは主張しない。
+監視processはworkerのstdout/stderrを分離し、結果を64 KiBまでに制限して、timeout・
+異常終了・複数frame・読取不能を所見へ変換する。これはcooperative checkerの隔離と
+fail-closedなtransportであり、security boundaryではない。任意悪意checkerを監査する
+必要がある場合は、候補側codeを実行しないbase側の静的検査やOS sandboxを別gateとして
+設計する。
+
 ## 保証と非保証
 
 - 保証: `scripts/verify_*.py`（`verify_checker_contracts.py` 自身を除く）が、
@@ -102,6 +117,8 @@ Codex review 第 3 巡（2026-08-29）で、**それでは何も隔離できな�
 - 保証: probe が**別プロセス**で走り、module 級の状態・`src` 側 helper の状態・
   `sys.modules` 登録・`sys.exit` が probe 間および親へ漏れないこと。
   子プロセスが結果を返さない場合も所見にする（`PROBE_TIMEOUT_SECONDS` で打ち切る）。
+- 保証: cooperative checkerのstdout/stderrを結果から分離し、構造化結果を64 KiBに
+  制限する。上限超過・異常終了・複数または不正なJSON frameを合格にしない。
 - 保証: probe が複製の外へ書き込まないこと。`SUBJECT` が絶対 path、`..`、
   **途中の symlink** を含む場合は probe を実行せずに落とす。
   変異そのものに失敗した場合も、例外ではなく所見で返す。
@@ -113,6 +130,8 @@ Codex review 第 3 巡（2026-08-29）で、**それでは何も隔離できな�
   これらは各 checker 側のテストが受け持つ。
   検査の**内容**が正しいこと。`scripts/check_*.py` など `verify_` で始まらない
   script（命名規約が宣言を兼ねているため、対象外）。
+- 非保証: 任意悪意checkerに対するsandbox、返り値の真正性、同一worker process内の
+  Python runtimeやfdの完全性。checkerはcooperative codeであることを前提とする。
 
 ## 検証
 

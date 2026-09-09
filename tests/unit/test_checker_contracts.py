@@ -538,8 +538,8 @@ def test_nonzero_exit_after_a_framed_result_is_rejected(tmp_path: Path) -> None:
     assert any("exited with status 1" in problem for problem in problems), problems
 
 
-def test_checker_cannot_overwrite_the_driver_result_at_exit(tmp_path: Path) -> None:
-    """checker に結果channelを渡すと、atexit で偽の合格へ上書きできる。"""
+def test_result_path_is_not_exposed_to_checker_atexit(tmp_path: Path) -> None:
+    """結果pathをcheckerへ渡さず、atexitによるfile上書きを成立させない。"""
     repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
     problems = _problems(
         repo,
@@ -575,3 +575,48 @@ def test_checker_output_is_discarded_without_buffering(tmp_path: Path) -> None:
         "return [] if target.is_dir() and any(target.iterdir()) else ['bad']",
     )
     assert problems == []
+
+
+def test_worker_protocol_forgery_cannot_suppress_the_real_result(tmp_path: Path) -> None:
+    """caller frameからfdを盗みos.writeを差し替えても、偽passにしないこと。
+
+    任意悪意checkerをsandboxする保証ではない。ここではreviewで実証された
+    「偽frameを書き、共有os.writeをno-op化して正規frameを消す」経路を固定する。
+    """
+    repo = _repo_with_subject(tmp_path, "docs", is_dir=True)
+    problems = _problems(
+        repo,
+        "frame_forgery",
+        "docs",
+        "import inspect, json, os\n"
+        "frame = inspect.currentframe().f_back\n"
+        "while frame is not None and 'result_fd' not in frame.f_locals:\n"
+        "    frame = frame.f_back\n"
+        "assert frame is not None\n"
+        "result_fd = frame.f_locals['result_fd']\n"
+        "target = repo / 'docs'\n"
+        "count = 0 if target.is_dir() and any(target.iterdir()) else 1\n"
+        "os.write(\n"
+        "    result_fd,\n"
+        "    json.dumps({'kind': 'ok', 'count': count, 'bad': None}).encode(),\n"
+        ")\n"
+        "os.write = lambda *_args, **_kwargs: 0\n"
+        "return []",
+    )
+    assert problems
+    assert any("unreadable contract result" in problem for problem in problems), problems
+
+
+def test_oversized_worker_result_is_rejected(tmp_path: Path) -> None:
+    """構造化結果も上限を超えたらbufferせず、所見として拒否すること。"""
+    (tmp_path / "scripts").mkdir()
+    _write_checker(
+        tmp_path,
+        "oversized_subject",
+        "from pathlib import Path\n\n"
+        f"SUBJECT = {'x' * (MODULE.PROBE_RESULT_MAX_BYTES + 1)!r}\n\n\n"
+        "def verify(repo: Path) -> list[str]:\n"
+        "    return []\n",
+    )
+    errors = MODULE.verify(tmp_path)
+    assert any("oversized contract result" in error for error in errors), errors

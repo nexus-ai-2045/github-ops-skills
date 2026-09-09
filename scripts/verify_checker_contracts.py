@@ -63,7 +63,7 @@ CHECKER_GLOB = "verify_*.py"
 SELF_NAME = Path(__file__).name
 # 子プロセスが返らないときに CI を止めない上限
 PROBE_TIMEOUT_SECONDS = 120
-# checker から trusted driver へ返す構造化結果の上限。checker の出力は含めない
+# checker workerから監視processへ返す構造化結果の上限。通常出力は含めない
 PROBE_RESULT_MAX_BYTES = 64 * 1024
 # 複製に持ち込まないもの。履歴とキャッシュは検査対象ではない
 SNAPSHOT_IGNORE_NAMES = (
@@ -137,6 +137,9 @@ if src:
     sys.path.insert(1, src)
 
 result_fd = os.dup(sys.stdout.fileno())
+# checkerが共有moduleのos.writeを差し替えても、正規frameを消せないよう先に束縛する。
+# 任意悪意codeのsandboxではない。保証境界はADR-0008を参照。
+emit_result = os.write
 with open(os.devnull, "wb", buffering=0) as null:
     os.dup2(null.fileno(), sys.stdout.fileno())
     os.dup2(null.fileno(), sys.stderr.fileno())
@@ -172,13 +175,13 @@ else:
         else:
             out = {"kind": "badtype", "type": type(errors).__name__}
 payload = json.dumps(out).encode("utf-8")
-os.write(result_fd, payload)
+emit_result(result_fd, payload)
 os.close(result_fd)
 """
 
 
-# trusted driver は checker と別processに留まり、worker終了後だけ親へ結果を返す。
-# checker はこのdriverのstdoutにも結果pathにもaccessできない。worker側pipeは
+# 監視processはcheckerと別processに留まり、worker終了後だけ親へ結果を返す。
+# checkerは監視processのstdoutにも結果pathにもaccessできない。worker側pipeは
 # 上限までしかbufferせず、超過分は捨てながらdrainしてdeadlockを防ぐ。
 _DRIVER = (
     "import json, subprocess, sys, threading\n"
@@ -265,7 +268,7 @@ def _run_driver(
     except subprocess.TimeoutExpired:
         return None, f"timed out {label} after {PROBE_TIMEOUT_SECONDS} seconds"
     if proc.returncode != 0:
-        return None, f"trusted driver exited with status {proc.returncode} {label}"
+        return None, f"probe supervisor exited with status {proc.returncode} {label}"
     try:
         envelope = json.loads(proc.stdout.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
