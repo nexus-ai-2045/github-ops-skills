@@ -10,6 +10,7 @@
 - [ADR-0005: skill manifestのssot_pointersはこのrepositoryに実在すること](adr/0005-skill-manifest-pointers-must-exist-in-this-repository.md)
 - [ADR-0006: PRセルフレビューのbase監査とbootstrap境界](adr/0006-pr-self-review-advisory-bootstrap.md)
 - [ADR-0007: ADRの採番は一意で機械検査に載せる](adr/0007-adr-numbers-must-be-unique.md)
+- [ADR-0008: 検査は「対象が無い / 空」を合格にしない](adr/0008-checkers-must-reject-empty-subjects.md)
 
 `src/github_ops/`が結果契約、出力秘匿、コマンド実行、account overlay、identity、
 preflight、review-thread audit、skill drift比較を提供します。`scripts/`は薄いCLI、

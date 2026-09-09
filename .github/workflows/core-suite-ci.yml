@@ -78,6 +78,10 @@ jobs:
       # その参照が同定できない。採番を検査する lint は移植されていなかった
       - name: ADRの採番が一意か検証
         run: python scripts/verify_adr_numbering.py
+      # 検査 3 本を実際に走らせて「対象が無い / 空」を pass にしないことを確認する。
+      # 2026-08-29 のセルフレビューで出た実バグ 9 件のうち 8 件がこの型だった
+      - name: checkerが空振りをpassにしないか検証
+        run: python scripts/verify_checker_contracts.py
       - name: Claude adapterを検証
         run: python adapters/claude/verify_adapter.py
       - name: Grok adapterを検証
