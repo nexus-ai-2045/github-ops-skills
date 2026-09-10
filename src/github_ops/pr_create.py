@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol, Sequence
 
 from .account_map import AccountMapError, load_account_map
-from .command import CommandResult, CommandRunner
+from .command import NOT_EXECUTED, TIMED_OUT, CommandResult, CommandRunner
 from .identity import IdentityProbe
 from .pr_language import check_pr_metadata
 from .result import Outcome, Status
@@ -116,19 +116,28 @@ def create_pr_with_japanese_gate(
             timeout=60,
             scoped_env={"GH_HOST": "github.com"},
         )
-    except subprocess.TimeoutExpired:
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover
+        # CommandRunner.run が握るので通常は到達しない。runner を差し替えた
+        # 呼び出し元が生の例外を投げる場合の保険として残す。
+        return _unknown(
+            "pr_create_execution_failed",
+            "gh pr createの完了状態を確認できません",
+            "再作成せず、対象branchの既存PRをread-onlyで確認してください",
+            {"repository": repo, "head": head, "error": str(exc)},
+        )
+    if created.returncode == TIMED_OUT:
         return _unknown(
             "pr_create_timeout",
             "gh pr createの完了状態を確認できません",
             "再作成せず、対象branchの既存PRをread-onlyで確認してください",
             {"repository": repo, "head": head},
         )
-    except (OSError, subprocess.SubprocessError) as exc:
+    if created.returncode == NOT_EXECUTED:
         return _unknown(
             "pr_create_execution_failed",
             "gh pr createの完了状態を確認できません",
             "再作成せず、対象branchの既存PRをread-onlyで確認してください",
-            {"repository": repo, "head": head, "error": str(exc)},
+            {"repository": repo, "head": head, "error": created.stderr},
         )
     if created.returncode != 0:
         return _unknown(
@@ -162,19 +171,26 @@ def create_pr_with_japanese_gate(
             redact_stdout=False,
             scoped_env={"GH_HOST": "github.com"},
         )
-    except subprocess.TimeoutExpired:
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover
+        return _unknown(
+            "pr_read_back_execution_failed",
+            "作成後のPR表示面を再取得できません",
+            "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
+            {"url": url, "error": str(exc)},
+        )
+    if read_back.returncode == TIMED_OUT:
         return _unknown(
             "pr_read_back_timeout",
             "作成後のPR表示面の再取得がtimeoutしました",
             "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
             {"url": url},
         )
-    except (OSError, subprocess.SubprocessError) as exc:
+    if read_back.returncode == NOT_EXECUTED:
         return _unknown(
             "pr_read_back_execution_failed",
             "作成後のPR表示面を再取得できません",
             "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
-            {"url": url, "error": str(exc)},
+            {"url": url, "error": read_back.stderr},
         )
     if read_back.returncode != 0:
         return _unknown(
