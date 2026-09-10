@@ -30,8 +30,13 @@ jobs:
           atx_headings = re.compile(
               r"^[ \t]{0,3}#{1,6}[ \t]+(.+?)\s*$", re.MULTILINE
           )
+          # setext の下線は段落行の「直後」でなければならない (CommonMark)。
+          # \s* は改行にもマッチするため、空行を挟んだ水平線 --- まで下線と
+          # みなしてしまい、`---` の前にある英語の段落が「英語だけの見出し」と
+          # 誤検知される (実測: PR 本文末尾の session URL + サーバ追記の ---)。
+          # 行末の空白だけを許す [ \t]* に絞る。
           setext_headings = re.compile(
-              r"^[ \t]{0,3}(.+?)\s*\n[ \t]{0,3}(?:=+|-+)\s*$", re.MULTILINE
+              r"^[ \t]{0,3}(.+?)[ \t]*\n[ \t]{0,3}(?:=+|-+)[ \t]*$", re.MULTILINE
           )
           fence_open = re.compile(r"^\s*(`{3,}|~{3,})")
           html_comments = re.compile(r"<!--.*?-->", re.DOTALL)
