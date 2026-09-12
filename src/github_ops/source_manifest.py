@@ -6,7 +6,6 @@ import os
 import stat
 from pathlib import Path
 
-
 SCHEMA_VERSION = "github-ops/source-manifest/v1"
 
 # source_root value used for skills whose正本 is this repo itself
@@ -27,6 +26,11 @@ def _unsafe_component(repo: Path, target: Path) -> bool:
         current /= part
         try:
             info = os.lstat(current)
+        except FileNotFoundError:
+            # 「単に存在しない」は symlink 攻撃ではない。ここを同じ signal に
+            # 畳むと、欠損が "unsafe manifest path" として報告され、
+            # 呼び出し側は不在と攻撃を区別できない (2026-08-29 review)
+            return False
         except OSError:
             return True
         attributes = getattr(info, "st_file_attributes", 0)
@@ -49,13 +53,25 @@ def verify_target_hashes(repo: Path) -> list[str]:
         manifest = _manifest_path(repo)
     except ValueError as exc:
         return [str(exc)]
-    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    # 対象が無い・壊れている時に例外で死ぬと、所見を list で返す契約が破れる
+    try:
+        raw = manifest.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ["migration/source-manifest.json not found"]
+    except (OSError, UnicodeDecodeError) as exc:
+        return [f"migration/source-manifest.json: unreadable ({exc})"]
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return [f"migration/source-manifest.json: invalid JSON ({exc})"]
+    if not isinstance(payload, dict):
+        return ["migration/source-manifest.json: top level must be an object"]
     errors: list[str] = []
     if payload.get("schema_version") != SCHEMA_VERSION:
         errors.append("invalid schema_version")
     records = payload.get("sources")
-    if not isinstance(records, list):
-        return errors + ["sources must be a list"]
+    if not isinstance(records, list) or not records:
+        return errors + ["sources must be a non-empty list"]
     seen: set[str] = set()
     for record in records:
         if not isinstance(record, dict):
