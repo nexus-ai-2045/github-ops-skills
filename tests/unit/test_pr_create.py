@@ -360,3 +360,34 @@ def test_requested_draft_state_is_verified(tmp_path: Path) -> None:
     )
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_read_back_mismatch"
+
+
+def test_raw_timeout_from_injected_runner_is_still_a_timeout(tmp_path: Path) -> None:
+    """差し替えた runner が生の TimeoutExpired を投げても timeout に写すこと。
+
+    TimeoutExpired は SubprocessError の subclass なので、広い except が先に
+    受けると pr_create_execution_failed に潰れる (2026-09-12 Codex P2)。
+    """
+    runner = FakeRunner(
+        _preflight_ready() + [subprocess.TimeoutExpired(["gh", "pr", "create"], 60)]
+    )
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == "pr_create_timeout"
+
+
+def test_raw_read_back_timeout_from_injected_runner_is_still_a_timeout(
+    tmp_path: Path,
+) -> None:
+    url = "https://github.com/example-org/tooling/pull/12"
+    runner = FakeRunner(
+        _preflight_ready()
+        + [
+            CommandResult(0, f"{url}\n", ""),
+            subprocess.TimeoutExpired(["gh", "pr", "view"], 15),
+        ]
+    )
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == "pr_read_back_timeout"
+    assert outcome.evidence["url"] == url
