@@ -32,6 +32,8 @@ from pathlib import Path
 
 
 ADR_DIRNAME = "docs/adr"
+# 検査対象。verify_checker_contracts.py が空振りを機械で確認する
+SUBJECT = ADR_DIRNAME
 # `\d` は Unicode 数字にマッチするため使わない。全角 `０００２` が `\d{4}` を通ると
 # key の文字列比較で "0002" とは別番号になり、この検査が塞ぐはずの
 # 「番号で同定できない」状態そのものを素通りさせる (2026-08-29 review)

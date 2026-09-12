@@ -133,8 +133,17 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
      呼出しとして既定 policy に落ち、code を含む変更が deny される。wrapper は current
      branch と OID を gate へ渡すため、同じ commit でも branch push が通る
      （実測: 同一 commit で raw push は scope policy deny、wrapper 経由は ALLOW）。
-     wrapper が無い環境でのみ、mainなら `git push origin main`、ブランチなら
-     `git push -u origin <branch>` を使う
+     - **発見方法**: ホーム直下の固定相対 path `~/Projects/shared/scripts/cc-push-resolved.sh`
+       を存在確認する（`skills/new-repo-bootstrap/scripts/bootstrap_repo.py` の
+       `DEFAULT_PUSH_WRAPPER` と同じ契約。環境変数で経路を上書きする仕組みはない）。
+       存在すれば wrapper あり、無ければ wrapper 無しと確定させ、
+       「見つけられていない」可能性を疑って探し直さない
+     - **呼び出し方**: `bash <wrapper> --repo <このリポジトリの作業ディレクトリ絶対 path> --branch <push する branch 名>`
+       （`--repo` は push 対象の checkout、`--branch` は push する branch。値を省略しない）
+     - **wrapper が無い場合**: raw push へ自動で落ちない。停止し、「canonical push wrapper が
+       見つからない。push を手動で行うか、wrapper の場所を教えてほしい」と人間に確認してから、
+       承認を得た上でのみ mainなら `git push origin main`、ブランチなら
+       `git push -u origin <branch>` を使う
    - deny されたら手段を変えて再試行しない。canonical wrapper や既定経路が既に無いかを
      先に確認する（正規経路があるのに raw で当たって deny され、人間に手作業を振るのが
      典型的な失敗）
@@ -157,24 +166,33 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 - .env, credentials.json 等のシークレットファイルはステージングしない
 - コミットメッセージはユーザー確認後に実行
 - ユーザー向け文書とPR title/bodyは日本語を既定にする
-- PR body の**見出しも日本語を含める**。`## manifest hash` のような英語だけの見出しは
-  日本語 gate が「英語だけの見出しがあります」で落とす。落ちた後に body を直しても、
-  失敗した run を rerun するだけでは通らない（run は作成時点の body を再検査する）。
-  head を進めて check を作り直すか、body 修正後の新しい run で置き換える
+- PR body には **`## 概要` のような日本語 ATX 見出し（`#`〜`######` で始まる行）を最低 1 つ含める**。
+  日本語 gate (`check_pr_metadata` / `body_has_japanese_heading`) は ATX 見出し行だけを見出しとして
+  認識する。`概要\n====` のような Setext 見出しは見出しとして認識されず、本文中に日本語があっても
+  gate は「日本語の見出しがありません」で落ちる（`test_japanese_setext_heading_does_not_replace_required_atx_heading`
+  が固定している契約）。`## manifest hash` のような英語だけの見出ししか無い場合も同様に落ちる。
+  落ちた後に body を直しても、失敗した run を rerun するだけでは通らない（run は作成時点の body を
+  再検査する）。head を進めて check を作り直すか、body 修正後の新しい run で置き換える
 - `check_pr_japanese.py`を通さない直接の`gh pr create`は実行しない
 - wrapper内のidentity、期待visibility、権限、clean、local/remote head SHA、live base SHA preflightを省略しない
 - visibilityは既定`PRIVATE`とし、公開repositoryでは人間承認後に限り`--expected-visibility PUBLIC`を明示する。visibility自体は変更しない
 - PR作成後はtitle/body/base/headをread-backし、承認済み入力との一致を確認する
 - `gh` CLIが使えない場合はgit push URLを表示して手動PR作成を案内
 - yuhitsu 等の公開協業 repo は push 前に local-verify-before-pr / yuhitsu-pr-local-identity-check (memory) を確認
-- **base 追随と identity gate は順序が両立しない。** GitHub の "Update branch" は base の
-  merge commit を GitHub 名義で head に積む。commit 名義を登録 identity に限定する push
-  gate は、以後その branch へのローカル push を「範囲内に他名義 commit が混在」として
-  deny する。ローカルで base を merge しても同じ結果になる。したがって:
-  - 追加 push の予定が残っている間は "Update branch" を押さない。先に push を済ませる
-  - 既に押していて追加変更が要るなら、base から作り直した branch に載せ替えて PR を
-    差し替える（force push で履歴を書き換えない）
-  - 追随が最後の 1 手なら "Update branch" で閉じてよい
+- **base 追随は「remote branch を fetch + merge で取り込む」のが第一手順。** GitHub の
+  "Update branch" ボタンは base の merge commit を GitHub 名義で head に積む。これを
+  ローカルで再現するには、`git fetch origin <branch>` で `origin/<branch>` を取り込み、
+  ローカル feature branch へ `git merge origin/<branch>`（fast-forward で済めばそのまま）する。
+  この merge commit は `origin/<branch>` の子孫になるため、`origin/<branch>..<local>` という
+  identity 検査の revision range には、ローカルで加えた変更とローカル名義の解消 merge
+  しか入らない（`r1..r2` は r1 から到達可能な commit を除外する、という git の revision-range
+  の意味論どおり）。push も fast-forward のまま通り、identity gate は deny しない。
+  - 追加 push の予定が残っている間は GitHub の "Update branch" ボタンは押さない
+    （それは相当する取り込みを GitHub 側で行うだけで、上記のローカル取り込みで代替できる）
+  - 通常はこの取り込み手順を先に試す。取り込み後も identity gate が deny する、あるいは
+    conflict が解消できない等で **実際に失敗した場合に限り**、最後の手段として base から
+    作り直した branch に載せ替えて PR を差し替える（force push で履歴を書き換えない）
+  - 追随が最後の 1 手で、ローカル取り込みの必要がすでに無いなら "Update branch" で閉じてよい
 
 ## PR 作成 wrapper が BLOCKED になる典型と、正しい戻し方
 
