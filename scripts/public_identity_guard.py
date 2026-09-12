@@ -8,7 +8,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from github_ops.command import CommandRunner
+from github_ops.command import NOT_EXECUTED, TIMED_OUT, CommandRunner
 from github_ops.output import configure_utf8_stdout
 from github_ops.public_identity import scan_text
 from github_ops.result import Outcome, Status
@@ -45,6 +45,20 @@ def scan_git_tree(runner: CommandRunner, repo: Path, revision: str) -> Outcome:
             cwd=repo,
             timeout=30,
         )
+        if blob.returncode in (TIMED_OUT, NOT_EXECUTED):
+            # 読めなかった blob を skip すると、未検査のまま READY を返しうる。
+            # CommandRunner が timeout / 起動失敗を例外ではなく returncode で
+            # 返すようになったため、ここで止めないと公開ガードが fail-open に
+            # なる (2026-09-12 Codex P1)。git 自身が非ゼロを返す場合 (gitlink
+            # など) は従来どおり skip する。
+            return Outcome(
+                status=Status.UNKNOWN,
+                code="identity_scan_incomplete",
+                cause="公開候補treeの一部を読み切れませんでした",
+                impact="公開・pushへ進めません",
+                recovery="timeoutを延ばすか対象を絞って再検査してください",
+                evidence={"path": relative, "returncode": blob.returncode},
+            )
         if blob.returncode != 0:
             continue
         scanned = scan_text(blob.stdout)
