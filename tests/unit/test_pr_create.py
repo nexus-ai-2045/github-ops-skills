@@ -2,7 +2,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from github_ops.command import CommandResult
+from github_ops.command import NOT_EXECUTED, TIMED_OUT, CommandResult
 from github_ops.pr_create import create_pr_with_japanese_gate
 from github_ops.result import Status
 
@@ -198,7 +198,8 @@ def test_read_back_timeout_returns_unknown_with_url(tmp_path: Path) -> None:
         _preflight_ready()
         + [
             CommandResult(0, f"{url}\n", ""),
-            subprocess.TimeoutExpired(["gh", "pr", "view"], 15),
+            # 新契約: CommandRunner は timeout を例外ではなく rc=124 で返す
+            CommandResult(TIMED_OUT, "", "command timed out"),
         ]
     )
     outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
@@ -331,7 +332,7 @@ def test_read_back_os_error_returns_unknown_with_url(tmp_path: Path) -> None:
     url = "https://github.com/example-org/tooling/pull/12"
     runner = FakeRunner(
         _preflight_ready()
-        + [CommandResult(0, f"{url}\n", ""), OSError("spawn failed")]
+        + [CommandResult(0, f"{url}\n", ""), CommandResult(NOT_EXECUTED, "", "spawn failed")]
     )
     outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
     assert outcome.status is Status.UNKNOWN
@@ -340,7 +341,7 @@ def test_read_back_os_error_returns_unknown_with_url(tmp_path: Path) -> None:
 
 
 def test_create_os_error_returns_unknown_without_retry(tmp_path: Path) -> None:
-    runner = FakeRunner(_preflight_ready() + [OSError("spawn failed")])
+    runner = FakeRunner(_preflight_ready() + [CommandResult(NOT_EXECUTED, "", "spawn failed")])
     outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_create_execution_failed"
