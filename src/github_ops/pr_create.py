@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Protocol, Sequence
 
 from .account_map import AccountMapError, load_account_map
-from .command import NOT_EXECUTED, TIMED_OUT, CommandResult, CommandRunner
+from .command import CommandFailure, CommandResult, CommandRunner
 from .identity import IdentityProbe
 from .pr_language import check_pr_metadata
+from .redaction import redact
 from .result import Outcome, Status
 
 
@@ -63,7 +64,7 @@ def create_pr_with_japanese_gate(
             "body_file_unreadable",
             "PR bodyファイルをUTF-8で読み込めません",
             "UTF-8のbodyファイルを用意してください",
-            {"body_file": str(body_file), "error": str(exc)},
+            {"body_file": str(body_file), "error": redact(str(exc))},
         )
     language = check_pr_metadata(title, body)
     if language.status is not Status.READY:
@@ -88,7 +89,7 @@ def create_pr_with_japanese_gate(
             "pr_preflight_execution_failed",
             "PR作成前preflightを完了できません",
             "Git、GitHub認証、networkを確認してください",
-            {"repository": repo, "error": str(exc)},
+            {"repository": repo, "error": redact(str(exc))},
         )
     if preflight.status is not Status.READY:
         return preflight
@@ -116,33 +117,30 @@ def create_pr_with_japanese_gate(
             timeout=60,
             scoped_env={"GH_HOST": "github.com"},
         )
-    except subprocess.TimeoutExpired:  # pragma: no cover
-        # CommandRunner.run は timeout を TIMED_OUT で返すので通常は到達しない。
-        # 差し替えた runner が生の例外を投げる場合も、timeout を execution_failed
-        # に潰さない。TimeoutExpired は SubprocessError の subclass なので、
-        # 広い except より先に受ける (2026-09-12 Codex P2)。
+    except subprocess.TimeoutExpired:
         return _unknown(
             "pr_create_timeout",
             "gh pr createの完了状態を確認できません",
             "再作成せず、対象branchの既存PRをread-onlyで確認してください",
             {"repository": repo, "head": head},
         )
-    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover
-        # runner を差し替えた呼び出し元が生の例外を投げる場合の保険。
+    except (OSError, subprocess.SubprocessError) as exc:
+        # CommandRunner.run が握るので通常は到達しない。runner を差し替えた
+        # 呼び出し元が生の例外を投げる場合の保険として残す。
         return _unknown(
             "pr_create_execution_failed",
             "gh pr createの完了状態を確認できません",
             "再作成せず、対象branchの既存PRをread-onlyで確認してください",
-            {"repository": repo, "head": head, "error": str(exc)},
+            {"repository": repo, "head": head, "error": redact(str(exc))},
         )
-    if created.returncode == TIMED_OUT:
+    if created.failure is CommandFailure.TIMED_OUT:
         return _unknown(
             "pr_create_timeout",
             "gh pr createの完了状態を確認できません",
             "再作成せず、対象branchの既存PRをread-onlyで確認してください",
             {"repository": repo, "head": head},
         )
-    if created.returncode == NOT_EXECUTED:
+    if created.failure is CommandFailure.EXECUTION_FAILED:
         return _unknown(
             "pr_create_execution_failed",
             "gh pr createの完了状態を確認できません",
@@ -181,28 +179,28 @@ def create_pr_with_japanese_gate(
             redact_stdout=False,
             scoped_env={"GH_HOST": "github.com"},
         )
-    except subprocess.TimeoutExpired:  # pragma: no cover
+    except subprocess.TimeoutExpired:
         return _unknown(
             "pr_read_back_timeout",
             "作成後のPR表示面の再取得がtimeoutしました",
             "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
             {"url": url},
         )
-    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover
+    except (OSError, subprocess.SubprocessError) as exc:
         return _unknown(
             "pr_read_back_execution_failed",
             "作成後のPR表示面を再取得できません",
             "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
-            {"url": url, "error": str(exc)},
+            {"url": url, "error": redact(str(exc))},
         )
-    if read_back.returncode == TIMED_OUT:
+    if read_back.failure is CommandFailure.TIMED_OUT:
         return _unknown(
             "pr_read_back_timeout",
             "作成後のPR表示面の再取得がtimeoutしました",
             "PRを編集・再作成せず、既存URLをread-onlyで確認してください",
             {"url": url},
         )
-    if read_back.returncode == NOT_EXECUTED:
+    if read_back.failure is CommandFailure.EXECUTION_FAILED:
         return _unknown(
             "pr_read_back_execution_failed",
             "作成後のPR表示面を再取得できません",
@@ -319,7 +317,7 @@ def _verify_preflight(
             "account_map_invalid",
             "account mapを解決できません",
             "対象repositoryのaccount mapを確認してください",
-            {"error": str(exc)},
+            {"error": redact(str(exc))},
         )
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     identity = IdentityProbe(runner).probe(

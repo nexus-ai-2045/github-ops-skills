@@ -8,7 +8,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from github_ops.command import NOT_EXECUTED, TIMED_OUT, CommandRunner
+from github_ops.command import CommandRunner
 from github_ops.output import configure_utf8_stdout
 from github_ops.public_identity import scan_text
 from github_ops.result import Outcome, Status
@@ -45,22 +45,17 @@ def scan_git_tree(runner: CommandRunner, repo: Path, revision: str) -> Outcome:
             cwd=repo,
             timeout=30,
         )
-        if blob.returncode in (TIMED_OUT, NOT_EXECUTED):
-            # 読めなかった blob を skip すると、未検査のまま READY を返しうる。
-            # CommandRunner が timeout / 起動失敗を例外ではなく returncode で
-            # 返すようになったため、ここで止めないと公開ガードが fail-open に
-            # なる (2026-09-12 Codex P1)。git 自身が非ゼロを返す場合 (gitlink
-            # など) は従来どおり skip する。
+        if blob.returncode != 0:
+            # 終了値の種類によらず、取得できなかった内容を検査済みにしない。
+            # gitlinkなども失敗したgit showから推測して除外しない。
             return Outcome(
                 status=Status.UNKNOWN,
                 code="identity_scan_incomplete",
                 cause="公開候補treeの一部を読み切れませんでした",
                 impact="公開・pushへ進めません",
-                recovery="timeoutを延ばすか対象を絞って再検査してください",
+                recovery="Gitの読取り失敗を解消し、tree全体を再検査してください",
                 evidence={"path": relative, "returncode": blob.returncode},
             )
-        if blob.returncode != 0:
-            continue
         scanned = scan_text(blob.stdout)
         rules.update(scanned.evidence.get("rules", []))
     if rules:
@@ -90,11 +85,23 @@ def main(argv: list[str] | None = None) -> int:
         artifact_rules: set[str] = set(outcome.evidence.get("rules", []))
         artifact_files: list[str] = []
         for artifact in args.artifact:
-            scanned = scan_text(artifact.read_text(encoding="utf-8"))
+            try:
+                artifact_text = artifact.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                outcome = Outcome(
+                    status=Status.UNKNOWN,
+                    code="artifact_unverified",
+                    cause="公開候補artifactを読み取れず、検査が未完了です",
+                    impact="公開・pushへ進めません",
+                    recovery="artifactの存在・権限・UTF-8形式を確認して再検査してください",
+                    evidence={"error_type": type(exc).__name__},
+                )
+                break
+            scanned = scan_text(artifact_text)
             if scanned.status is Status.BLOCKED:
                 artifact_rules.update(scanned.evidence["rules"])
                 artifact_files.append(artifact.name)
-        if artifact_rules:
+        if artifact_rules and outcome.status is not Status.UNKNOWN:
             outcome = Outcome(
                 status=Status.BLOCKED,
                 code="identity_exposure_detected",

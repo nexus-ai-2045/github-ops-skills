@@ -2,7 +2,9 @@ import json
 import subprocess
 from pathlib import Path
 
-from github_ops.command import NOT_EXECUTED, TIMED_OUT, CommandResult
+import pytest
+
+from github_ops.command import CommandFailure, CommandResult
 from github_ops.pr_create import create_pr_with_japanese_gate
 from github_ops.result import Status
 
@@ -198,8 +200,7 @@ def test_read_back_timeout_returns_unknown_with_url(tmp_path: Path) -> None:
         _preflight_ready()
         + [
             CommandResult(0, f"{url}\n", ""),
-            # 新契約: CommandRunner は timeout を例外ではなく rc=124 で返す
-            CommandResult(TIMED_OUT, "", "command timed out"),
+            CommandResult(1, "", "command timed out", CommandFailure.TIMED_OUT),
         ]
     )
     outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
@@ -332,7 +333,10 @@ def test_read_back_os_error_returns_unknown_with_url(tmp_path: Path) -> None:
     url = "https://github.com/example-org/tooling/pull/12"
     runner = FakeRunner(
         _preflight_ready()
-        + [CommandResult(0, f"{url}\n", ""), CommandResult(NOT_EXECUTED, "", "spawn failed")]
+        + [
+            CommandResult(0, f"{url}\n", ""),
+            CommandResult(1, "", "spawn failed", CommandFailure.EXECUTION_FAILED),
+        ]
     )
     outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
     assert outcome.status is Status.UNKNOWN
@@ -341,7 +345,10 @@ def test_read_back_os_error_returns_unknown_with_url(tmp_path: Path) -> None:
 
 
 def test_create_os_error_returns_unknown_without_retry(tmp_path: Path) -> None:
-    runner = FakeRunner(_preflight_ready() + [CommandResult(NOT_EXECUTED, "", "spawn failed")])
+    runner = FakeRunner(
+        _preflight_ready()
+        + [CommandResult(1, "", "spawn failed", CommandFailure.EXECUTION_FAILED)]
+    )
     outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_create_execution_failed"
@@ -360,6 +367,70 @@ def test_requested_draft_state_is_verified(tmp_path: Path) -> None:
     )
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_read_back_mismatch"
+
+
+@pytest.mark.parametrize("exit_code", [124, 127])
+@pytest.mark.parametrize("stage", ["create", "read_back"])
+def test_real_exit_codes_remain_indeterminate_without_retry(
+    tmp_path: Path, exit_code: int, stage: str
+) -> None:
+    url = "https://github.com/example-org/tooling/pull/12"
+    responses = _preflight_ready()
+    if stage == "read_back":
+        responses.append(CommandResult(0, url, ""))
+    responses.append(CommandResult(exit_code, "", "child failed"))
+    runner = FakeRunner(responses)
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == (
+        "pr_create_indeterminate" if stage == "create" else "pr_read_back_failed"
+    )
+    assert sum(call["argv"][1:3] == ["pr", "create"] for call in runner.calls) == 1
+    assert not runner.responses
+
+
+@pytest.mark.parametrize("stage", ["create", "read_back"])
+@pytest.mark.parametrize("raw_exception", [False, True])
+def test_timeout_stays_distinct_and_never_retries(
+    tmp_path: Path, stage: str, raw_exception: bool
+) -> None:
+    url = "https://github.com/example-org/tooling/pull/12"
+    token = "gh" + "p_" + "a" * 24
+    responses = _preflight_ready()
+    if stage == "read_back":
+        responses.append(CommandResult(0, url, ""))
+    responses.append(
+        subprocess.TimeoutExpired(["gh", token], 1, output=token, stderr=token)
+        if raw_exception
+        else CommandResult(1, "", "command timed out", CommandFailure.TIMED_OUT)
+    )
+    runner = FakeRunner(responses)
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == f"pr_{stage}_timeout"
+    assert token not in outcome.to_json()
+    assert "再作成せず" in outcome.recovery
+    if stage == "read_back":
+        assert outcome.evidence["url"] == url
+    assert sum(call["argv"][1:3] == ["pr", "create"] for call in runner.calls) == 1
+    assert not runner.responses
+
+
+@pytest.mark.parametrize("stage", ["create", "read_back"])
+def test_injected_execution_exception_redacts_evidence(tmp_path: Path, stage: str) -> None:
+    url = "https://github.com/example-org/tooling/pull/12"
+    token = "gh" + "p_" + "a" * 24
+    responses = _preflight_ready()
+    if stage == "read_back":
+        responses.append(CommandResult(0, url, ""))
+    responses.append(subprocess.SubprocessError(token))
+    runner = FakeRunner(responses)
+    outcome = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert outcome.status is Status.UNKNOWN
+    assert outcome.code == f"pr_{stage}_execution_failed"
+    assert token not in outcome.to_json()
+    assert "再作成せず" in outcome.recovery
+    assert sum(call["argv"][1:3] == ["pr", "create"] for call in runner.calls) == 1
 
 
 def test_raw_timeout_from_injected_runner_is_still_a_timeout(tmp_path: Path) -> None:

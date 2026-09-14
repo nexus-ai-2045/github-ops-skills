@@ -4,24 +4,26 @@ import os
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from .redaction import redact
 
 
+class CommandFailure(str, Enum):
+    TIMED_OUT = "timed_out"
+    EXECUTION_FAILED = "execution_failed"
+
+
 @dataclass(frozen=True)
 class CommandResult:
+    # failure がある場合は既存の非ゼロ検査用に 1 を返す。
+    # 実プロセスの終了値と例外の区分は failure で区別する。
     returncode: int
     stdout: str
     stderr: str
-
-
-# 子プロセスが「起動できなかった」/「時間切れ」を returncode で区別する。
-# 呼び出し側はこの 2 つを別の所見に写す (pr create の timeout は
-# 「PR が作られた可能性がある」ので再作成させない)。shell の慣例値に合わせた。
-TIMED_OUT = 124
-NOT_EXECUTED = 127
+    failure: CommandFailure | None = None
 
 
 class CommandRunner:
@@ -70,23 +72,22 @@ class CommandRunner:
                 creationflags=creationflags,
             )
         except subprocess.TimeoutExpired:
-            # timeout と「起動できなかった」は呼び出し側で意味が違う。
-            # pr create では timeout は「PR が作られた可能性がある」ので
-            # 再作成させてはならない。潰さずに区別できる形で返す。
-            # 124 / 127 は shell の慣例値に合わせた。
+            # 部分出力にはsecretが含まれ得るので、例外本文・出力を持ち出さない。
+            # PR作成が済んでいる可能性を、実プロセスの終了値と分離して返す。
             return CommandResult(
-                returncode=124,
+                returncode=1,
                 stdout="",
                 stderr="command timed out",
+                failure=CommandFailure.TIMED_OUT,
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            # 実行ファイル不在・cwd 不在など。subprocess は returncode を返す前に
-            # 投げるため、握らないと --json 契約の CLI が stdout 0 バイトの
-            # traceback で死ぬ (実測: gh_identity_probe.py --repo . --json)。
+            # 起動・通信などの失敗をJSON契約へ戻す。子プロセスや外部操作が
+            # 未実行だったとは断定しない。
             return CommandResult(
-                returncode=127,
+                returncode=1,
                 stdout="",
                 stderr=redact(f"{type(exc).__name__}: {exc}"),
+                failure=CommandFailure.EXECUTION_FAILED,
             )
         return CommandResult(
             returncode=completed.returncode,

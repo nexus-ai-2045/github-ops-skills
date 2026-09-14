@@ -6,6 +6,14 @@
     {"id": "GHO-ID-002", "title": "実効transportの認証overrideをfail-closedで検査する", "enforcement": "test", "test_paths": ["tests/unit/test_identity.py"]},
     {"id": "GHO-PATH-001", "title": "再帰走査前にrootと全path componentを検査する", "enforcement": "test", "test_paths": ["tests/unit/test_skill_drift.py"]},
     {"id": "GHO-PROV-001", "title": "配布manifestのtarget digestをCIで自己検証する", "enforcement": "ci", "test_paths": ["tests/unit/test_source_manifest.py"]},
-    {"id": "GHO-CHECKER-001", "title": "R14: cooperative checkerの宣言読取りと実行境界を制限付き子プロセスで検証する", "enforcement": "ci", "test_paths": ["tests/unit/test_checker_contracts.py"]}
+    {"id": "GHO-CHECKER-001", "title": "R14: cooperative checkerの宣言読取りと実行境界を制限付き子プロセスで検証する", "enforcement": "ci", "test_paths": ["tests/unit/test_checker_contracts.py"]},
+    {"id": "GHO-EXEC-001", "title": "実終了コードと実行例外を区別し、PRの成否不明時に再作成しない", "enforcement": "test", "test_paths": ["tests/unit/test_command_runner_exec_failures.py", "tests/unit/test_pr_create.py"]},
+    {"id": "GHO-SCAN-001", "title": "読取り未完了の公開前検査は成功扱いせずJSONと非ゼロ終了値を返す", "enforcement": "test", "test_paths": ["tests/unit/test_public_identity_cli.py", "tests/unit/test_public_identity_guard_incomplete_scan.py"]},
+    {
+      "id": "GHO-BRANCH-001",
+      "title": "リモートbranchはdefault/protected/PR状態とHEAD一致をread-onlyで分類し、削除候補を推測しない",
+      "enforcement": "test",
+      "test_paths": ["tests/unit/test_remote_branch_audit.py"]
+    }
   ]
 }
