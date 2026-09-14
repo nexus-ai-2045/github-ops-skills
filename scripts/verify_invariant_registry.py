@@ -11,6 +11,9 @@ REQUIRED_IDS = {
     "GHO-PATH-001",
     "GHO-PROV-001",
     "GHO-CHECKER-001",
+    "GHO-EXEC-001",
+    "GHO-SCAN-001",
+    "GHO-BRANCH-001",
 }
 ALLOWED_ENFORCEMENT = {"test", "ci"}
 SCHEMA_VERSION = "github-ops/invariants/v1"

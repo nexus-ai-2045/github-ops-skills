@@ -25,7 +25,39 @@ runtime skill との差分確認:
 python scripts/skill_drift_check.py --repo . --runtime codex --local-root <runtime-skills-root> --json
 ```
 
-## L3 read-only E2E
+## コマンド実行の失敗と未完了の検査
+
+`CommandResult.failure` が例外の区分を表します。`timed_out` は時間切れ、
+`execution_failed` は起動・通信などの実行失敗です。実際の終了コード `124` / `127`
+から例外を推定しません。例外時の `returncode=1` は既存の非ゼロ判定用です。
+PR作成の成否が不明な場合は再作成せず、既存PRを読み取りで確認します。
+
+`public_identity_guard.py` はGit tree内のファイルを一つでも読み取れないと
+`UNKNOWN` を返します。未検査のファイルを読み飛ばして `READY` にはしません。
+
+この結果契約の所有者は `src/github_ops/command.py` と各CLIの実装です。
+採用条件は既存の `policy/invariants.json` の `GHO-EXEC-001` / `GHO-SCAN-001` に
+登録し、`verify_invariant_registry.py` が登録削除・テスト欠落を検出します。
+既存の `Core Suite CI` は全pytestと台帳検査を実行します。台帳検査だけの成功を
+動作検証の代わりにはしません。公開前検査のCLIテストではJSONと終了値を照合します。
+
+skillの配布・runtime有効化は配布側の既存入口の責務です。上記のローカルテストや
+CIの成功から、home配布・全端末への反映・GitHub設定の有効化を推定しません。
+
+マージ済みリモートbranchの棚卸しは、次のread-only入口を使います。
+
+```sh
+python scripts/github_remote_branch_audit.py \
+  --repo owner/name --repo-root . \
+  --expected-owner owner --expected-login login --json
+```
+
+この入口は、default branch、protected branch、PRの状態、branch HEADとPR HEADの一致を
+分類します。`merged_head_exact` だけを削除候補として返し、closed/open/不明・HEAD変更は
+保持します。削除やGitHub設定変更は実行しません。API応答・identity・JSONが確認できない
+場合は `UNKNOWN` として停止します。
+
+## L3 読み取り専用の実環境検証
 
 通常確認は`python scripts/run_read_only_e2e.py --json`で行います。GitHubの設定変更、
 投稿、pushは行いません。必要な環境変数が欠ける場合は`BLOCKED`で停止します。
@@ -36,7 +68,7 @@ python scripts/skill_drift_check.py --repo . --runtime codex --local-root <runti
 - `GITHUB_OPS_EXPECTED_OWNER`
 - `GITHUB_OPS_ACCOUNT_MAP` (repository外のoverlay。exampleは`examples/account-repo-map.example.yaml`)
 
-## L4 private canary
+## L4 非公開環境での試行
 
 private canaryはreview packetだけを生成します。現versionは`--execute`を指定しても
 外部変更しません。実canaryは対象、visibility、送信内容を人間が確認した後の別工程です。

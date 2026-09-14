@@ -1,7 +1,22 @@
 import json
+import shutil
 from pathlib import Path
 
+import pytest
+
 from scripts.verify_invariant_registry import verify
+
+
+@pytest.mark.parametrize("identifier", ["GHO-EXEC-001", "GHO-SCAN-001"])
+def test_adopted_execution_contract_cannot_be_removed(tmp_path: Path, identifier: str) -> None:
+    root = Path(__file__).resolve().parents[2]
+    shutil.copytree(root / "policy", tmp_path / "policy")
+    shutil.copytree(root / "tests", tmp_path / "tests")
+    registry = tmp_path / "policy/invariants.json"
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    payload["invariants"] = [item for item in payload["invariants"] if item["id"] != identifier]
+    registry.write_text(json.dumps(payload), encoding="utf-8")
+    assert f"required invariant missing: {identifier}" in verify(tmp_path)
 
 
 def test_repository_invariant_registry_is_self_consistent() -> None:
