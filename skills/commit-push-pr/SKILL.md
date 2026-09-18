@@ -97,6 +97,10 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
      `workflow_dispatch` にPR番号を渡したbase側監査を追加で回してよい（必須ではない）
 7. 承認されたら:
    - 手順 1 の `INTENDED_PATHS` と同じ path だけを `git add` でステージングする
+   - `cc-commit.sh --only` を使う場合、ディレクトリを渡すと scope 外判定が配下 file を個別展開せず
+     20 件で打ち切られるため、配下 file が無警告で reset され commit から漏れることがある
+     （実測: 2026-09-18、dir 2 つで 20 file 漏れ・2 commit に分裂）。`--only` には常に
+     `git status --porcelain` / `git ls-files` で展開した file path だけを渡す
    - **commit する前後の両方**で、tree が `REVIEWED_TREE` と一致することを確認する
 
      ```bash
