@@ -113,9 +113,9 @@
       "source_root": "shared",
       "source_path": "skills/commit-push-pr/SKILL.md",
       "target_path": "skills/commit-push-pr/SKILL.md",
-      "sha256": "ac50c1a7f14398cf307bbea2c950900cdad9fefdab9b60ca29264e710c991cf2",
+      "sha256": "b9f3778ec9232728805110580cfb64f95adb6cd551f5c5997d5f494bc31d08fb",
       "source_sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
-      "target_sha256": "ac50c1a7f14398cf307bbea2c950900cdad9fefdab9b60ca29264e710c991cf2",
+      "target_sha256": "b9f3778ec9232728805110580cfb64f95adb6cd551f5c5997d5f494bc31d08fb",
       "normalized": true
     },
     {
