@@ -1,15 +1,27 @@
 ---
 name: commit-push-pr
-description: 変更を commit → push → PR 作成までワンコマンドで実行する。「push して PR まで」「PR 出して」「commit push pr」と言われたら使用する。main への push / PR 作成は必ずユーザー確認を挟む。commit のみ (quick-commit)、PR 状況確認 (pr-status)、マージには使わない。
+description: 変更を commit → push → PR 作成まで扱う。まず操作モードを commit-only / push / pr に分ける。「push して PR まで」「PR 出して」「commit push pr」と言われたら使用する。main への push / PR 作成は必ずユーザー確認を挟む。明示的に commit のみを依頼された場合は commit-only として、push/PR 用の確認や fetch を要求しない。PR 状況確認 (pr-status)、マージには使わない。
 ---
 
 # /commit-push-pr
 
-現在の変更をコミット→プッシュ→PR作成までワンコマンドで実行する。
+現在の変更を、明示された操作境界まで実行する。commit-only はローカルコミットで終了し、push と PR 作成は実行しない。
+
+## 操作モード
+
+依頼を最初に次のいずれかへ固定する。
+
+- `commit-only`: 意図したパスだけを検査してローカルコミットする。明示的なコミット依頼がある場合、コミットメッセージの再確認は省略してよい。メッセージが曖昧な場合だけ確認する。
+- `push`: 既存コミットを指定されたリモート・ブランチへ配送する。push直前に対象、OID、リモート、権限境界を確認する。
+- `pr`: push済みの対象についてPRを作成する。PR本文・base・head・visibilityをread-backし、PR作成直前に確認する。
+
+`commit-only` では、push/PR用のlive base fetch、GitHub CI確認、PR本文作成を必須にしない。ローカルhook、secret検査、ratchet、意図したパス限定、差分レビューは維持する。
 
 ## 手順
 
-1. `git status` と、これから PR に入る差分全体で変更内容を確認
+1. `git status` と、対象モードに入る差分全体で変更内容を確認
+   - `commit-only` は現在の `HEAD` を基準に意図したパスだけを一時 index へ取り込み、fetch なしでレビューする。
+   - `push` / `pr` は下記の live-base fetch を行い、配送対象の差分をレビューする。以下の fetch 用コードブロックは `push` / `pr` のときだけ実行する。
    - 一時 index に全部 stage して差分を取る。作業ツリーと本物の index は触らない
 
      ```bash
@@ -65,18 +77,18 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
    - repo固有のコミット規約があれば、その規約を優先する
    - 規約がなければ、日本語または英語から変更内容に合う言語を選ぶ
    - Conventional Commitsのtype/scope、コード識別子、API名は英語のままでよい
-4. ユーザーにコミットメッセージを提示して確認
+4. コミットメッセージを決める。ユーザーが明示的にコミットを依頼済みで、メッセージも具体的なら再確認しない。依頼が「コミットして」だけでメッセージが未指定の場合は、短い案を提示して確認する。
 5. skill と一緒に配布される `references/pr-self-review.md` のセルフレビューを、手順 1 で取った差分
-   （= これから push して PR に入る範囲の全体。未 tracked の新規 file を含む）に当てる
+   （`commit-only` は今回のローカルコミット範囲、`push` / `pr` はこれから配送する範囲。いずれも未 tracked の新規 file を含む）に当てる
    - 複数リポジトリのレビュー指摘を一般化した停止条件 R1〜R14 と、20 項目の確認表
    - 該当した項目は、直してから次へ進む。R1/R8/R11などの停止条件が `blocked` / `unknown`
-     のままなら commit・push を停止する。PR本文への事後説明は解除にならない。
+     のままなら該当モードの操作を停止する。PR本文への事後説明は解除にならない。
      例外は、対象・影響・期限を明記した人間のリスク承認を commit・push より前に記録した場合だけ
      とする（mainへのpushには適用しない）
    - この file は生成物。手で編集しない (CI が本文 hash と配布コピー一致で検出する)
    - trusted gate workflow・検査器を変更する場合は、同じPRのhead側だけで承認しない。
      base側のprotected gate比較で停止し、別のtrusted changeとして隔離検証する
-6. local検証とGitHub CIの対応を確認
+6. local検証とGitHub CIの対応を確認（`commit-only` ではGitHub CIの確認を省略し、ローカル検証と未実施項目だけを記録する）
    - 実行したtest、build、lint、adapter検証を列挙する
    - `.github/workflows/`とGitHub上のworkflow/checkを読み取り専用で確認する
    - localだけで実行され、GitHub CIに対応するcheckがない項目を明示する
