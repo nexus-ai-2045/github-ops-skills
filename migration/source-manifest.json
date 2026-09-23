@@ -113,9 +113,9 @@
       "source_root": "shared",
       "source_path": "skills/commit-push-pr/SKILL.md",
       "target_path": "skills/commit-push-pr/SKILL.md",
-      "sha256": "b9f3778ec9232728805110580cfb64f95adb6cd551f5c5997d5f494bc31d08fb",
+      "sha256": "0407cdcaf71b6fce9857d3580d3f018f0eb7d3786424ccc961f9e1888668c280",
       "source_sha256": "afa961848ff3b6e312bc06fcaca3fd1dcd47c73f0280eafb0263863f16896a76",
-      "target_sha256": "b9f3778ec9232728805110580cfb64f95adb6cd551f5c5997d5f494bc31d08fb",
+      "target_sha256": "0407cdcaf71b6fce9857d3580d3f018f0eb7d3786424ccc961f9e1888668c280",
       "normalized": true
     },
     {
@@ -140,9 +140,9 @@
       "source_root": "shared",
       "source_path": "skills/pr-status/SKILL.md",
       "target_path": "skills/pr-status/SKILL.md",
-      "sha256": "078f25688fed85718ec350dd4248b2d77ae050dbb6c2754ac3b4c103a2e256f8",
+      "sha256": "1bbb437bd4199507516be972b336a0d89625032a489ff33e6b859f8f54ab01bc",
       "source_sha256": "5d362536451977d8d63b21c600fe53d3c9b07d0e64f1430f5abfb6ef4bb13bd7",
-      "target_sha256": "078f25688fed85718ec350dd4248b2d77ae050dbb6c2754ac3b4c103a2e256f8",
+      "target_sha256": "1bbb437bd4199507516be972b336a0d89625032a489ff33e6b859f8f54ab01bc",
       "normalized": false
     },
     {
