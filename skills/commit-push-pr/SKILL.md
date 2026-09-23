@@ -17,12 +17,59 @@ description: 変更を commit → push → PR 作成まで扱う。まず操作�
 
 `commit-only` では、push/PR用のlive base fetch、GitHub CI確認、PR本文作成を必須にしない。ローカルhook、secret検査、ratchet、意図したパス限定、差分レビューは維持する。
 
+モード別の進行（他モードの手順へ勝手に入らない）:
+
+- `commit-only`: 手順 1（fetch なし初期化）→ 2〜7a（ローカル commit）→ 8。push / PR 作成はしない
+- `push`: 手順 1（live-base fetch）→ 5 → 7b（push）。手順 2〜4 と 7a の `git commit` は飛ばす
+- `pr`: 手順 1（live-base fetch）→ 5〜6 → 7c（PR 作成）。手順 2〜4・7a・7b は飛ばす
+
+「commit して push して PR」など複数段の依頼は、各段を対応モードで順に実行し、次段へ進む前に境界を確認する。
+
 ## 手順
 
 1. `git status` と、対象モードに入る差分全体で変更内容を確認
-   - `commit-only` は現在の `HEAD` を基準に意図したパスだけを一時 index へ取り込み、fetch なしでレビューする。
-   - `push` / `pr` は下記の live-base fetch を行い、配送対象の差分をレビューする。以下の fetch 用コードブロックは `push` / `pr` のときだけ実行する。
-   - 一時 index に全部 stage して差分を取る。作業ツリーと本物の index は触らない
+   - 一時 index に意図した path だけ stage して差分を取る。作業ツリーと本物の index は触らない
+   - `INTENDED_PATHS` は承認済みの関連ファイルを明示する。未 staged・staged・未 trackedのうち
+     そのpathだけを一時indexへ取り込み、無関係差分やcredential候補をレビュー対象・commit対象へ混ぜない
+   - `REVIEWED_TREE` / `reviewed_head`（および `push` / `pr` の `LIVE_BASE`）は
+     `$(git rev-parse --git-dir)/pr-self-review/` へ書く。手順 7 は承認を挟んだ別 shell で動くので、
+     変数のままでは消える。`.git` 配下なので commit 対象にも `.gitignore` の対象にもならない
+   - 素の `git diff` は未 staged だけ、`git diff "$DIFF_BASE"` は未 tracked を落とす。
+     どちらも手順 7 が扱う範囲より狭く、新規 file が確認を素通りする
+
+   ### 1a. `commit-only`（fetch なし。同じ review state を書く）
+
+   現在の `HEAD` を基準に意図したパスだけを一時 index へ取り込み、fetch なしでレビューする。
+   手順 7a が読む `reviewed_tree` / `reviewed_head` をここで必ず作る（作らないと fresh checkout で
+   `cat: ... reviewed_tree: No such file or directory` になる。前回 run の stale も残さない）。
+
+     ```bash
+     set -Eeuo pipefail
+     STATE="$(git rev-parse --git-dir)/pr-self-review"   # .git配下。commit対象に入らない
+     mkdir -p "$STATE"
+     rm -f "$STATE/reviewed_tree" "$STATE/reviewed_head" "$STATE/live_base"
+
+     INTENDED_PATHS=(<approved path 1> <approved path 2> ...)
+     if ((${#INTENDED_PATHS[@]} == 0)); then echo 'no intended paths'; exit 2; fi
+     TMPIDX_DIR=$(mktemp -d)
+     trap 'rm -rf "$TMPIDX_DIR"' EXIT
+     TMPIDX="$TMPIDX_DIR/index"
+     GIT_INDEX_FILE="$TMPIDX" git read-tree HEAD
+     GIT_INDEX_FILE="$TMPIDX" git add -A -- "${INTENDED_PATHS[@]}"
+     # commit-only の差分基準は現在の HEAD（配送用 base は使わない）
+     GIT_INDEX_FILE="$TMPIDX" git diff --cached HEAD
+     REVIEWED_TREE=$(GIT_INDEX_FILE="$TMPIDX" git write-tree)
+
+     # 手順7aは別shellで動く。変数は消えるのでfileへ残す（live_base は書かない）
+     printf '%s\n' "$REVIEWED_TREE" > "$STATE/reviewed_tree"
+     printf '%s\n' "$(git rev-parse HEAD)" > "$STATE/reviewed_head"
+     printf 'REVIEWED_TREE=%s DIFF_BASE=HEAD\n' "$REVIEWED_TREE"
+     ```
+
+   ### 1b. `push` / `pr`（live-base fetch）
+
+   下記の live-base fetch を行い、配送対象の差分をレビューする。この fetch 用コードブロックは
+   `push` / `pr` のときだけ実行する。
 
      ```bash
      set -Eeuo pipefail
@@ -61,23 +108,15 @@ description: 変更を commit → push → PR 作成まで扱う。まず操作�
      `DIFF_BASE` を空文字にし、`GIT_INDEX_FILE="$TMPIDX" git diff --cached` （base 指定なし）で
      全 file を差分として出し、同じセルフレビューを当てる。`LIVE_BASE` は記録せず、
      PR wrapper も使わない（初回 push に PR は存在しない）
-
-   - `INTENDED_PATHS` は承認済みの関連ファイルを明示する。未 staged・staged・未 trackedのうち
-     そのpathだけを一時indexへ取り込み、無関係差分やcredential候補をレビュー対象・commit対象へ混ぜない
    - `git fetch` を先に通してから `FETCH_HEAD` で解決する。`origin/<base>` の remote-tracking ref は
      古い・single-branch cloneに無い・force-push前を指す、のいずれもありうる。fetch が失敗したら
      `set -Eeuo pipefail` でここで止まる（古い値のままレビュー範囲を決めない）
-   - `REVIEWED_TREE` / `LIVE_BASE` は `$(git rev-parse --git-dir)/pr-self-review/` へ書く。
-     手順 7 は承認を挟んだ別 shell で動くので、変数のままでは消える。
-     `.git` 配下なので commit 対象にも `.gitignore` の対象にもならない
-   - 素の `git diff` は未 staged だけ、`git diff "$DIFF_BASE"` は未 tracked を落とす。
-     どちらも手順 7 が push する範囲より狭く、新規 file が確認を素通りする
-2. `git log --oneline -5` で最近のコミットスタイルを確認
-3. 変更内容を分析してコミットメッセージをドラフト
+2. （`commit-only` のみ）`git log --oneline -5` で最近のコミットスタイルを確認
+3. （`commit-only` のみ）変更内容を分析してコミットメッセージをドラフト
    - repo固有のコミット規約があれば、その規約を優先する
    - 規約がなければ、日本語または英語から変更内容に合う言語を選ぶ
    - Conventional Commitsのtype/scope、コード識別子、API名は英語のままでよい
-4. コミットメッセージを決める。ユーザーが明示的にコミットを依頼済みで、メッセージも具体的なら再確認しない。依頼が「コミットして」だけでメッセージが未指定の場合は、短い案を提示して確認する。
+4. （`commit-only` のみ）コミットメッセージを決める。ユーザーが明示的にコミットを依頼済みで、メッセージも具体的なら再確認しない。依頼が「コミットして」だけでメッセージが未指定の場合は、短い案を提示して確認する。
 5. skill と一緒に配布される `references/pr-self-review.md` のセルフレビューを、手順 1 で取った差分
    （`commit-only` は今回のローカルコミット範囲、`push` / `pr` はこれから配送する範囲。いずれも未 tracked の新規 file を含む）に当てる
    - 複数リポジトリのレビュー指摘を一般化した停止条件 R1〜R14 と、20 項目の確認表
@@ -88,7 +127,7 @@ description: 変更を commit → push → PR 作成まで扱う。まず操作�
    - この file は生成物。手で編集しない (CI が本文 hash と配布コピー一致で検出する)
    - trusted gate workflow・検査器を変更する場合は、同じPRのhead側だけで承認しない。
      base側のprotected gate比較で停止し、別のtrusted changeとして隔離検証する
-6. local検証とGitHub CIの対応を確認（`commit-only` ではGitHub CIの確認を省略し、ローカル検証と未実施項目だけを記録する）
+6. local検証とGitHub CIの対応を確認（`commit-only` ではGitHub CIの確認を省略し、ローカル検証と未実施項目だけを記録する。`push` はローカル検証と配送前確認に留め、PR作成用の CI 不足確認は `pr` で行う）
    - 実行したtest、build、lint、adapter検証を列挙する
    - `.github/workflows/`とGitHub上のworkflow/checkを読み取り専用で確認する
    - localだけで実行され、GitHub CIに対応するcheckがない項目を明示する
@@ -97,17 +136,20 @@ description: 変更を commit → push → PR 作成まで扱う。まず操作�
    - `pr-self-review-trusted.yml` はbase側から候補を監査する advisory であり、PR head SHAに結び付く
      required checkではない。merge許可やrequired設定の証拠として扱わず、人間bootstrap判断を残す
    - 5 または 6 の修正を行ったら、手順 1 の完全差分を取り直し、セルフレビューを最初から再実行する
-   - 最終レビューで、`DIFF_BASE`（差分の共通祖先）と `LIVE_BASE`（fetch 後の `FETCH_HEAD`）を
+   - （`push` / `pr`）最終レビューで、`DIFF_BASE`（差分の共通祖先）と `LIVE_BASE`（fetch 後の `FETCH_HEAD`）を
      分けて記録する。PR wrapperの `--expected-base-sha` には `LIVE_BASE` を使う。あわせて branch、prospective diff、
      `git write-tree` の `REVIEWED_TREE` を記録する。
-     照合は手順 7 が commit の前後で行う（値は `$(git rev-parse --git-dir)/pr-self-review/` 経由で渡す）。
+     照合は手順 7a が commit の前後で行う（値は `$(git rev-parse --git-dir)/pr-self-review/` 経由で渡す）。
      PRのbase SHAが変わった場合は、
      head SHAが同じでも旧レビューを再利用しない。再検査は手順 1 をやり直す
      （新しい base を fetch し直して `DIFF_BASE` / `LIVE_BASE` / `REVIEWED_TREE` を取り直し、
      セルフレビューを最初から実行する）。これは skill 同梱物だけで完結する。
      配布先に `.github/workflows/pr-self-review-trusted.yml` がある場合に限り、
      `workflow_dispatch` にPR番号を渡したbase側監査を追加で回してよい（必須ではない）
-7. 承認されたら:
+7. 承認されたら: **現在のモードの節だけ**を実行する（他節へ入らない）。
+
+   ### 7a. `commit-only` のみ — ローカル commit
+
    - 手順 1 の `INTENDED_PATHS` と同じ path だけを `git add` でステージングする
    - `cc-commit.sh --only` を使う場合、ディレクトリを渡すと scope 外判定が配下 file を個別展開せず
      20 件で打ち切られるため、配下 file が無警告で reset され commit から漏れることがある
@@ -142,7 +184,13 @@ description: 変更を commit → push → PR 作成まで扱う。まず操作�
      手順 7 は別 shell で動き、変数は消えている（空文字と比較して常に停止してしまう）
    - hook を `--no-verify` で無効化しない。ratchet や secret 検査を同時に外すことになる。
      hook に書き換えられたら **commit を巻き戻して手順 1 からやり直す** のが正しい復帰手順
-   - コミット後、`git rev-list --count origin/main..HEAD` で未push数をチェック
+   - commit が終わったら手順 8 へ進む。`commit-only` ではここで push / PR 作成へ進まない
+
+   ### 7b. `push` のみ — 既存コミットの配送
+
+   - `git commit` や新規ステージングはしない（入力は既存コミット）
+   - 対象 OID・remote・branch・権限境界を push 直前に再確認する
+   - `git rev-list --count origin/main..HEAD`（または配送先 tracking）で未push数をチェック
    - 未pushが1件以上 → 「未push {N}件。pushする？」とユーザーに確認（未解決の停止条件があれば確認前に停止）
    - 承認 → **canonical push wrapper があれば必ずそれを経由する**。運用側に push gate を
      置いている環境では、raw `git push` は branch と commit OID の束縛を伴わない直接
@@ -163,11 +211,16 @@ description: 変更を commit → push → PR 作成まで扱う。まず操作�
    - deny されたら手段を変えて再試行しない。canonical wrapper や既定経路が既に無いかを
      先に確認する（正規経路があるのに raw で当たって deny され、人間に手作業を振るのが
      典型的な失敗）
-   - 拒否 → pushスキップ（次のコミット時にまた聞く）
+   - 拒否 → pushスキップして手順 8 へ
    - push失敗（オフライン等） → エラーを伝えて終了（次回に持ち越し）
    - identity 検査が `Invalid revision range <remote>..<local>` で落ちるときは、remote head が
      local に無い。該当 branch を fetch してから再実行する（別 session や GitHub 側の操作で
      同 branch が進んでいる）
+   - push が終わったら手順 8 へ進む。`push` モードではここで PR 作成へ進まない
+
+   ### 7c. `pr` のみ — push 済み対象の PR 作成
+
+   - `git commit` / push はしない（入力は push 済みの head）
    - ブランチの場合、PR title/bodyを日本語でドラフトし、ユーザーへ提示して確認
    - PR title/bodyはUTF-8の一時ファイルへ保存し、shell展開を避けて次のgateを必ず実行する
      `python scripts/check_pr_japanese.py --title-file <title-file> --body-file <body-file> --json`
