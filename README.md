@@ -1,6 +1,28 @@
 # github-ops-skills
 
+**現状:** GitHub 書き込み前に fail-closed で止める Core Suite（公開済み・lockdown 一部完了）。次の人手は required status checks / ruleset 設定と L4 private canary の別承認。
+
 複数の GitHub アカウントと repository を扱うとき、対象・identity・権限・承認を混ぜないための小さな Core Suite です。Codex / Claude / Grok は同じ `skills/` を見ます。書き込み前に fail-closed で止まります。
+
+## クイックスタート
+
+人の手元（Python 3.11 以上）:
+
+```sh
+git clone https://github.com/nexus-ai-2045/github-ops-skills.git
+cd github-ops-skills
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m pytest -q
+```
+
+詳細・Windows・adapter 検証は [CONTRIBUTING.md](CONTRIBUTING.md) です。
+
+この repository を AI に読ませるときは、下の URL を貼ってください。
+
+https://github.com/nexus-ai-2045/github-ops-skills
+
+貼った相手には、先に危険レビューを出してください。削除、GitHub write、visibility 変更、secret の取り扱い、unknown を安全と読まないこと。`READY` やテスト成功は公開承認ではありません。
 
 ## 目的
 
@@ -45,16 +67,6 @@ flowchart TD
 既存 CI（file 側）: `Core Suite CI`（pytest / adapter / skill manifest pointers / ADR 採番 / checker 契約 / visibility claim 等）、`ai-ratchet-gate`、`PR日本語gate`、`PRセルフレビュー（base監査 advisory）`。required status checks は Settings。
 
 やらないこと: visibility 変更の自動化、自動 merge、token の保存、home 設定の書き換え。
-
-## クイックスタート
-
-この repository を AI に読ませるときは、下の URL を貼ってください。
-
-https://github.com/nexus-ai-2045/github-ops-skills
-
-貼った相手には、先に危険レビューを出してください。削除、GitHub write、visibility 変更、secret の取り扱い、unknown を安全と読まないこと。`READY` やテスト成功は公開承認ではありません。
-
-人の手元で pytest を回す手順は [CONTRIBUTING.md](CONTRIBUTING.md) です。
 
 ## 安全境界
 
