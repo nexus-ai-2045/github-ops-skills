@@ -91,3 +91,63 @@ def test_pr_convergence_cli_runs_from_checkout() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout)["code"] == "ready_for_human_decision"
+
+
+def test_unfunded_actions_policy_has_one_canonical_home() -> None:
+    # 「private repo の Actions は課金しない」は運用方針の正本 1 箇所にだけ書く。
+    # 判定器は出力の next_action でそこを指す。pr-convergence-loop/SKILL.md は
+    # shared 由来の hash 固定コピー (migration/source-manifest.json) なので、
+    # ここで方針を書き足すと正本とコピーが分岐する。
+    from github_ops.pr_convergence import ConvergencePhase, _next_action
+
+    ops = (ROOT / "docs" / "operations.md").read_text(encoding="utf-8")
+    skill = SKILL.read_text(encoding="utf-8")
+    assert "## Actions 実行枠" in ops
+    assert "課金しない" in ops
+    assert "not_executed" in ops
+    assert "Actions 実行枠" in _next_action(ConvergencePhase.LOCAL_VERIFICATION)
+    for copied in ("課金しない", "課金しません", "Actions 実行枠", "not_executed", "spending limit"):
+        assert copied not in skill, copied
+
+
+def _cli_payload(**overrides) -> dict:
+    head, base = "a" * 40, "b" * 40
+    payload = {
+        "repository": "nexus-ai-2045/github-ops-skills", "pr_number": 3,
+        "visibility": "PRIVATE", "actor": "a", "expected_actor": "a",
+        "base_ref": "main", "base_sha": base, "head_ref": "feat/x",
+        "head_sha": head, "default_branch": "main", "pr_state": "OPEN",
+        "checks_head_sha": head, "checks_base_sha": base,
+        "unresolved_threads": 0, "thread_audit_head_sha": head,
+        "thread_audit_base_sha": base, "latest_review_head_sha": head,
+        "latest_review_base_sha": base, "latest_review_outcome": "clean",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _decide(payload: dict) -> dict:
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "pr_convergence_decide.py")],
+        input=json.dumps(payload), capture_output=True, text=True,
+        encoding="utf-8", check=False,
+    )
+    return json.loads(completed.stdout)
+
+
+def test_decide_cli_derives_checks_state_from_jobs() -> None:
+    unstarted = {"conclusion": "failure", "runner_id": 0, "steps": []}
+    out = _decide(_cli_payload(ci_jobs=[unstarted], workflow_files_changed=False))
+    assert out["code"] == "ci_not_executed"
+    out = _decide(_cli_payload(ci_jobs=[unstarted], workflow_files_changed=True))
+    assert out["code"] == "ci_not_successful"
+
+
+def test_decide_cli_rejects_ambiguous_ci_inputs() -> None:
+    unstarted = {"conclusion": "failure", "runner_id": 0, "steps": []}
+    # jobs を渡すなら workflow 変更有無は必須。checks_state との併用は不可。
+    assert _decide(_cli_payload(ci_jobs=[unstarted]))["code"] == "invalid_snapshot"
+    both = _cli_payload(
+        ci_jobs=[unstarted], workflow_files_changed=False, checks_state="success"
+    )
+    assert _decide(both)["code"] == "invalid_snapshot"
