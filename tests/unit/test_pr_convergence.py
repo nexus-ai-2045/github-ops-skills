@@ -150,3 +150,97 @@ def test_review_must_match_exact_base() -> None:
     result = decide_next_step(snapshot(latest_review_base_sha="c" * 40))
     assert result.code == "latest_review_base_mismatch"
     assert result.status.value == "UNKNOWN"
+
+
+# --- CI が起動しなかった場合 (Actions 実行枠なし) --------------------------
+# private repo の Actions は課金しない方針 (docs/operations.md
+# 「Actions 実行枠」)。無料枠が尽きると job は runner に割り当てられず、
+# steps なしで数秒後に failure になる。これはコードの失敗ではない。
+# NEEDS_REPAIR (コードを直せ) に落とすと、存在しない不具合を探し回るか、
+# 課金を人間に何度も問い直すことになる。
+
+
+def test_not_executed_ci_is_local_verification_not_repair() -> None:
+    result = decide_next_step(snapshot(checks_state="not_executed"))
+    assert result.status.value == "BLOCKED"
+    assert result.code == "ci_not_executed"
+    assert result.evidence["phase"] == "LOCAL_VERIFICATION"
+    assert "手元" in result.recovery
+    assert "課金" in result.recovery
+
+
+def _job(conclusion: str, *, runner_id: int = 7, steps: int = 3) -> dict:
+    return {
+        "conclusion": conclusion,
+        "runner_id": runner_id,
+        "steps": [{"name": f"s{i}"} for i in range(steps)],
+    }
+
+
+def test_checks_state_from_jobs_detects_unstarted_failures() -> None:
+    from github_ops.pr_convergence import checks_state_from_jobs
+
+    unstarted = _job("failure", runner_id=0, steps=0)
+    assert checks_state_from_jobs([unstarted, unstarted]) == "not_executed"
+
+
+def test_checks_state_from_jobs_keeps_real_failures_as_failure() -> None:
+    from github_ops.pr_convergence import checks_state_from_jobs
+
+    # 1 本でも実際に走って落ちた job があれば、それはコードの失敗として扱う。
+    unstarted = _job("failure", runner_id=0, steps=0)
+    assert checks_state_from_jobs([unstarted, _job("failure")]) == "failure"
+    assert checks_state_from_jobs([_job("failure")]) == "failure"
+
+
+def test_checks_state_from_jobs_success_and_pending() -> None:
+    from github_ops.pr_convergence import checks_state_from_jobs
+
+    assert checks_state_from_jobs([_job("success"), _job("skipped")]) == "success"
+    assert checks_state_from_jobs([_job("success"), _job(None)]) == "pending"
+    assert checks_state_from_jobs([]) == "pending"
+
+
+# --- 独立 review (adversarial) の指摘に対するラチェット ----------------------
+
+
+def test_missing_fields_are_not_evidence_of_unstarted() -> None:
+    from github_ops.pr_convergence import checks_state_from_jobs
+
+    # job field を持たない payload (check-runs 等) を「起動なし」と読まない。
+    assert checks_state_from_jobs([{"conclusion": "failure"}]) == "failure"
+    assert checks_state_from_jobs(
+        [{"conclusion": "failure", "runner_id": None}]
+    ) == "failure"
+
+
+def test_only_plain_failure_can_be_unstarted() -> None:
+    from github_ops.pr_convergence import checks_state_from_jobs
+
+    for conclusion in ("startup_failure", "action_required", "timed_out", "stale"):
+        job = _job(conclusion, runner_id=0, steps=0)
+        assert checks_state_from_jobs([job]) == "failure", conclusion
+
+
+def test_cancelled_job_waits_instead_of_counting_as_unstarted() -> None:
+    from github_ops.pr_convergence import checks_state_from_jobs
+
+    cancelled = {"conclusion": "cancelled", "runner_id": 0, "steps": []}
+    assert checks_state_from_jobs([_job("success"), cancelled]) == "pending"
+
+
+def test_workflow_change_in_pr_is_never_unstarted() -> None:
+    from github_ops.pr_convergence import checks_state_from_jobs
+
+    # PR 自身が workflow を壊しても runner なしで落ちる。課金と区別できない。
+    unstarted = _job("failure", runner_id=0, steps=0)
+    assert (
+        checks_state_from_jobs([unstarted], workflow_files_changed=True) == "failure"
+    )
+
+
+def test_not_executed_still_requires_same_head_ci_evidence() -> None:
+    result = decide_next_step(
+        snapshot(checks_state="not_executed", checks_head_sha="c" * 40)
+    )
+    assert result.code == "checks_head_mismatch"

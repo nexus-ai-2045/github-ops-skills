@@ -11,6 +11,7 @@ class ConvergencePhase(StrEnum):
     PREFLIGHT = "PREFLIGHT"
     NEEDS_REPAIR = "NEEDS_REPAIR"
     CI_WAIT = "CI_WAIT"
+    LOCAL_VERIFICATION = "LOCAL_VERIFICATION"
     LATEST_HEAD_REVIEW = "LATEST_HEAD_REVIEW"
     EXTERNAL_REVIEW_PENDING = "EXTERNAL_REVIEW_PENDING"
     READY_FOR_HUMAN_DECISION = "READY_FOR_HUMAN_DECISION"
@@ -40,6 +41,49 @@ class ConvergenceSnapshot:
     latest_review_outcome: str | None
     repair_cycles: int = 0
     same_failure_count: int = 0
+
+
+def checks_state_from_jobs(
+    jobs: list[dict], *, workflow_files_changed: bool = False
+) -> str:
+    """Actions job の一覧から checks_state を決める。
+
+    ``not_executed`` は「runner に割り当てられず起動しなかった」を表し、
+    コードの失敗ではない (docs/operations.md「Actions 実行枠」)。誤って
+    修正を省くと fail-open になるので、積極的な証拠がそろうときだけ返す:
+
+    - conclusion がちょうど ``failure``
+    - ``runner_id`` の key があり、値が ``0``
+    - ``steps`` が無いか空
+    - PR が ``.github/workflows`` を変えていない。PR 自身が workflow を
+      壊した場合も runner なしで落ち、課金と区別できないため
+
+    1 本でも実際に走って落ちた job があれば ``failure``。
+    ``cancelled`` は後続 push 等で打ち切られたものとして ``pending``。
+    """
+    if not jobs or any(job.get("conclusion") is None for job in jobs):
+        return "pending"
+    failed = [
+        job
+        for job in jobs
+        if job.get("conclusion") not in {"success", "skipped", "neutral"}
+    ]
+    if not failed:
+        return "success"
+    if all(job.get("conclusion") == "cancelled" for job in failed):
+        return "pending"
+    if not workflow_files_changed and all(_is_unstarted(job) for job in failed):
+        return "not_executed"
+    return "failure"
+
+
+def _is_unstarted(job: dict) -> bool:
+    return (
+        job.get("conclusion") == "failure"
+        and "runner_id" in job
+        and job["runner_id"] == 0
+        and not job.get("steps")
+    )
 
 
 def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
@@ -139,7 +183,7 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     if snapshot.checks_state == "pending":
         return _outcome(Status.UNKNOWN, "ci_pending", ConvergencePhase.CI_WAIT,
                         "同一headのCIが完了していません", evidence)
-    if snapshot.checks_state != "success":
+    if snapshot.checks_state not in {"success", "not_executed"}:
         return _outcome(Status.BLOCKED, "ci_not_successful", ConvergencePhase.NEEDS_REPAIR,
                         "同一headのCIが成功していません", evidence)
     if snapshot.checks_head_sha != snapshot.head_sha:
@@ -148,6 +192,9 @@ def decide_next_step(snapshot: ConvergenceSnapshot) -> Outcome:
     if snapshot.checks_base_sha != snapshot.base_sha:
         return _outcome(Status.UNKNOWN, "checks_base_mismatch", ConvergencePhase.CI_WAIT,
                         "CI証拠を同一base SHAへ束縛できません", evidence)
+    if snapshot.checks_state == "not_executed":
+        return _outcome(Status.BLOCKED, "ci_not_executed", ConvergencePhase.LOCAL_VERIFICATION,
+                        "CI jobがrunnerに割り当てられず起動していません", evidence)
     if (
         not isinstance(snapshot.unresolved_threads, int)
         or isinstance(snapshot.unresolved_threads, bool)
@@ -209,6 +256,10 @@ def _next_action(phase: ConvergencePhase) -> str:
         ConvergencePhase.PREFLIGHT: "snapshotと安全境界を再取得してください",
         ConvergencePhase.NEEDS_REPAIR: "指摘を独立検証し、TDDで修正してください",
         ConvergencePhase.CI_WAIT: "bounded budget内で同一headのCIを再取得してください",
+        ConvergencePhase.LOCAL_VERIFICATION: (
+            "同一headでCIと同じ検査を手元で実行し、結果をPRに記録してください。"
+            "コード修正も課金の問い直しもしません (docs/operations.md「Actions 実行枠」)"
+        ),
         ConvergencePhase.LATEST_HEAD_REVIEW: "review threadを再監査してください",
         ConvergencePhase.EXTERNAL_REVIEW_PENDING: "同一headのreviewを1回だけ待機してください",
         ConvergencePhase.READY_FOR_HUMAN_DECISION: "merge判断を人間へ提示してください",

@@ -11,8 +11,35 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from github_ops.pr_convergence import ConvergenceSnapshot, decide_next_step
+from github_ops.pr_convergence import (
+    ConvergenceSnapshot,
+    checks_state_from_jobs,
+    decide_next_step,
+)
 from github_ops.output import configure_utf8_stdout
+
+
+def _resolve_ci(payload: dict) -> dict:
+    """``ci_jobs`` (Actions Jobs API の job 一覧) から checks_state を導く。
+
+    jobs を渡す場合は ``workflow_files_changed`` (bool) が必須で、
+    ``checks_state`` との併用は曖昧なので拒否する。
+    """
+    if "ci_jobs" not in payload:
+        return payload
+    payload = dict(payload)
+    jobs = payload.pop("ci_jobs")
+    changed = payload.pop("workflow_files_changed", None)
+    if "checks_state" in payload:
+        raise ValueError("ci_jobsとchecks_stateは併用できません")
+    if not isinstance(jobs, list) or not all(isinstance(j, dict) for j in jobs):
+        raise ValueError("ci_jobsはobjectの配列である必要があります")
+    if not isinstance(changed, bool):
+        raise ValueError("ci_jobsにはworkflow_files_changed(bool)が必要です")
+    payload["checks_state"] = checks_state_from_jobs(
+        jobs, workflow_files_changed=changed
+    )
+    return payload
 
 
 def main() -> int:
@@ -25,7 +52,7 @@ def main() -> int:
         payload = json.loads(raw)
         if not isinstance(payload, dict):
             raise ValueError("snapshotはJSON objectである必要があります")
-        outcome = decide_next_step(ConvergenceSnapshot(**payload))
+        outcome = decide_next_step(ConvergenceSnapshot(**_resolve_ci(payload)))
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
         print(json.dumps({
             "status": "UNKNOWN",

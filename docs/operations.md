@@ -57,6 +57,28 @@ python scripts/github_remote_branch_audit.py \
 保持します。削除やGitHub設定変更は実行しません。API応答・identity・JSONが確認できない
 場合は `UNKNOWN` として停止します。
 
+## Actions 実行枠
+
+private repo の GitHub Actions は**課金しない**方針です（owner 判断、2026-09-24）。
+無料枠を使い切ると、job は runner に割り当てられず、steps が 1 つも無いまま
+数秒で failure になります。log は取得できません（404）。これはコードの失敗でも
+flake でもありません。public repo の Actions は無料枠の対象外なので影響しません。
+
+この状態では次のように扱います。
+
+- `pr_convergence.checks_state_from_jobs`（`pr_convergence_decide.py` に `ci_jobs` と
+  `workflow_files_changed` を渡すと使われます）が、失敗 job が全部「conclusion が
+  `failure`・`runner_id` が `0`・steps なし」なら `not_executed` を返します。
+  1 本でも実際に走って落ちた job があれば `failure`、`cancelled` だけなら待機です。
+- PR が `.github/workflows` を変えている場合は `not_executed` にしません。workflow を
+  壊した PR も runner なしで落ち、課金による未起動と区別できないためです。
+- `not_executed` は `ci_not_executed` / `LOCAL_VERIFICATION` になります。同じ head で
+  CI と同じ検査を手元で実行し、コマンドと結果を PR に記録します。
+- コード修正（`NEEDS_REPAIR`）には進みません。課金・spending limit・visibility 変更を
+  人間に問い直しません。枠は請求日にリセットされます。
+- 手元検査は CI の代わりの証拠であり、CI が通ったことにはしません。PR にその旨を書きます。
+- merge は従来どおり人間判断です。
+
 ## L3 読み取り専用の実環境検証
 
 通常確認は`python scripts/run_read_only_e2e.py --json`で行います。GitHubの設定変更、
