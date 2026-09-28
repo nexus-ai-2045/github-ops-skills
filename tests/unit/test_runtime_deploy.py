@@ -37,7 +37,7 @@ def test_plan_reports_drift_without_writing(tmp_path: Path) -> None:
     result = plan_skills(repo, target, runtime="codex", selected_skills=["demo"])
 
     assert result["status"] == "drift"
-    assert result["summary"] == {"match": 0, "drift": 0, "missing": 2}
+    assert result["summary"] == {"match": 0, "drift": 0, "missing": 3}
     assert not (target / "demo").exists()
 
 
@@ -62,6 +62,9 @@ def test_deploy_preserves_unmanaged_files_and_writes_receipt(tmp_path: Path) -> 
     assert result["status"] == "verified"
     assert (demo / "SKILL.md").read_text(encoding="utf-8") == "new skill\n"
     assert (demo / "references" / "contract.md").is_file()
+    marker = json.loads((demo / ".github-ops-projection.json").read_text(encoding="utf-8"))
+    assert marker["owner_repository"] == "nexus-ai-2045/github-ops-skills"
+    assert marker["managed_files"]["SKILL.md"]
     assert (demo / "local-note.md").read_text(encoding="utf-8") == "preserve\n"
     receipt = json.loads(Path(result["receipt_path"]).read_text(encoding="utf-8"))
     assert receipt["approval_ref"] == "test-approval"
@@ -89,6 +92,7 @@ def test_rollback_restores_old_and_removes_new_managed_files(tmp_path: Path) -> 
     assert rolled_back["status"] == "rolled_back"
     assert (demo / "SKILL.md").read_text(encoding="utf-8") == "old skill\n"
     assert not (demo / "references" / "contract.md").exists()
+    assert not (demo / ".github-ops-projection.json").exists()
 
 
 def test_deploy_requires_explicit_confirmation(tmp_path: Path) -> None:

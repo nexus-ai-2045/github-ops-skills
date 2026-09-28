@@ -21,6 +21,10 @@ from .skill_drift import (
 )
 
 
+PROJECTION_MARKER = ".github-ops-projection.json"
+OWNER_REPOSITORY = "nexus-ai-2045/github-ops-skills"
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -84,6 +88,48 @@ def _managed_files(
             )
     if not entries:
         raise ValueError(f"no managed files for runtime: {runtime}")
+    for skill in sorted({entry["skill"] for entry in entries}):
+        managed = {
+            entry["relative_path"]: entry["source_sha256"]
+            for entry in entries
+            if entry["skill"] == skill
+        }
+        content = (
+            json.dumps(
+                {
+                    "schema_version": "github-ops-skill-projection/v1",
+                    "owner_repository": OWNER_REPOSITORY,
+                    "skill": skill,
+                    "runtime": runtime,
+                    "managed_files": managed,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+        destination = target_root / skill / PROJECTION_MARKER
+        destination_hash = sha256_file(destination) if destination.is_file() else None
+        marker_hash = hashlib.sha256(content).hexdigest()
+        entries.append(
+            {
+                "skill": skill,
+                "relative_path": PROJECTION_MARKER,
+                "source": None,
+                "content": content,
+                "destination": destination,
+                "source_sha256": marker_hash,
+                "destination_sha256": destination_hash,
+                "status": (
+                    "missing"
+                    if destination_hash is None
+                    else "match"
+                    if destination_hash == marker_hash
+                    else "drift"
+                ),
+            }
+        )
     return entries
 
 
@@ -207,7 +253,10 @@ def deploy_skills(
             with tempfile.NamedTemporaryFile(
                 dir=destination.parent, prefix=f".{destination.name}.", delete=False
             ) as handle:
-                handle.write(Path(entry["source"]).read_bytes())
+                content = entry.get("content")
+                handle.write(
+                    content if isinstance(content, bytes) else Path(entry["source"]).read_bytes()
+                )
                 temporary = Path(handle.name)
             os.replace(temporary, destination)
 
