@@ -201,6 +201,8 @@ def compare_skill_roots(
                 if not (candidate.is_file() or candidate.is_symlink()):
                     continue
                 relative = candidate.relative_to(local_skill_root).as_posix()
+                if relative == ".github-ops-projection.json":
+                    continue
                 if relative in expected_local_paths:
                     continue
                 try:
