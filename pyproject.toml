@@ -14,6 +14,9 @@ github-ops-check-pr-japanese = "github_ops.cli:check_pr_japanese_main"
 github-ops-create-pr = "github_ops.cli:create_pr_main"
 github-ops-deploy-skills = "github_ops.runtime_deploy:main"
 
+[tool.setuptools.package-data]
+github_ops = ["schemas/*.yaml"]
+
 [project.optional-dependencies]
 dev = ["pytest>=8.3,<9"]
 
