@@ -80,8 +80,4 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def _default_schema_path() -> Path:
-    return (
-        Path(__file__).resolve().parents[2]
-        / "schemas"
-        / "account-repo-map.schema.yaml"
-    )
+    return Path(__file__).resolve().with_name("schemas") / "account-repo-map.schema.yaml"
