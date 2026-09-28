@@ -53,9 +53,7 @@ class CommandRunner:
         if scoped_env:
             env.update(scoped_env)
         creationflags = (
-            getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            if self._os_name == "nt"
-            else 0
+            getattr(subprocess, "CREATE_NO_WINDOW", 0) if self._os_name == "nt" else 0
         )
         try:
             completed = self._run_impl(
@@ -63,10 +61,9 @@ class CommandRunner:
                 cwd=cwd,
                 env=env,
                 capture_output=True,
-                input=input_text,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+                # Windows の text mode による LF -> CRLF 変換を避け、
+                # PR 本文などの入力を UTF-8 bytes としてそのまま渡す。
+                input=input_text.encode("utf-8") if input_text is not None else None,
                 check=False,
                 timeout=timeout,
                 creationflags=creationflags,
@@ -89,12 +86,25 @@ class CommandRunner:
                 stderr=redact(f"{type(exc).__name__}: {exc}"),
                 failure=CommandFailure.EXECUTION_FAILED,
             )
+        # 注入された runner が返す str も受け入れ、公開 API は str を維持する。
+        stdout = completed.stdout or ""
+        stderr = completed.stderr or ""
+        # 出力は従来の text mode と同じ改行正規化を維持する。
+        # 注入 runner の str は既に処理済みの返り値なので再変換しない。
+        if isinstance(stdout, bytes):
+            stdout = (
+                stdout.decode("utf-8", errors="replace")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+            )
+        if isinstance(stderr, bytes):
+            stderr = (
+                stderr.decode("utf-8", errors="replace")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+            )
         return CommandResult(
             returncode=completed.returncode,
-            stdout=(
-                redact(completed.stdout or "")
-                if redact_stdout
-                else (completed.stdout or "")
-            ),
-            stderr=redact(completed.stderr or ""),
+            stdout=(redact(stdout) if redact_stdout else stdout),
+            stderr=redact(stderr),
         )
