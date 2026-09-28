@@ -28,6 +28,26 @@ class AccountMap:
     def resolve(self, repository: str) -> AccountResolution:
         repo_entry = self.repositories.get(repository)
         if repo_entry is None:
+            owner, separator, _ = repository.partition("/")
+            if not separator or not owner:
+                raise AccountMapError(f"repository is not mapped: {repository}")
+            owner_matches = [
+                (label, account)
+                for label, account in self.accounts.items()
+                if account.get("expected_login") == owner
+            ]
+            if len(owner_matches) == 1:
+                label, account = owner_matches[0]
+                return AccountResolution(
+                    repository=repository,
+                    account_label=label,
+                    expected_owner=owner,
+                    expected_login=account["expected_login"],
+                )
+            if len(owner_matches) > 1:
+                raise AccountMapError(
+                    f"repository owner matches multiple accounts: {repository}"
+                )
             raise AccountMapError(f"repository is not mapped: {repository}")
         label = repo_entry["account"]
         account = self.accounts.get(label)
