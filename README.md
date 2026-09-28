@@ -24,6 +24,20 @@ https://github.com/nexus-ai-2045/github-ops-skills
 
 貼った相手には、先に危険レビューを出してください。削除、GitHub write、visibility 変更、secret の取り扱い、unknown を安全と読まないこと。`READY` やテスト成功は公開承認ではありません。
 
+ローカルruntimeへ導入する場合は、packageを隔離toolとして入れ、先にplanを確認します。
+
+```powershell
+uv tool install --from . github-ops-skills
+github-ops-deploy-skills plan --repo . --runtime codex --target-root ~/.codex/skills --json
+```
+
+実配布はbackup先・承認参照・`--confirm`を必須にします。Claude／Grokも同じcommandでruntimeとtarget rootだけを変えます。配布後は`skill_drift_check.py`でSSOTとの一致を再確認します。
+
+```powershell
+github-ops-deploy-skills deploy --repo . --runtime codex --target-root ~/.codex/skills --backup-root ~/.local/share/github-ops-skills/backups --approval-ref <承認参照> --confirm --json
+github-ops-deploy-skills rollback --receipt <receipt.json> --json
+```
+
 ## 目的
 
 GitHub へ書く直前に、今どの owner の、どの repo に触ろうとしているかを identity と remote から確定します。write 権限の有無は照会しません。確定できない操作は実行しません。
