@@ -197,7 +197,7 @@ description: 変更を commit → push → PR 作成まで扱う。まず操作�
      呼出しとして既定 policy に落ち、code を含む変更が deny される。wrapper は current
      branch と OID を gate へ渡すため、同じ commit でも branch push が通る
      （実測: 同一 commit で raw push は scope policy deny、wrapper 経由は ALLOW）。
-     - **発見方法**: ホーム直下の固定相対 path `~/Projects/shared/scripts/cc-push-resolved.sh`
+     - **発見方法**: ホーム直下の固定相対 path `$HOME/Projects/shared/scripts/cc-push-resolved.sh`
        を存在確認する（`skills/new-repo-bootstrap/scripts/bootstrap_repo.py` の
        `DEFAULT_PUSH_WRAPPER` と同じ契約。環境変数で経路を上書きする仕組みはない）。
        存在すれば wrapper あり、無ければ wrapper 無しと確定させ、
