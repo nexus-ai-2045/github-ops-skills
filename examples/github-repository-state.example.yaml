@@ -1,0 +1,10 @@
+schema_version: github-ops/repository-state/v1
+repository: nexus-ai-2045/example-private-repo
+settings:
+  visibility: PRIVATE
+  default_branch: main
+  description: Gitで管理するGitHub repository設定の例
+  issues_enabled: true
+  wiki_enabled: false
+  discussions_enabled: false
+  projects_enabled: false
