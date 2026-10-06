@@ -3,9 +3,11 @@
 
 置き場所の固定、commit 名義の設定、公開前文書の雛形、repo-preflight 検査、
 owner の token だけを使った GitHub 作成、公開直後の lockdown、canonical wrapper 経由の
-作業 branch push と API による main 昇格、台帳への登録、作成結果の read-back を順番に行う。
+作業 branch push と API による main 昇格、作成結果の read-back、台帳登録 branch の commit を順番に行う。
 
 - 既定は preflight のみ (read-only)。`--confirm` が無い限り何も書かない。
+- 台帳を持つ repository の main checkout には書かない。origin/main から切った専用 worktree の branch に
+  commit するところまでを行い、その branch の push と PR は SKILL の手順で canonical wrapper から出す。
 - global の `gh` active account は切り替えない。owner の token を対象 process の env にだけ渡す。
 - token を file・引数・出力へ残さない。
 - main へ直接 push しない。`bootstrap/init` branch を push し、GitHub API でその commit から main を作る
@@ -34,6 +36,13 @@ DEFAULT_LOCAL_ROOT = WORKSPACE_ROOT / "Documents/.repos/nexus_ai"
 DEFAULT_REGISTRY = Path("Projects/Documents/references/github-account-repo-map.md")
 DEFAULT_PUSH_WRAPPER = Path("Projects/shared/scripts/cc-push-resolved.sh")
 REGISTRY_ANCHOR = "| 公開協業 repo 全般"
+# 台帳を持つ workspace repository 側の約束。登録は origin/main から切った専用 worktree の branch に commit する
+REGISTER_BRANCH_PREFIX = "bootstrap/register-"
+REGISTER_WORKTREE_DIR = ".worktrees"                     # main checkout 直下。.gitignore 済みであること
+REGISTRY_COMMIT_WRAPPER = "shared/scripts/cc-commit.sh"  # commit 入口。登録用 worktree にある版を使う
+REGISTRY_COMMIT_TARGET = "projects"                      # commit 入口の第 1 引数
+REGISTRY_COMMIT_DIR_ENV = "CC_COMMIT_PROJECTS_DIR"       # commit 入口に worktree を指定する env
+REGISTRATION_NEXT = "台帳登録の branch を canonical wrapper で push し、PR を作る (SKILL の「台帳登録を PR にして」)"
 INIT_BRANCH = "bootstrap/init"
 SCAN_REQUIRED_CHECKS = ("required_documents", "secret_scan", "personal_path_scan", "commit_identity")
 SCAN_ACCEPTED = {"pass", "not_applicable"}
@@ -41,7 +50,7 @@ NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 SCAFFOLD_ORDER = ("LICENSE", "README.md", "SECURITY.md", "PREFLIGHT.md", "CONTRIBUTING.md", ".gitignore")
 STEP_ORDER = (
     "prepare_local", "set_identity", "scaffold_docs", "initial_commit", "readiness_scan",
-    "create_remote", "lockdown", "add_remote", "push", "promote_main", "register", "verify",
+    "create_remote", "lockdown", "add_remote", "push", "promote_main", "verify", "register",
 )
 
 
@@ -240,9 +249,23 @@ def registry_row(plan: Plan, *, today: date) -> str:
     )
 
 
+def _registry_marker(key: str) -> str:
+    return f"| `{key}`"
+
+
+def registry_has_key(text: str, key: str) -> bool:
+    return any(line.startswith(_registry_marker(key)) for line in text.splitlines())
+
+
+def register_names(plan: Plan) -> tuple[str, str]:
+    """登録用 worktree の directory 名と branch 名。owner を含め、別 owner の同名 repo と混ざらないようにする。"""
+    slug = f"{plan.owner}-{plan.name}"
+    return f"register-{slug}", REGISTER_BRANCH_PREFIX + slug
+
+
 def insert_registry_row(text: str, row: str, *, key: str) -> str | None:
     """`key` (owner/name) の行があれば置き換え、無ければ anchor の直前に入れる。anchor が無ければ None。"""
-    marker = f"| `{key}`"
+    marker = _registry_marker(key)
     lines = text.splitlines(keepends=True)
     for index, line in enumerate(lines):
         if line.startswith(marker):
@@ -270,10 +293,59 @@ class Bootstrapper:
         self.skip_push = skip_push    # push を別経路で済ませた時だけ。verify が main の実在と sha を確認する
         self._token: str | None = None
         self._remote: dict[str, Any] | None = None   # gh repo view の結果 (存在する時)
+        self.registration: dict[str, Any] | None = None   # 台帳の登録 branch (push と PR はまだ)
 
     # -- helpers --
     def _git(self, *args: str) -> tuple[int, str, str]:
         return self.runner.run(["git", *args], cwd=str(self.plan.repo_dir))
+
+    def _git_at(self, directory: Path, *args: str, timeout: int = 60) -> tuple[int, str, str]:
+        return self.runner.run(["git", "-C", str(directory), *args], timeout=timeout)
+
+    def _registry_layout(self) -> tuple[Path | None, str]:
+        """台帳 file を持つ repository の main checkout root と、その中での相対 path。分からなければ (None, "")。"""
+        registry = self.plan.registry_file
+        assert registry is not None
+        rc, top, _ = self._git_at(registry.parent, "rev-parse", "--show-toplevel")
+        rc_common, common, _ = self._git_at(registry.parent, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        common_dir = Path(common.strip())
+        # main checkout の root は <root>/.git の親。submodule / separate-git-dir / bare は対象外にする
+        if rc != 0 or rc_common != 0 or not top.strip() or common_dir.name != ".git":
+            return None, ""
+        try:
+            rel = registry.resolve().relative_to(Path(top.strip()).resolve()).as_posix()
+        except ValueError:
+            return None, ""
+        return common_dir.parent, rel
+
+    def _register_target(self, root: Path) -> tuple[Path, str]:
+        directory, branch = register_names(self.plan)
+        return root / REGISTER_WORKTREE_DIR / directory, branch
+
+    def _check_registry(self) -> str:
+        """台帳を origin/main から切った branch で commit できるか。repo を作ってから register で止まる主な原因を先に見る。"""
+        if self.plan.registry_file is None:
+            return "skipped"
+        root, rel = self._registry_layout()
+        if root is None:
+            return "not_git"
+        if self._git_at(root, "rev-parse", "--verify", "-q", "origin/main")[0] != 0:
+            return "no_origin_main"
+        rc, text, _ = self._git_at(root, "show", f"origin/main:{rel}")
+        if rc != 0:
+            return "registry_not_on_origin_main"
+        if REGISTRY_ANCHOR not in text and not registry_has_key(text, self.plan.nwo):
+            return "registry_anchor_missing"
+        if self._git_at(root, "cat-file", "-e", f"origin/main:{REGISTRY_COMMIT_WRAPPER}")[0] != 0:
+            return "commit_wrapper_missing"
+        worktree, _ = self._register_target(root)
+        if self._git_at(root, "check-ignore", "-q", worktree.relative_to(root).as_posix())[0] != 0:
+            return "worktree_dir_not_ignored"
+        return "ok"
+
+    def _main_checkout_state(self, root: Path, rel: str) -> tuple[str, str]:
+        """main checkout の HEAD と台帳 file の状態。登録の前後で変わってはいけない。"""
+        return self._git_at(root, "rev-parse", "HEAD")[1], self._git_at(root, "status", "--porcelain", "--", rel)[1]
 
     def _gh(self, *args: str) -> tuple[int, str, str]:
         assert self._token, "token を先に解決する"
@@ -347,7 +419,7 @@ class Bootstrapper:
 
         checks["preflight_script"] = "ok" if self.plan.preflight_script else ("skipped" if self.allow_no_preflight else "missing")
         checks["push_wrapper"] = "ok" if self.plan.push_wrapper else "missing"
-        checks["registry_file"] = "ok" if self.plan.registry_file else "skipped"
+        checks["registry_file"] = self._check_registry()
 
         blocking = (
             checks["token_login"] != "ok"
@@ -356,6 +428,7 @@ class Bootstrapper:
             or (checks["remote_absent"] == "exists_resume" and checks["local_dir"] != "origin_matches")
             or checks["commit_identity"] == "mismatch"
             or checks["preflight_script"] == "missing"
+            or checks["registry_file"] not in {"ok", "skipped"}
         )
         return {"status": "BLOCKED" if blocking else "READY", "checks": checks, "plan": self._plan_view()}
 
@@ -368,6 +441,10 @@ class Bootstrapper:
             "push_wrapper": p.tilde(p.push_wrapper) if p.push_wrapper else None,
             "preflight_script": p.tilde(p.preflight_script) if p.preflight_script else None,
             "push_strategy": f"{INIT_BRANCH} を wrapper で push → API で main を作成・既定化 → {INIT_BRANCH} を削除",
+            "registration_strategy": (
+                f"台帳 repo の origin/main から {REGISTER_WORKTREE_DIR}/{register_names(p)[0]} を作り、"
+                f"{register_names(p)[1]} に行を commit する (main checkout には書かない)。{REGISTRATION_NEXT}"
+            ),
         }
 
     # -- execute (writes; fail-closed) --
@@ -397,6 +474,9 @@ class Bootstrapper:
             if not record(name, status, detail):
                 return report
         report["status"] = "READY"
+        if self.registration is not None:
+            report["registration"] = self.registration
+            report["next"] = REGISTRATION_NEXT
         return report
 
     def _prepare_local(self) -> tuple[str, str]:
@@ -532,16 +612,84 @@ class Bootstrapper:
         return "ok", f"main = {sha[:12]} (default), {INIT_BRANCH} 削除, origin/main を追跡"
 
     def _register(self) -> tuple[str, str]:
+        """台帳の行を、台帳 repo の origin/main から切った専用 worktree の branch に commit する。
+
+        台帳 repo の main checkout は読む専用で、そこへ書くと誰も commit しない差分が残る。
+        push と PR は外部送信なので、この script では行わず canonical wrapper から出す (REGISTRATION_NEXT)。
+        """
         registry = self.plan.registry_file
         if registry is None:
             return "skipped", "registry file 未指定"
-        text = registry.read_text(encoding="utf-8")
-        updated = insert_registry_row(text, registry_row(self.plan, today=self.today), key=self.plan.nwo)
-        if updated is None:
-            return "fail", f"registry anchor '{REGISTRY_ANCHOR}' が見つからない"
-        if updated != text:
-            registry.write_text(updated, encoding="utf-8")
-        return "ok", self.plan.tilde(registry)
+        root, rel = self._registry_layout()
+        if root is None:
+            return "fail", f"台帳の main checkout を特定できない: {self.plan.tilde(registry)}"
+        rc, _, err = self._git_at(root, "fetch", "-q", "origin", "main", timeout=300)
+        if rc != 0:
+            return "fail", "台帳 repo の origin/main を取得できない: " + err.strip()[-300:]
+        rc, base_text, err = self._git_at(root, "show", f"origin/main:{rel}")
+        if rc != 0:
+            return "fail", f"origin/main に台帳 {rel} が無い: " + err.strip()
+        if registry_has_key(base_text, self.plan.nwo):
+            return "skipped", f"{self.plan.nwo} は origin/main の台帳に登録済み"
+        worktree, branch = self._register_target(root)
+        status, detail = self._ensure_register_worktree(root, worktree, branch)
+        if status != "ok":
+            return status, detail
+        before = self._main_checkout_state(root, rel)
+        status, detail = self._commit_registry_row(worktree, rel)
+        if status != "ok":
+            return status, detail
+        if self._main_checkout_state(root, rel) != before:
+            return "fail", "台帳 repo の main checkout が登録の前後で変わった (commit 入口が worktree の外に書いた)。push しない"
+        rc, names, err = self._git_at(worktree, "diff", "-z", "--name-only", "origin/main...HEAD")
+        changed = [name for name in names.split("\0") if name]
+        if rc != 0 or changed != [rel]:
+            return "fail", f"登録 branch の差分が台帳 1 file になっていない (push しない): {changed or err.strip()}"
+        rc, sha, err = self._git_at(worktree, "rev-parse", "HEAD")
+        if rc != 0 or not sha.strip():
+            return "fail", "登録 branch の HEAD を取れない: " + err.strip()
+        sha = sha.strip()
+        self.registration = {
+            "workspace_repo": self.plan.tilde(root), "worktree": self.plan.tilde(worktree),
+            "branch": branch, "commit": sha, "file": rel,
+        }
+        return "ok", f"{branch} @ {sha[:12]} ({self.plan.tilde(worktree)})。push と PR はまだ"
+
+    def _ensure_register_worktree(self, root: Path, worktree: Path, branch: str) -> tuple[str, str]:
+        if worktree.exists():
+            rc, current, _ = self._git_at(worktree, "rev-parse", "--abbrev-ref", "HEAD")
+            if rc != 0 or current.strip() != branch:
+                return "fail", f"{self.plan.tilde(worktree)} が {branch} の worktree ではない"
+            return "ok", "既存の登録用 worktree を使う"
+        if self._git_at(root, "rev-parse", "--verify", "-q", f"refs/heads/{branch}")[0] == 0:
+            args = ("worktree", "add", "-q", str(worktree), branch)   # 前回の branch だけ残っている時は付け直す
+        else:
+            args = ("worktree", "add", "-q", "--no-track", "-b", branch, str(worktree), "origin/main")
+        rc, _, err = self._git_at(root, *args, timeout=300)
+        return ("ok", "登録用 worktree を作成") if rc == 0 else ("fail", "登録用 worktree を作れない: " + err.strip())
+
+    def _commit_registry_row(self, worktree: Path, rel: str) -> tuple[str, str]:
+        key = self.plan.nwo
+        target = worktree / rel
+        text = target.read_text(encoding="utf-8")
+        if not registry_has_key(text, key):
+            updated = insert_registry_row(text, registry_row(self.plan, today=self.today), key=key)
+            if updated is None:
+                return "fail", f"registry anchor '{REGISTRY_ANCHOR}' が見つからない"
+            target.write_text(updated, encoding="utf-8")
+        rc, pending, err = self._git_at(worktree, "status", "--porcelain", "--", rel)
+        if rc != 0:
+            return "fail", "登録用 worktree の状態を読めない: " + err.strip()
+        if not pending.strip():
+            return "ok", "commit 済み"
+        wrapper = worktree / REGISTRY_COMMIT_WRAPPER
+        if not wrapper.exists():
+            return "fail", f"台帳 repo の commit 入口が無い: {REGISTRY_COMMIT_WRAPPER}"
+        rc, out, err = self.runner.run(
+            ["bash", str(wrapper), REGISTRY_COMMIT_TARGET, f"docs: register {key} in the GitHub account map", "--only", rel],
+            cwd=str(worktree), scoped_env={REGISTRY_COMMIT_DIR_ENV: str(worktree)}, timeout=180,
+        )
+        return ("ok", "commit") if rc == 0 else ("fail", "台帳の commit: " + (err or out).strip()[-600:])
 
     def _verify(self) -> tuple[str, str]:
         rc, out, err = self._gh("api", f"repos/{self.plan.nwo}", "--jq", "{full_name: .full_name, visibility: .visibility, default_branch: .default_branch}")
@@ -621,6 +769,8 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
             print(f"  check {key}: {value}")
         for step in result.get("steps", []):
             print(f"  step {step['name']}: {step['status']} {step['detail']}")
+        if result.get("registration"):
+            print("  registration: " + json.dumps(result["registration"], ensure_ascii=False))
     return 0 if result["status"] == "READY" else 1
 
 
