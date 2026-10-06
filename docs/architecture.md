@@ -11,6 +11,7 @@
 - [ADR-0006: PRセルフレビューのbase監査とbootstrap境界](adr/0006-pr-self-review-advisory-bootstrap.md)
 - [ADR-0007: ADRの採番は一意で機械検査に載せる](adr/0007-adr-numbers-must-be-unique.md)
 - [ADR-0008: 検査は「対象が無い / 空」を合格にしない](adr/0008-checkers-must-reject-empty-subjects.md)
+- [ADR-0009: PR作成前に採用済み内容と枝の目的を検査する](adr/0009-pr-adopted-content-and-purpose.md)
 
 `src/github_ops/`が結果契約、出力秘匿、コマンド実行、account overlay、identity、
 preflight、review-thread audit、skill drift比較を提供します。`scripts/`は薄いCLI、
@@ -18,7 +19,7 @@ preflight、review-thread audit、skill drift比較を提供します。`scripts
 外部変更の判断はCLIの外側に残します。
 
 PR作成は`pr_language`で表示面を事前検査し、`pr_create`が明示承認、
-`gh pr create --body-file`、作成後の再取得確認を順番に固定します。メタデータ限定workflowは
+採用済み内容・枝の目的の検査、`gh pr create --body-file`、作成後の再取得確認を順番に固定します。メタデータ限定workflowは
 checkout、secret、write権限を使わず、別経路から作られたPRの言語差分を検出します。
 
 ## 再利用方針

@@ -14,6 +14,7 @@
       "title": "リモートbranchはdefault/protected/PR状態とHEAD一致をread-onlyで分類し、削除候補を推測しない",
       "enforcement": "test",
       "test_paths": ["tests/unit/test_remote_branch_audit.py"]
-    }
+    },
+    {"id": "GHO-PR-001", "title": "PR作成前に固定SHAの採用済み内容と枝目的を検査し、部分採用や競合はレビューへ返す", "enforcement": "test", "test_paths": ["tests/unit/test_pr_create.py"]}
   ]
 }

@@ -59,6 +59,12 @@ def build_create_pr_parser() -> argparse.ArgumentParser:
     title_source.add_argument("--title")
     title_source.add_argument("--title-file", type=Path)
     parser.add_argument("--body-file", required=True, type=Path)
+    parser.add_argument(
+        "--branch-purpose",
+        choices=("development", "resident_adaptation"),
+        default="development",
+        help="常駐への適応枝はPR作成対象から除外します",
+    )
     parser.add_argument("--draft", action="store_true")
     parser.add_argument("--confirm", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -81,6 +87,7 @@ def create_pr_main(argv: list[str] | None = None) -> int:
         expected_base_sha=args.expected_base_sha,
         expected_head_sha=args.expected_head_sha,
         expected_visibility=args.expected_visibility,
+        branch_purpose=args.branch_purpose,
         confirmed=args.confirm,
         draft=args.draft,
     )
