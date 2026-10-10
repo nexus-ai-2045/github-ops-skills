@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Protocol, Sequence
@@ -32,9 +33,24 @@ def create_pr_with_japanese_gate(
     confirmed: bool,
     expected_visibility: str = "PRIVATE",
     draft: bool = False,
+    branch_purpose: str = "development",
     runner: Runner | None = None,
 ) -> Outcome:
     """日本語gate通過後にPRを作成し、表示面をread-back検証する。"""
+    if branch_purpose not in {"development", "resident_adaptation"}:
+        return _blocked(
+            "branch_purpose_invalid",
+            "枝の目的を判定できません",
+            "development または resident_adaptation を明示してください",
+            {"branch_purpose": branch_purpose},
+        )
+    if branch_purpose == "resident_adaptation":
+        return _blocked(
+            "resident_adaptation_not_publishable",
+            "常駐への適応枝は開発PRの対象外です",
+            "開発正本への固有変更を分離し、レビューしてください",
+            {"branch_purpose": branch_purpose},
+        )
     if expected_visibility not in {"PRIVATE", "PUBLIC", "INTERNAL"}:
         return _blocked(
             "expected_visibility_invalid",
@@ -93,6 +109,10 @@ def create_pr_with_japanese_gate(
         )
     if preflight.status is not Status.READY:
         return preflight
+    content = _verify_content(repo_root=repo_root, base_sha=expected_base_sha,
+                              head_sha=expected_head_sha, runner=command_runner)
+    if content.status is not Status.READY:
+        return content
     create_argv = [
         "gh",
         "pr",
@@ -265,6 +285,8 @@ def create_pr_with_japanese_gate(
         "is_draft": observed_draft,
         "title_body_exact_match": exact_match,
         "japanese_gate": observed_language.code,
+        "branch_purpose": branch_purpose,
+        "content_check": content.evidence,
     }
     if observed_language.status is not Status.READY or not exact_match:
         return _unknown(
@@ -434,6 +456,144 @@ def _verify_preflight(
         "none",
         evidence,
     )
+
+
+def _verify_content(*, repo_root: Path, base_sha: str, head_sha: str, runner: Runner) -> Outcome:
+    """固定SHAのGit一致だけを判定し、意味の同値や枝名から目的を推測しない。"""
+    evidence = {"base_sha": base_sha, "head_sha": head_sha}
+
+    def git(*args: str) -> CommandResult:
+        return runner.run(["git", *args], cwd=repo_root, redact_stdout=False)
+
+    def valid_oid(value: str) -> bool:
+        return bool(re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", value))
+
+    def invalid_evidence() -> Outcome:
+        return _unknown(
+            "content_evidence_invalid",
+            "採用検査のGit出力が完全な形式ではありません",
+            "出力形式とpathを確認し、独立レビューしてください",
+            evidence,
+        )
+
+    if not valid_oid(base_sha) or not valid_oid(head_sha):
+        return invalid_evidence()
+    try:
+        ancestor = git("merge-base", "--all", base_sha, head_sha)
+        base_tree = git("rev-parse", f"{base_sha}^{{tree}}")
+        merged = git("merge-tree", "--write-tree", base_sha, head_sha)
+        if any(result.returncode or result.failure is not None
+               for result in (ancestor, base_tree, merged)):
+            return _unknown(
+                "content_integration_unknown",
+                "差分の採用状態を確定できません",
+                "競合や不足objectを読取り確認し、独立レビューしてください",
+                evidence,
+            )
+        ancestors = ancestor.stdout.strip().splitlines()
+        tree = merged.stdout.strip().splitlines()
+        if (
+            len(ancestors) != 1 or len(tree) != 1
+            or not valid_oid(ancestors[0]) or not valid_oid(tree[0])
+            or not valid_oid(base_tree.stdout.strip())
+            or len({len(base_sha), len(head_sha), len(ancestors[0]),
+                    len(tree[0]), len(base_tree.stdout.strip())}) != 1
+        ):
+            return _unknown(
+                "content_integration_unknown",
+                "統合基点または結果が一意ではありません",
+                "独立レビューで統合基点を確定してください",
+                evidence,
+            )
+        evidence["merge_base_sha"] = ancestors[0]
+        evidence["merged_tree"] = tree[0]
+        if tree[0] == base_tree.stdout.strip():
+            return _blocked(
+                "content_already_adopted",
+                "枝の変更は基準側に採用済み、または差分がありません",
+                "既存の採用証拠を確認し、重複PRを作成しないでください",
+                evidence,
+            )
+        paths = git("diff", "--name-only", "--no-renames", "-z", ancestors[0], head_sha)
+        if paths.returncode or paths.failure is not None:
+            return _unknown(
+                "content_paths_unknown",
+                "変更対象を取得できません",
+                "Git差分を独立レビューしてください",
+                evidence,
+            )
+        if (
+            not paths.stdout.endswith("\0")
+            or any(char in paths.stdout for char in ("\r", "\n", "\ufffd"))
+        ):
+            return invalid_evidence()
+        changed_paths = paths.stdout[:-1].split("\0")
+        if not all(changed_paths) or len(set(changed_paths)) != len(changed_paths):
+            return invalid_evidence()
+        adopted = False
+        unique = False
+        overlap = False
+        for path in changed_paths:
+            entries = [
+                git("--literal-pathspecs", "ls-tree", "-z", ref, "--", path)
+                for ref in (ancestors[0], base_sha, head_sha)
+            ]
+            if any(entry.returncode or entry.failure is not None for entry in entries):
+                return _unknown(
+                    "content_entries_unknown",
+                    "変更対象の採用状態を取得できません",
+                    "Git差分を独立レビューしてください",
+                    evidence,
+                )
+            parsed = []
+            for entry in entries:
+                if not entry.stdout:
+                    parsed.append("")
+                    continue
+                if not entry.stdout.endswith("\0") or entry.stdout.count("\0") != 1:
+                    return invalid_evidence()
+                metadata, separator, observed_path = entry.stdout[:-1].partition("\t")
+                fields = metadata.split(" ")
+                if (
+                    not separator or observed_path != path or len(fields) != 3
+                    or fields[0] not in {"100644", "100755", "120000", "160000"}
+                    or fields[1] != ("commit" if fields[0] == "160000" else "blob")
+                    or not valid_oid(fields[2]) or len(fields[2]) != len(head_sha)
+                ):
+                    return invalid_evidence()
+                parsed.append(entry.stdout)
+            old, base_entry, head_entry = parsed
+            if not old and not head_entry:
+                return invalid_evidence()
+            if base_entry == head_entry:
+                adopted = True
+            else:
+                unique = True
+                if base_entry != old:
+                    overlap = True
+        if overlap or (adopted and unique) or not unique:
+            return _blocked(
+                "content_adoption_review_required",
+                "部分採用または基準側と重なる変更に独立レビューが必要です",
+                "固有変更を分離し、最新基準から計画を作り直してください",
+                evidence,
+            )
+        return Outcome(
+            Status.READY,
+            "content_unique",
+            "基準側に未採用の固有変更を確認しました",
+            "PR作成へ進めます",
+            "none",
+            evidence,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        evidence["error"] = redact(str(exc))
+        return _unknown(
+            "content_verification_failed",
+            "採用状態の検査を完了できません",
+            "Gitを確認し、再作成せず読取り検査してください",
+            evidence,
+        )
 
 
 def _blocked(code: str, cause: str, recovery: str, evidence: dict) -> Outcome:

@@ -37,3 +37,14 @@ def test_create_pr_entrypoint_keeps_expected_sha_contract() -> None:
     )
     assert args.confirm is True
     assert args.expected_visibility == "PRIVATE"
+
+
+def test_create_pr_accepts_explicit_resident_adaptation_purpose() -> None:
+    args = build_create_pr_parser().parse_args([
+        "--repo", "owner/repo", "--base", "main", "--head", "resident",
+        "--repo-root", ".", "--account-map", "accounts.yaml",
+        "--expected-base-sha", "a" * 40, "--expected-head-sha", "b" * 40,
+        "--title", "適応確認", "--body-file", "body.md",
+        "--branch-purpose", "resident_adaptation",
+    ])
+    assert args.branch_purpose == "resident_adaptation"

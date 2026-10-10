@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from github_ops.command import CommandFailure, CommandResult
-from github_ops.pr_create import create_pr_with_japanese_gate
+from github_ops.pr_create import _verify_content, create_pr_with_japanese_gate
 from github_ops.result import Status
 
 
@@ -21,6 +21,17 @@ class FakeRunner:
 
     def run(self, argv, **kwargs):  # noqa: ANN001, ANN003
         self.calls.append({"argv": list(argv), **kwargs})
+        if argv[:2] == ["git", "merge-base"]:
+            return CommandResult(0, "c" * 40 + "\n", "")
+        if argv[:2] == ["git", "merge-tree"]:
+            return CommandResult(0, "d" * 40 + "\n", "")
+        if argv[:2] == ["git", "rev-parse"] and argv[-1].endswith("^{tree}"):
+            return CommandResult(0, "e" * 40 + "\n", "")
+        if argv[:2] == ["git", "diff"]:
+            return CommandResult(0, "README.md\0", "")
+        if argv[:3] == ["git", "--literal-pathspecs", "ls-tree"]:
+            oid = "f" * 40 if argv[4] == HEAD_SHA else "e" * 40
+            return CommandResult(0, f"100644 blob {oid}\tREADME.md\0", "")
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -222,7 +233,7 @@ def test_read_back_mismatch_is_unknown_without_edit(tmp_path: Path) -> None:
     )
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_read_back_mismatch"
-    assert len(runner.calls) == 10
+    assert len(runner.calls) == 17
 
 
 def test_origin_repository_must_match_repo_argument(tmp_path: Path) -> None:
@@ -462,3 +473,188 @@ def test_raw_read_back_timeout_from_injected_runner_is_still_a_timeout(
     assert outcome.status is Status.UNKNOWN
     assert outcome.code == "pr_read_back_timeout"
     assert outcome.evidence["url"] == url
+
+
+@pytest.mark.parametrize(
+    "purpose,code",
+    [("resident_adaptation", "resident_adaptation_not_publishable"),
+     ("guess", "branch_purpose_invalid")],
+)
+def test_branch_purpose_blocks_before_external_calls(tmp_path, purpose, code):
+    runner = FakeRunner([])
+    result = create_pr_with_japanese_gate(**_kwargs(tmp_path, branch_purpose=purpose), runner=runner)
+    assert result.code == code
+    assert runner.calls == []
+
+
+def _git_fixture(tmp_path, object_format="sha1"):
+    from github_ops.command import CommandRunner
+    root = tmp_path / "fixture"
+    root.mkdir()
+    def git(*args):
+        return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
+    git("init", "-q", "-b", "main", f"--object-format={object_format}")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    (root / "README.md").write_text("one\ntwo\nthree\nfour\nfive\n")
+    (root / "feature.txt").write_text("old\n")
+    git("add", ".")
+    git("commit", "-qm", "Initial")
+    initial = git("rev-parse", "HEAD")
+    def commit(name):
+        git("add", ".")
+        git("commit", "-qm", name)
+        return git("rev-parse", "HEAD")
+    def check(base, head):
+        before = git("show-ref")
+        status = git("status", "--porcelain")
+        result = _verify_content(repo_root=root, base_sha=base, head_sha=head, runner=CommandRunner())
+        assert git("show-ref") == before
+        assert git("status", "--porcelain") == status
+        return result
+    return root, git, initial, commit, check
+
+
+def test_real_git_unique_readme_with_unrelated_new_base_file_passes(tmp_path):
+    root, git, initial, commit, check = _git_fixture(tmp_path)
+    (root / "new-base.txt").write_text("preserve\n")
+    base = commit("Base addition")
+    git("checkout", "-q", "-b", "development", initial)
+    with (root / "README.md").open("a") as file:
+        file.write("Unique example\n")
+    head = commit("Example")
+    assert check(base, head).code == "content_unique"
+
+
+def test_real_git_adopted_old_baseline_preserves_new_base_file(tmp_path):
+    root, git, initial, commit, check = _git_fixture(tmp_path)
+    (root / "feature.txt").write_text("adopted\n")
+    base_feature = commit("Adopt feature")
+    (root / "new-base.txt").write_text("preserve\n")
+    base = commit("New base feature")
+    git("checkout", "-q", "-b", "adaptation", initial)
+    (root / "feature.txt").write_text("adopted\n")
+    head = commit("Same feature different history")
+    assert head != base_feature
+    assert check(base, head).code == "content_already_adopted"
+    assert check(base, base).code == "content_already_adopted"
+
+
+def test_real_git_partial_adoption_stops(tmp_path):
+    root, git, initial, commit, check = _git_fixture(tmp_path)
+    (root / "feature.txt").write_text("adopted\n")
+    base = commit("Adopt feature")
+    git("checkout", "-q", "-b", "development", initial)
+    (root / "feature.txt").write_text("adopted\n")
+    (root / "unique.txt").write_text("new\n")
+    head = commit("Partial adoption and unique")
+    assert check(base, head).code == "content_adoption_review_required"
+
+
+def test_real_git_same_file_clean_overlap_stops(tmp_path):
+    root, git, initial, commit, check = _git_fixture(tmp_path)
+    (root / "README.md").write_text("adopted\ntwo\nthree\nfour\nfive\n")
+    base = commit("Base edits first line")
+    git("checkout", "-q", "-b", "development", initial)
+    (root / "README.md").write_text("one\ntwo\nthree\nfour\nunique\n")
+    head = commit("Head edits last line")
+    assert check(base, head).code == "content_adoption_review_required"
+
+
+def test_real_git_conflicting_or_missing_objects_stops(tmp_path):
+    root, git, initial, commit, check = _git_fixture(tmp_path)
+    (root / "feature.txt").write_text("base\n")
+    base = commit("Base conflict")
+    git("checkout", "-q", "-b", "development", initial)
+    (root / "feature.txt").write_text("head\n")
+    head = commit("Head conflict")
+    assert check(base, head).status is Status.UNKNOWN
+    assert check("0" * 40, head).status is Status.UNKNOWN
+
+
+def test_adopted_content_blocks_create_after_preflight(tmp_path):
+    class AdoptedRunner(FakeRunner):
+        def run(self, argv, **kwargs):
+            if argv[:2] == ["git", "merge-tree"]:
+                self.calls.append({"argv": list(argv), **kwargs})
+                return CommandResult(0, "e" * 40 + "\n", "")
+            return super().run(argv, **kwargs)
+    runner = AdoptedRunner(_preflight_ready())
+    result = create_pr_with_japanese_gate(**_kwargs(tmp_path), runner=runner)
+    assert result.code == "content_already_adopted"
+    assert not runner.responses
+    assert not any(call["argv"][:3] == ["gh", "pr", "create"] for call in runner.calls)
+
+
+def test_real_git_literal_glob_filename_is_not_other_path(tmp_path):
+    root, git, initial, commit, check = _git_fixture(tmp_path)
+    (root / "feature.txt").write_text("base\n")
+    base = commit("Change existing")
+    git("checkout", "-q", "-b", "development", initial)
+    (root / "*.txt").write_text("unique literal path\n")
+    head = commit("Add literal glob filename")
+    assert check(base, head).code == "content_unique"
+
+
+@pytest.mark.parametrize("path", ["bad\rname.txt", "bad\nname.txt", "bad\ufffdname.txt"])
+def test_real_git_unreliable_text_path_stops(tmp_path, path):
+    root, git, initial, commit, check = _git_fixture(tmp_path)
+    (root / path).write_text("unique\n")
+    head = commit("Add unusual path")
+    assert check(initial, head).code == "content_evidence_invalid"
+
+
+@pytest.mark.parametrize("command,output", [
+    ("merge-base", "garbage\n"),
+    ("merge-tree", "garbage\n"),
+    ("rev-parse", "garbage\n"),
+    ("diff", "README.md"),
+    ("diff", "README.md\0README.md\0"),
+    ("diff", "README.md\0\0"),
+    ("ls-tree", "garbage\0"),
+    ("ls-tree", "100644 blob " + "f" * 40 + "\twrong.txt\0"),
+    ("ls-tree", "100644 blob " + "f" * 40 + "\tREADME.md"),
+    ("ls-tree", "100644 blob " + "f" * 40 + "\tREADME.md\0" * 2),
+    ("ls-tree", "100644 tree " + "f" * 40 + "\tREADME.md\0"),
+    ("ls-tree", "100600 blob " + "f" * 40 + "\tREADME.md\0"),
+    ("ls-tree", "100644 blob malformed\tREADME.md\0"),
+    ("ls-tree", ""),
+])
+def test_malformed_success_never_passes_content_gate(tmp_path, command, output):
+    class MalformedRunner(FakeRunner):
+        def run(self, argv, **kwargs):
+            if command in argv[:3]:
+                return CommandResult(0, output, "")
+            return super().run(argv, **kwargs)
+    result = _verify_content(repo_root=tmp_path, base_sha=BASE_SHA,
+                             head_sha=HEAD_SHA, runner=MalformedRunner([]))
+    assert result.status is Status.UNKNOWN
+
+
+@pytest.mark.parametrize("oid", ["-invalid", "a" * 39, "z" * 40])
+def test_invalid_fixed_oid_runs_no_commands(tmp_path, oid):
+    runner = FakeRunner([])
+    result = _verify_content(repo_root=tmp_path, base_sha=oid,
+                             head_sha=HEAD_SHA, runner=runner)
+    assert result.code == "content_evidence_invalid"
+    assert runner.calls == []
+
+
+def test_real_git_sha256_unique_change_passes(tmp_path):
+    root, git, initial, commit, check = _git_fixture(tmp_path, "sha256")
+    (root / "unique.txt").write_text("unique\n")
+    head = commit("Unique SHA256 change")
+    assert len(head) == 64
+    assert check(initial, head).code == "content_unique"
+
+
+@pytest.mark.parametrize("command", ["merge-base", "rev-parse", "merge-tree", "diff", "ls-tree"])
+def test_failure_field_even_zero_status_stops(tmp_path, command):
+    class FailureRunner(FakeRunner):
+        def run(self, argv, **kwargs):
+            if command in argv[:3]:
+                return CommandResult(0, "", "", CommandFailure.EXECUTION_FAILED)
+            return super().run(argv, **kwargs)
+    result = _verify_content(repo_root=tmp_path, base_sha=BASE_SHA,
+                             head_sha=HEAD_SHA, runner=FailureRunner([]))
+    assert result.status is Status.UNKNOWN
