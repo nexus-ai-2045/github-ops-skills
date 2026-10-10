@@ -5,7 +5,8 @@ description: >
   「git init したい」「gh repo create」「別リポジトリに分ける」「public で公開する repo を作る」と言われたら、
   自分で git init / gh repo create を組み立てず、必ずこの skill を使う。
   置き場所の固定・commit 名義・公開前文書・repo-preflight 検査・owner の token での作成・公開直後の lockdown・
-  canonical wrapper 経由の作業 branch push と API による main 作成・台帳登録・read-back を 1 本の script が順番に行う。
+  canonical wrapper 経由の作業 branch push と API による main 作成・台帳登録 branch の commit・read-back を 1 本の script が順番に行い、
+  台帳登録の push と PR は手順 4 で canonical wrapper から出す。
   Do NOT use for: 既存 repo への push / PR (commit-push-pr, github-cli-ops-guard)、公開判定の整備だけ (public-repo-readiness)。
 ---
 
@@ -29,7 +30,8 @@ visibility: public | private
 local_dir: ~/Projects/Documents/.repos/nexus_ai/<name>  (private は /private/<name>)
 commit_identity: nexus_ai <273569186+nexus-ai-2045@users.noreply.github.com>  (owner=nexus-ai-2045 の既定)
 approval: current_turn_yes | missing   ← visibility と名前を CEO が現在会話で言っていること
-done_when: script の execute が READY + gh repo view で read-back 一致
+registry_pr: 台帳 repo への登録 PR (1 行追加) も同じ承認で出す。merge は人が行う
+done_when: script の execute が READY + gh repo view で read-back 一致 + 台帳登録 PR の URL
 ```
 
 `approval: missing` なら `--confirm` を付けない (preflight だけ)。
@@ -55,9 +57,13 @@ python3 <skill dir>/scripts/bootstrap_repo.py --name <name> --visibility <public
    | `preflight_script: missing` | repo-preflight の checkout が無い (preflight はここで BLOCKED) | `~/Projects/Documents/.repos/nexus_ai/repo-preflight` を clone する。`--allow-no-preflight` は非推奨 |
    | `local_dir: nested_in_other_repo` | 指定 directory が別 repo の中 | 別の場所を指定する |
    | `remote_absent: exists_visibility_<x>` | `--resume` 先の remote の visibility が指定と違う | 指定を合わせるか、visibility 変更を別承認で行う |
+   | `registry_file: not_git` / `no_origin_main` | 台帳が git の外にある / 台帳 repo に origin/main が無い | 台帳は branch → PR でしか更新しない。台帳 repo の checkout を直す |
+   | `registry_file: commit_wrapper_missing` | 台帳 repo の origin/main に `shared/scripts/cc-commit.sh` が無い | 台帳 repo を同期してから再実行する |
+   | `registry_file: worktree_dir_not_ignored` | 台帳 repo の `.worktrees/` が ignore されていない (登録用 worktree が main checkout を汚す) | 台帳 repo の `.gitignore` を直す |
 
 2. **CEO の承認を現在会話で確認**する (repo 名 / visibility / 説明)。前の会話や「全部推奨で」の一括承認は
    名前と visibility が言われていれば有効。言われていなければ 1 問だけ聞く。
+   この承認には、手順 4 の台帳登録 PR (台帳 repo へ 1 行追加) を出すことも含めて伝える。
 
 3. **execute**。同じ引数に `--confirm` を足す。
 
@@ -73,18 +79,37 @@ python3 <skill dir>/scripts/bootstrap_repo.py --name <name> --visibility <public
    branch push だけを許可するため)、GitHub API でその commit から `main` を作って既定 branch にし、`bootstrap/init` を消す。
    `verify` は remote の `main` が local HEAD と同じ sha であることまで確認する。
 
-   途中で止まった後は、同じ引数に `--resume` を足して再実行する (remote / origin / visibility が一致する時だけ続きから走る)。
-   push だけ別経路で済ませた場合は `--resume --skip-push`。
+   `register` は台帳 repo の main checkout に**書かない**。台帳 repo の origin/main を fetch し、
+   `.worktrees/register-<name>` に `bootstrap/register-<name>` branch の worktree を切って行を足し、
+   台帳 repo の `shared/scripts/cc-commit.sh` で commit する (push はしない)。branch の差分が台帳 1 file でなければ fail。
+   origin/main の台帳に登録済みなら skipped。結果は report の `registration` (worktree / branch / commit / file) に出る。
 
-4. **read-back を報告**する。`verify` の detail (`owner/name (visibility) main=<sha>`) と `register` の台帳 path を書く。
-   `push: fail` なら wrapper の deny 理由をそのまま書く (自分で `git push` しない)。
+   途中で止まった後は、同じ引数に `--resume` を足して再実行する (remote / origin / visibility が一致する時だけ続きから走る)。
+   push だけ別経路で済ませた場合は `--resume --skip-push`。`register` の再実行は同じ branch に重ねて commit しない。
+
+4. **台帳登録を PR にして、read-back を報告**する。`registration` が無い (register が skipped) なら PR は不要。
+   ある時は、その worktree の中の wrapper を使う (台帳 repo の main checkout の wrapper は古いことがある)。
+
+```bash
+bash <worktree>/shared/scripts/cc-push-resolved.sh --repo <worktree> --branch <branch>
+python3 <worktree>/shared/scripts/japanese_user_facing_gate.py <worktree>/pr-body.md
+python3 <worktree>/shared/scripts/gh_write_guarded.py --repo-root <worktree> -- pr create --base main --head <branch> --title "<日本語の題>" --body-file <worktree>/pr-body.md
+```
+
+   - PR 本文は日本語で、どの repo を何のために登録するかを書く。本文 file は worktree の中に置き (日本語ゲートは
+     その checkout の中の file しか検査しない)、PR を作った後に消す。commit しない。
+   - 報告には `verify` の detail (`owner/name (visibility) main=<sha>`) と、登録 PR の URL を書く。merge は人が行う。
+   - `push: fail` や登録 PR の push / 作成の拒否は、wrapper の deny 理由をそのまま書く (自分で `git push` / `gh pr create` しない)。
+     登録 PR が出せない間も、owner が登録済みの login なら新 repo への push と PR 作成は owner からの名義導出で通る。
 
 ## 前提条件 (この repository の外にある実行前提)
 
 - `gh` に owner の token が入っていること (script は `gh auth token --user <owner>` で取り、対象 process の env にだけ渡す)
 - canonical push wrapper `~/Projects/shared/scripts/cc-push-resolved.sh` (無ければ push は fail。`bootstrap/init` を別経路で push して `--resume --skip-push`)
 - repo-preflight の checkout `<local-root>/repo-preflight/scripts/readiness_scan.py` (無ければ fail-closed。`--allow-no-preflight` は非推奨)
-- account↔repo 台帳 `~/Projects/Documents/references/github-account-repo-map.md` (無ければ register は skip)
+- account↔repo 台帳 `~/Projects/Documents/references/github-account-repo-map.md` (無ければ register は skip)。
+  台帳 repo が origin/main を持ち、そこに `shared/scripts/cc-commit.sh` があり、`.worktrees/` が ignore されていること
+  (満たさなければ preflight が BLOCKED。repo を作ってから register で止まらないようにするため)
 
 script が見つからない・止まった時は、別の手段で同じ操作を組み立てない。止めて報告する。
 
@@ -92,5 +117,6 @@ script が見つからない・止まった時は、別の手段で同じ操作�
 
 - global の `gh auth switch`
 - `git push` を直接叩く (wrapper 経由のみ)。main へ push しない (API で作る)
+- 台帳 repo の main checkout へ書く (登録は origin/main から切った branch → PR だけ)
 - visibility の変更、repo の削除
 - 既存 repo への適用 (origin がある directory は対象外)

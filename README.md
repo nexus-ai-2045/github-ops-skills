@@ -65,7 +65,7 @@ flowchart TD
 
 ## できること
 
-- 新規 repository の作成を 1 本の fail-closed 手順にする（`scripts/bootstrap_repo.py` / skill `new-repo-bootstrap`）。置き場所・commit 名義・公開前文書・repo-preflight 検査・owner token での作成・canonical wrapper 経由の初回 push・公開直後の lockdown・台帳登録・read-back を順番に行い、`--confirm` が無ければ preflight だけ
+- 新規 repository の作成を 1 本の fail-closed 手順にする（`scripts/bootstrap_repo.py` / skill `new-repo-bootstrap`）。置き場所・commit 名義・公開前文書・repo-preflight 検査・owner token での作成・canonical wrapper 経由の初回 push・公開直後の lockdown・台帳登録 branch の commit（台帳 repo の main checkout には書かず、push と PR は skill の手順で出す）・read-back を順番に行い、`--confirm` が無ければ preflight だけ
 - GitHub CLI の active account と remote owner を照合する（`scripts/gh_identity_probe.py` / `scripts/preflight_write_gate.py`）
 - PR の title/body が日本語境界を満たすか検査する（CI: `PR日本語gate`）
 - runtime skill が `skills/` 正本からずれていないか検査する
