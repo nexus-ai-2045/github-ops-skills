@@ -117,6 +117,22 @@ def audit_remote_branches(
     if not isinstance(prs, list) or not all(isinstance(pr, dict) for pr in prs):
         return _unknown("pull_requests_unverified", "PR一覧を確認できません")
 
+    open_prs_raw = _json_command(
+        runner,
+        ["gh", "api", "--paginate", "--slurp", f"repos/{repository}/pulls?state=open&per_page=100"],
+        repo_root,
+    )
+    open_prs = _flatten_pages(open_prs_raw)
+    if open_prs is None:
+        return _unknown("open_pull_requests_unverified", "open PR一覧を確認できません")
+    open_heads: set[str] = set()
+    for pr in open_prs:
+        head = pr.get("head")
+        name = head.get("ref") if isinstance(head, dict) else None
+        if pr.get("state") != "open" or not isinstance(name, str) or not name:
+            return _unknown("open_pull_requests_unverified", "open PRの応答形式を確認できません")
+        open_heads.add(name)
+
     by_head: dict[str, list[dict[str, Any]]] = {}
     for pr in prs:
         name = pr.get("headRefName")
@@ -134,6 +150,8 @@ def audit_remote_branches(
             classification = "default_branch"
         elif branch.get("protected"):
             classification = "protected_branch"
+        elif name in open_heads or any(pr.get("state") == "OPEN" for pr in by_head.get(name, [])):
+            classification = "open_pr_head"
         else:
             matches = by_head.get(name, [])
             merged = [pr for pr in matches if pr.get("state") == "MERGED"]
