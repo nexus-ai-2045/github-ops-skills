@@ -10,6 +10,12 @@
 - 作成時に有効にした設定: 秘密情報の検査（`secret scanning`）、送信時の遮断（`push protection`）、非公開の脆弱性報告（`private vulnerability reporting`）、統合後の枝の自動削除。
 - 残り: 必須の検査（`required status checks`）と `ruleset` は未設定（`ADR-0002` の別承認）。
 
+## 2026-10-25 preflight-gate の固定版を上げる
+
+- 対象: `.github/workflows/preflight.yml` の preflight-gate の固定先を、repo-preflight `v0.10.0`（`5b7c774deb8e9abcf0fce0c5f39ec1c1f3a894f3`）に上げた。`uses` の @ と `preflight-ref` は同じ SHA。
+- 理由: 前の固定先（`44fdece`）は、`PR` の確認用マージコミット（記録者が GitHub）を名義違反と数える誤検知があった。`v0.10.0` で直っている。
+- 残り: `base-guard.yml` の `PREFLIGHT_REF` と、ai-ratchet-gate の固定先（`v0.1.1`）は別の手順で上げる。
+
 ## 2026-08-27 `v0.1.1`
 
 - 対象: public 化後の README 可視化（#13）と PUBLIC_READY live 記録（#12）を含む patch
