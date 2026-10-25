@@ -112,5 +112,6 @@
 ## 伏せたもの
 
 - `codex/l4-private-canary-runner/skills/commit-push-pr/SKILL.md`: 個人の情報の形を、ダミーの値に置き換えたか、その行を除きました。
+- `skills/commit-push-pr/SKILL.md`（この控えの 4 か所）: 協業先の repo 名と、それを含む私的メモの名前を伏せました。
 - `codex/l4-private-canary-runner/skills/public-repo-readiness/SKILL.md`: 例に残っていた個人メールの一部を `<PRIVATE_EMAIL>` に置き換えました（2026-10-31）。
 - `codex/checker-contract-public-clean-20260910/docs/superpowers/plans/2026-07-28-github-ops-skills.md`、`codex/checker-contract-public-clean-20260910/tests/unit/test_public_identity.py`、`codex/gitops-reconcile-state-schema-20261007/tests/unit/test_public_identity_cli.py`、`fix/pr-payload-privacy-20261016/tests/unit/test_pr_create.py`: テスト用に組み立てていた架空の個人フォルダのパスを、`<伏せ字>` に置き換えました（2026-10-31）。
