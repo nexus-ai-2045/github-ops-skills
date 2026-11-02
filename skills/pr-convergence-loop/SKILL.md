@@ -135,6 +135,9 @@ python scripts/pr_convergence_decide.py snapshot.json
    - blocker があれば該当 PR branch / isolated worktree で最小修正する。
    - TDD が必要なら failing test を先に置く。
    - 検証は対象 test / smoke / diff check から始め、必要以上に広げない。
+   - 同じ型の指摘が`same_failure_limit`に達したら、1件ずつ直すのをやめる。対象が守るべき条件（失敗条件・不変条件）を全部列挙し、各条件を強制する箇所へ対応させ、対応漏れを丸ごと落とすテストにする。速くする前段や簡略化は、後段の書き方を真似ず必要条件から作る。可能なら実物（一時repository等）で動作を確かめる。
+   - 修正前のコードで新しいテストが落ちることを確かめる。落ちないテストは指摘を防いでいない。
+   - 指摘への返信と解決は、指摘ごとに修正commitを対応させてから行う。host workspace に`shared/scripts/pr_review_threads_resolve.py`があれば`--list` → mapping JSON → `--dry-run` → `--apply --expect-login <login>`の順で使い、本文や推測で閉じない。
 
 6. **Publish**
    - commit / push 前に GitHub identity と repo を確認する。
