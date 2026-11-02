@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -37,6 +38,97 @@ def validate_canary_request(request: CanaryRequest) -> Outcome:
                    "実装工程では実行しません", {"validated": True})
 
 
+SCHEMA_VERSION = "github-ops/private-canary-review/v2"
+MARKER_PATH = ".github/private-canary/github-ops-skills.json"
+
+
+def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
+    """人間が読むための変更計画を返す。ここでは何も実行しない。
+
+    このrepositoryには実行器が無い。exact_operationは、人間が現在会話で
+    承認したあとに手で行う手順の記述であり、自動では走らない。
+    """
+    repo = shlex.quote(request.repo)
+    branch = shlex.quote(request.branch)
+    head_ref = f"refs/heads/{request.branch}"
+    refspec = shlex.quote(f"HEAD:{head_ref}")
+    pre_write_checks = {
+        "remote owner/name and visibility": (
+            "test \"$(gh repo view --json nameWithOwner,visibility "
+            "--jq '.nameWithOwner + \" \" + .visibility')\" = "
+            f"{shlex.quote(request.repo + ' PRIVATE')} || exit 1"
+        ),
+        "authenticated account": 'test "$(gh api user --jq .login)" = <reviewed-login> || exit 1',
+        "dirty worktree": 'test -z "$(git status --porcelain)" || exit 1',
+        "pre-existing canary branch": f'test -z "$(git ls-remote origin {shlex.quote(head_ref)})" || exit 1',
+        "pre-existing local canary branch": f'test -z "$(git branch --list {branch})" || exit 1',
+    }
+    return {
+        "target_repo": request.repo,
+        "base_branch": "main",
+        "head_branch": request.branch,
+        "draft_pr": {
+            "title": request.draft_pr_title,
+            "visibility": "private repository collaborators only",
+        },
+        "changed_paths": [MARKER_PATH],
+        "executor": None,
+        "pre_write_checks": pre_write_checks,
+        "exact_operation": [
+            "set -eu",
+            "cd <reviewed-repo-root>",
+            "git fetch origin main",
+            *pre_write_checks.values(),
+            f"git switch --create {branch} origin/main",
+            f'test "$(git branch --show-current)" = {branch} || exit 1',
+            f"write canary marker to {MARKER_PATH}",
+            f"git add -- {MARKER_PATH}",
+            f'git commit --only -m "test: add private L4 canary marker" -- {MARKER_PATH}',
+            f"git push --force-with-lease={shlex.quote(head_ref + ':')} origin {refspec}",
+            (
+                "python scripts/create_pr_with_japanese_gate.py "
+                f"--repo {repo} --base main --head {branch} "
+                "--repo-root <reviewed-repo-root> --account-map <reviewed-account-map> "
+                "--expected-base-sha <reviewed-base-sha> --expected-head-sha <reviewed-head-sha> "
+                "--expected-visibility PRIVATE "
+                f"--draft --title {shlex.quote(request.draft_pr_title)} --body-file <reviewed-body-file> --confirm"
+            ),
+            f"gh pr view --repo {repo} {branch} --json number,isDraft,state,url,headRefName,baseRefName",
+        ],
+        "success_evidence": [
+            "repository visibility is PRIVATE",
+            "authenticated account matches the reviewed account",
+            "remote owner/name matches target_repo",
+            "push created exactly head_branch",
+            "read-back reports OPEN draft PR with matching base/head",
+            "global active account is unchanged",
+            "report contains no credential material",
+        ],
+        "failure_evidence": [
+            "visibility, account, owner, remote, or branch mismatch",
+            "dirty worktree or pre-existing canary branch",
+            "push or draft PR creation failure",
+            "read-back mismatch or missing evidence",
+            "credential material detected in output",
+        ],
+        "stop_boundaries": {
+            "requires_separate_current_conversation_approval": [
+                "push canary branch",
+                "create draft PR",
+                "close draft PR",
+                "delete remote branch",
+            ],
+            "out_of_scope": [
+                "repository visibility change",
+                "release",
+                "main merge",
+                "voice runtime",
+            ],
+            "automatic_cleanup": False,
+        },
+    }
+
+
 def main() -> int:
     configure_utf8_stdout()
     parser = argparse.ArgumentParser()
@@ -52,14 +144,15 @@ def main() -> int:
                             args.draft_pr_title, args.confirm_private_canary)
     outcome = validate_canary_request(request)
     packet = {
-        "schema_version": "github-ops/private-canary-review/v1",
+        "schema_version": SCHEMA_VERSION,
         "recorded_at": datetime.now(
             timezone(timedelta(hours=9), name="JST")
         ).isoformat(),
         "request": asdict(request),
         "gate": outcome.to_dict(),
+        "mutation_plan": build_mutation_plan(request),
         "executed": False,
-        "note": "--execute指定時もこのversionは外部変更を実行しません",
+        "note": "このversionは人間レビュー用planのみを生成し、--executeでも外部変更しません",
     }
     args.review_packet.parent.mkdir(parents=True, exist_ok=True)
     args.review_packet.write_text(
