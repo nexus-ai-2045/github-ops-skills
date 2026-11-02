@@ -69,5 +69,5 @@ parent の CI と、この PR の文書差分は別記録です。文書側は C
 
 ## repository-guarantees（repo-preflight 整合性ゲート）
 
-- `.repo-preflight-consistency.json`（shadow）と `.github/workflows/repository-guarantees.yml` を置く。検査ロジックは上流 repo-preflight を SHA 固定で取得し、コピーしない。
-- Actions 課金を増やさないため workflow_dispatch のみ。手元同等の確認は `python <repo-preflight>/scripts/consistency_gate.py --repo . --base-ref origin/main --require-config --require-mode shadow --json` と `python -m ai_ratchet_gate --repo .`。
+- `.repo-preflight-consistency.json`（shadow）を置く。専用 workflow（旧 `.github/workflows/repository-guarantees.yml`、workflow_dispatch のみ）は実行 0 回で、必須チェック `all-green`（`preflight.yml` → preflight-gate）と `ai-ratchet-gate.yml` に検査が重なるため 2026-10-25 に外した。検査ロジックは上流 repo-preflight を SHA 固定で取得し、コピーしない。
+- 手元同等の確認は `python <repo-preflight>/scripts/consistency_gate.py --repo . --base-ref origin/main --require-config --require-mode shadow --json` と `python -m ai_ratchet_gate --repo .`。
