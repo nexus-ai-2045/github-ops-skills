@@ -1,6 +1,6 @@
 import json
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -784,7 +784,7 @@ def test_public_snapshot_hashes_bind_exact_send_and_actor(tmp_path, public_polic
     assert receipt["policy_sha256"] == hashlib.sha256(policy.read_bytes()).hexdigest()
 
 
-@pytest.mark.parametrize("text", ["/".join(("", "<伏せ字>", "<伏せ字>", "source.txt")), "ghp_" + "x" * 24])
+@pytest.mark.parametrize("text", [(str(PurePosixPath("/", "home", "privacy-fixture", "source.txt"))), "ghp_" + "x" * 24])
 def test_structural_scan_blocks_private_payload_too(tmp_path, text):
     args = _kwargs(tmp_path, body_file=_body_file(tmp_path, "## 概要\n" + text + "\n"))
     runner = FakeRunner([])

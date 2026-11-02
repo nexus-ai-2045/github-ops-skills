@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from github_ops.public_identity import (
     scan_repository_for_personal_paths,
@@ -10,7 +10,7 @@ from scripts.public_identity_guard import scan_git_tree
 
 
 def test_windows_personal_path_is_blocked_without_echoing_value() -> None:
-    personal_path = "\\".join(("C:", "<伏せ字>", "<伏せ字>", "secret.txt"))
+    personal_path = (str(PureWindowsPath("C:/", "Users", "alice", "secret.txt")))
     result = scan_text(personal_path)
     assert result.status.value == "BLOCKED"
     assert "alice" not in result.to_json()
@@ -26,7 +26,7 @@ def test_token_shape_is_blocked_without_echoing_value() -> None:
 def test_repository_scanners_return_relative_paths(tmp_path: Path) -> None:
     (tmp_path / "safe.txt").write_text("安全", encoding="utf-8")
     (tmp_path / "bad.txt").write_text(
-        "\\".join(("C:", "<伏せ字>", "<伏せ字>", "secret.txt")),
+        (str(PureWindowsPath("C:/", "Users", "alice", "secret.txt"))),
         encoding="utf-8",
     )
     assert scan_repository_for_personal_paths(tmp_path) == ["bad.txt"]
@@ -39,7 +39,7 @@ def test_git_tree_scan_ignores_sensitive_text_deleted_from_head(
     runner = CommandRunner()
     runner.run(["git", "init"], cwd=tmp_path)
     sample = tmp_path / "sample.txt"
-    sample.write_text("\\".join(("C:", "<伏せ字>", "<伏せ字>", "secret.txt")) + "\n", encoding="utf-8")
+    sample.write_text((str(PureWindowsPath("C:/", "Users", "alice", "secret.txt"))) + "\n", encoding="utf-8")
     runner.run(["git", "add", "sample.txt"], cwd=tmp_path)
     runner.run(
         [
