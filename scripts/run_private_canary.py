@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -67,7 +68,7 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
             (
                 "gh pr create "
                 f"--repo {request.repo} --base main --head {request.branch} "
-                f'--draft --title "{request.draft_pr_title}" --body-file <reviewed-body-file>'
+                f"--draft --title {shlex.quote(request.draft_pr_title)} --body-file <reviewed-body-file>"
             ),
             f"gh pr view --repo {request.repo} {request.branch} --json number,isDraft,state,url,headRefName,baseRefName",
         ],

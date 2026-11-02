@@ -1,3 +1,5 @@
+import shlex
+
 from scripts.run_private_canary import (
     CanaryRequest,
     build_mutation_plan,
@@ -66,3 +68,17 @@ def test_mutation_plan_requires_draft_pr_and_read_back() -> None:
 
     assert any("gh pr create" in operation and "--draft" in operation for operation in operations)
     assert any("gh pr view" in operation for operation in operations)
+
+
+def test_mutation_plan_keeps_reviewed_title_as_one_shell_argument() -> None:
+    title = "Canary \"private repo\" it's a check"
+    request = CanaryRequest("example-org/fixture", "PRIVATE", "canary/test", title, False)
+
+    create = next(
+        operation
+        for operation in build_mutation_plan(request)["exact_operation"]
+        if operation.startswith("gh pr create")
+    )
+    args = shlex.split(create.replace("<reviewed-body-file>", "body.md"))
+
+    assert args[args.index("--title") + 1] == title
