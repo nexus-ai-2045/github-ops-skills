@@ -105,6 +105,58 @@ def test_mutation_plan_rejects_dirty_checkout_and_commits_only_marker() -> None:
     assert commit.endswith(f"-- {MARKER_PATH}")
 
 
+WRITE_PREFIXES = ("git switch", "git add", "git commit", "git push", "python " + CREATE_PR)
+
+
+def test_every_pre_write_condition_is_checked_before_the_first_write() -> None:
+    request = CanaryRequest("example-org/fixture", "PRIVATE", "canary/test", "検証", False)
+    plan = build_mutation_plan(request)
+    operations = plan["exact_operation"]
+    checks = plan["pre_write_checks"]
+
+    assert set(checks) == {
+        "remote owner/name and visibility",
+        "authenticated account",
+        "dirty worktree",
+        "pre-existing canary branch",
+    }
+    first_write = next(i for i, op in enumerate(operations) if op.startswith(WRITE_PREFIXES))
+    for condition, check in checks.items():
+        assert operations.index(check) < first_write, condition
+        assert check.endswith("|| exit 1"), condition
+
+
+@pytest.mark.skipif(shutil.which("sh") is None or shutil.which("git") is None, reason="sh と git が要る")
+def test_planned_push_refuses_to_update_an_existing_remote_branch(tmp_path) -> None:
+    request = CanaryRequest("example-org/fixture", "PRIVATE", "canary/test", "検証", False)
+    push = next(op for op in build_mutation_plan(request)["exact_operation"] if op.startswith("git push"))
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@example.invalid",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@example.invalid",
+    }
+
+    def git(*args: str, cwd) -> None:
+        subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
+
+    remote = tmp_path / "remote.git"
+    work = tmp_path / "work"
+    git("init", "--bare", "-q", str(remote), cwd=tmp_path)
+    git("init", "-q", str(work), cwd=tmp_path)
+    git("remote", "add", "origin", str(remote), cwd=work)
+    git("commit", "--allow-empty", "-q", "-m", "base", cwd=work)
+    git("push", "-q", "origin", "HEAD:refs/heads/canary/test", cwd=work)
+    git("commit", "--allow-empty", "-q", "-m", "marker", cwd=work)
+
+    result = subprocess.run(["sh", "-c", push], cwd=work, env=env, capture_output=True, text=True)
+
+    assert result.returncode != 0
+
+
 def _fill_placeholders(operation: str) -> str:
     return re.sub(r"<([a-z-]+)>", r"\1", operation)
 

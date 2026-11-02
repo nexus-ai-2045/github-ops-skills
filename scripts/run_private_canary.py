@@ -50,7 +50,18 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
     """
     repo = shlex.quote(request.repo)
     branch = shlex.quote(request.branch)
-    refspec = shlex.quote(f"HEAD:refs/heads/{request.branch}")
+    head_ref = f"refs/heads/{request.branch}"
+    refspec = shlex.quote(f"HEAD:{head_ref}")
+    pre_write_checks = {
+        "remote owner/name and visibility": (
+            "test \"$(gh repo view --json nameWithOwner,visibility "
+            "--jq '.nameWithOwner + \" \" + .visibility')\" = "
+            f"{shlex.quote(request.repo + ' PRIVATE')} || exit 1"
+        ),
+        "authenticated account": 'test "$(gh api user --jq .login)" = <reviewed-login> || exit 1',
+        "dirty worktree": 'test -z "$(git status --porcelain)" || exit 1',
+        "pre-existing canary branch": f'test -z "$(git ls-remote origin {shlex.quote(head_ref)})" || exit 1',
+    }
     return {
         "target_repo": request.repo,
         "base_branch": "main",
@@ -61,20 +72,16 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
         },
         "changed_paths": [MARKER_PATH],
         "executor": None,
+        "pre_write_checks": pre_write_checks,
         "exact_operation": [
             "cd <reviewed-repo-root>",
-            (
-                "test \"$(gh repo view --json nameWithOwner,visibility "
-                "--jq '.nameWithOwner + \" \" + .visibility')\" = "
-                f"{shlex.quote(request.repo + ' PRIVATE')} || exit 1"
-            ),
-            'test -z "$(git status --porcelain)" || exit 1',
             "git fetch origin main",
+            *pre_write_checks.values(),
             f"git switch --create {branch} origin/main",
             f"write canary marker to {MARKER_PATH}",
             f"git add -- {MARKER_PATH}",
             f'git commit --only -m "test: add private L4 canary marker" -- {MARKER_PATH}',
-            f"git push origin {refspec}",
+            f"git push --force-with-lease={shlex.quote(head_ref + ':')} origin {refspec}",
             (
                 "python scripts/create_pr_with_japanese_gate.py "
                 f"--repo {repo} --base main --head {branch} "
