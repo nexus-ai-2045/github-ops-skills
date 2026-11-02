@@ -48,6 +48,9 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
     このrepositoryには実行器が無い。exact_operationは、人間が現在会話で
     承認したあとに手で行う手順の記述であり、自動では走らない。
     """
+    repo = shlex.quote(request.repo)
+    branch = shlex.quote(request.branch)
+    refspec = shlex.quote(f"HEAD:refs/heads/{request.branch}")
     return {
         "target_repo": request.repo,
         "base_branch": "main",
@@ -60,17 +63,17 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
         "executor": None,
         "exact_operation": [
             "git fetch origin main",
-            f"git switch --create {request.branch} origin/main",
+            f"git switch --create {branch} origin/main",
             f"write canary marker to {MARKER_PATH}",
             f"git add -- {MARKER_PATH}",
             'git commit -m "test: add private L4 canary marker"',
-            f"git push origin HEAD:refs/heads/{request.branch}",
+            f"git push origin {refspec}",
             (
                 "gh pr create "
-                f"--repo {request.repo} --base main --head {request.branch} "
+                f"--repo {repo} --base main --head {branch} "
                 f"--draft --title {shlex.quote(request.draft_pr_title)} --body-file <reviewed-body-file>"
             ),
-            f"gh pr view --repo {request.repo} {request.branch} --json number,isDraft,state,url,headRefName,baseRefName",
+            f"gh pr view --repo {repo} {branch} --json number,isDraft,state,url,headRefName,baseRefName",
         ],
         "success_evidence": [
             "repository visibility is PRIVATE",

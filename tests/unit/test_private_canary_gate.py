@@ -1,4 +1,5 @@
 import shlex
+import subprocess
 
 from scripts.run_private_canary import (
     CanaryRequest,
@@ -82,3 +83,28 @@ def test_mutation_plan_keeps_reviewed_title_as_one_shell_argument() -> None:
     args = shlex.split(create.replace("<reviewed-body-file>", "body.md"))
 
     assert args[args.index("--title") + 1] == title
+
+
+def test_mutation_plan_keeps_reviewed_branch_and_repo_literal() -> None:
+    branch = "canary/$USER"
+    repo = "example-org/fixture"
+    request = CanaryRequest(repo, "PRIVATE", branch, "検証", False)
+
+    commands = [
+        subprocess.run(
+            ["sh", "-c", 'printf "%s\\n" ' + operation.split(" ", 2)[2].replace("<reviewed-body-file>", "body.md")],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={"USER": "someone-else", "PATH": "/usr/bin:/bin"},
+        ).stdout.splitlines()
+        for operation in build_mutation_plan(request)["exact_operation"]
+        if operation.startswith(("git switch", "git push", "gh pr"))
+    ]
+
+    switch, push, create, view = commands
+    assert switch[switch.index("--create") + 1] == branch
+    assert push[-1] == f"HEAD:refs/heads/{branch}"
+    assert create[create.index("--head") + 1] == branch
+    assert create[create.index("--repo") + 1] == repo
+    assert view[view.index("--repo") + 2] == branch
