@@ -87,7 +87,7 @@ def test_mutation_plan_verifies_private_target_before_any_git_write() -> None:
     verify = next(i for i, op in enumerate(operations) if op.startswith("test ") and "gh repo view" in op)
     first_write = next(i for i, op in enumerate(operations) if op.startswith(("git switch", "git push", "git commit")))
 
-    assert operations[0] == "cd <reviewed-repo-root>"
+    assert operations[:2] == ["set -eu", "cd <reviewed-repo-root>"]
     assert verify < first_write
     assert shlex.quote("example-org/fixture PRIVATE") in operations[verify]
 
@@ -119,11 +119,52 @@ def test_every_pre_write_condition_is_checked_before_the_first_write() -> None:
         "authenticated account",
         "dirty worktree",
         "pre-existing canary branch",
+        "pre-existing local canary branch",
     }
     first_write = next(i for i, op in enumerate(operations) if op.startswith(WRITE_PREFIXES))
     for condition, check in checks.items():
         assert operations.index(check) < first_write, condition
         assert check.endswith("|| exit 1"), condition
+    switch = next(i for i, op in enumerate(operations) if op.startswith("git switch"))
+    assert operations[switch + 1].startswith('test "$(git branch --show-current)" = ')
+
+
+@pytest.mark.skipif(shutil.which("sh") is None or shutil.which("git") is None, reason="sh と git が要る")
+def test_planned_git_steps_stop_when_a_local_canary_branch_already_exists(tmp_path) -> None:
+    request = CanaryRequest("example-org/fixture", "PRIVATE", "canary/test", "検証", False)
+    plan = build_mutation_plan(request)
+    steps = [
+        op
+        for op in plan["exact_operation"]
+        if op == "set -eu"
+        or op.startswith(("git switch", 'test "$(git branch --show-current)"'))
+        or op == plan["pre_write_checks"]["pre-existing local canary branch"]
+    ]
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@example.invalid",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@example.invalid",
+    }
+    work = tmp_path / "work"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(work)], env=env, check=True)
+    subprocess.run(["git", "commit", "--allow-empty", "-q", "-m", "base"], cwd=work, env=env, check=True)
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=work, env=env, check=True)
+    subprocess.run(["git", "branch", "canary/test"], cwd=work, env=env, check=True)
+
+    result = subprocess.run(
+        ["sh", "-c", "\n".join(steps) + "\necho reached-write"],
+        cwd=work,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "reached-write" not in result.stdout
 
 
 @pytest.mark.skipif(shutil.which("sh") is None or shutil.which("git") is None, reason="sh と git が要る")

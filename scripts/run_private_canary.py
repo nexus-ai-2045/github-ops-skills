@@ -61,6 +61,7 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
         "authenticated account": 'test "$(gh api user --jq .login)" = <reviewed-login> || exit 1',
         "dirty worktree": 'test -z "$(git status --porcelain)" || exit 1',
         "pre-existing canary branch": f'test -z "$(git ls-remote origin {shlex.quote(head_ref)})" || exit 1',
+        "pre-existing local canary branch": f'test -z "$(git branch --list {branch})" || exit 1',
     }
     return {
         "target_repo": request.repo,
@@ -74,10 +75,12 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
         "executor": None,
         "pre_write_checks": pre_write_checks,
         "exact_operation": [
+            "set -eu",
             "cd <reviewed-repo-root>",
             "git fetch origin main",
             *pre_write_checks.values(),
             f"git switch --create {branch} origin/main",
+            f'test "$(git branch --show-current)" = {branch} || exit 1',
             f"write canary marker to {MARKER_PATH}",
             f"git add -- {MARKER_PATH}",
             f'git commit --only -m "test: add private L4 canary marker" -- {MARKER_PATH}',
