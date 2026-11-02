@@ -54,7 +54,14 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [[ "$EVENT_NAME" == "push" ]]; then
-            git diff --check "$BEFORE_SHA"..HEAD
+            # 初回 push では before が全0になる。空・全0・存在しないコミットのときは
+            # 比較元が無いので、空ツリーと比べて全ファイルを見る
+            if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              echo "比較元 (before) が使えないため、空ツリーと比べます"
+              git diff --check "$(git hash-object -t tree --stdin < /dev/null)" HEAD
+            else
+              git diff --check "$BEFORE_SHA"..HEAD
+            fi
           else
             git diff --check "$BASE_SHA"..HEAD
           fi
