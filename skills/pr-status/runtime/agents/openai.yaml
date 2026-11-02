@@ -1,0 +1,6 @@
+name: pr-status
+description: "現在 branch に関連する PR の CI、review comment、merge 可否を確認して報告する。"
+interface:
+  key: pr-status
+  display_name: "PR Status"
+  short_description: "pull request status check workflow。"

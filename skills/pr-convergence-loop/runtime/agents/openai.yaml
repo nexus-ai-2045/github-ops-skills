@@ -1,0 +1,8 @@
+interface:
+  display_name: "PR Convergence Loop"
+  short_description: "Drive visible PR residuals through measure, repair, verify, merge, and closeout."
+  default_prompt: "Use $pr-convergence-loop to converge visible open PRs with feedback-loop verification before claiming residual zero."
+  instructions: |
+    Read SKILL.md for the canonical procedure.
+    Use github-cli-ops-guard before GitHub writes and done-verification-closeout before completion claims.
+    Keep merge permission and branch/worktree cleanup as separate stoplines.

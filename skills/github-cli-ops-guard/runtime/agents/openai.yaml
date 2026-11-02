@@ -1,0 +1,9 @@
+interface:
+  display_name: "GitHub CLI Ops Guard"
+  short_description: "Check gh active account, remote owner, credentials, and repo resolution before GitHub writes."
+  default_prompt: "Use $github-cli-ops-guard before GitHub write operations or account-drift recovery."
+  instructions: |
+    Read SKILL.md for the canonical procedure.
+    Prefer the bundled read-only probe at scripts/gh_identity_probe.py.
+    Do not print token values.
+    Stop before push, PR creation, merge, branch deletion, release/tag, visibility changes, hooks, settings, auth, secrets, destructive actions, and production changes without current approval.

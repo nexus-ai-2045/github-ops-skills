@@ -1,0 +1,6 @@
+name: commit-push-pr
+description: "変更確認、commit、push、PR 作成までを安全確認付きで進める。"
+interface:
+  key: commit-push-pr
+  display_name: "Commit Push PR"
+  short_description: "commit -> push -> PR workflow。"

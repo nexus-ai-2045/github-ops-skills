@@ -1,0 +1,85 @@
+# github-ops-skills
+
+複数の GitHub アカウントと repository を扱うとき、対象・identity・権限・承認を混ぜないための小さな Core Suite です。Codex / Claude / Grok は同じ `skills/` を見ます。書き込み前に fail-closed で止まります。
+
+## 目的
+
+GitHub へ書く直前に、今どの owner の、どの repo に触ろうとしているかを identity と remote から確定します。write 権限の有無は照会しません。確定できない操作は実行しません。
+
+公開判断、テスト成功、Settings 変更は別の承認です。この repo はフル orchestrator ではなく、既存 skill を直列につなぐだけです。
+
+## できること
+
+- GitHub CLI の active account と remote owner を照合する
+- PR の title/body が日本語境界を満たすか検査する
+- runtime skill が `skills/` 正本からずれていないか検査する
+- `tracked ∧ ignored` の新規増加を ai-ratchet-gate が CI で検出する（required check 未設定のため merge は機械強制しない）
+- review thread を本文推定せず、既存 audit 判定だけで扱う
+
+やらないこと: visibility 変更、自動 merge、token の保存、home 設定の書き換え。
+
+## クイックスタート
+
+Python 3.11 以上。token は環境変数だけに置き、file へ書きません。
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe adapters/grok/verify_adapter.py --repo . --json
+```
+
+結果は `READY` / `BLOCKED` / `UNKNOWN` の3状態です。`UNKNOWN` を成功扱いしません。
+
+GitHub へ書く直前:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/preflight_write_gate.py --repo . --expected-owner <owner> --expected-login <login> --json
+```
+
+`<owner>` と `<login>` は、今触っている clone の remote owner と `gh` login に置き換えてください。upstream 維持者専用の値ではありません。
+
+接続順の詳細は [運用カード](../../../../docs/operating-card.md) です。
+
+## 安全境界
+
+- 通常の probe と E2E は read-only です
+- global な `gh` active account を切り替えません
+- token を file・引数・出力へ保存しません
+- push / PR / merge / repository 作成 / visibility 変更は、現在会話の明示承認が必要です
+- PR title/body は日本語 gate を通し、作成後に read-back します
+- required status checks と secret scanning は GitHub Settings であり、この repo の file 差分ではありません
+
+## 必須契約
+
+既存の gate と sibling 正本だけを使います。新しい protocol や script は足しません。
+
+| 契約 | この repo での扱い |
+|---|---|
+| `repo-preflight` / `public-repo-readiness` | 公開前の判断材料。visibility は自動変更しない |
+| この Core Suite | identity / 日本語 gate / adapter。正本は `skills/` |
+| `engineering-brain` | 判断が必要な作業のときだけ |
+| FDE | skill 内 FDE Packet と同じ契約 |
+| `ai-ratchet-gate` | 既存の昇格・回帰 gate。エンジンは再実装しない |
+| `nexus-management-os` | 運用 OS 側の既存契約 |
+| `nexus_ai` | mainline / 最新参照。第二複製にしない |
+
+## ライセンスと出典
+
+コードは [MIT License](../../../../LICENSE) です。Copyright (c) 2026 nexus_ai。
+
+検査ロジックの一部は sibling 正本を呼びます。
+
+- [repo-preflight](https://github.com/nexus-ai-2045/repo-preflight)
+- [ai-ratchet-gate](https://github.com/nexus-ai-2045/ai-ratchet-gate)
+
+## 次の文書
+
+| 文書 | 内容 |
+|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | setup / test / PR |
+| [SECURITY.md](../../../../SECURITY.md) | 報告経路 |
+| [PUBLIC_READY.md](PUBLIC_READY.md) | L1–L4 の実測 |
+| [PREFLIGHT.md](../../../../PREFLIGHT.md) | release 前の review 記録 |
+| [docs/operating-card.md](../../../../docs/operating-card.md) | write 前の接続順 |
+| [docs/pr-japanese-gate.md](../../../../docs/pr-japanese-gate.md) | PR 日本語 gate |

@@ -1,0 +1,31 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: github-ops/repository-state/v1
+type: object
+additionalProperties: false
+required: [schema_version, repository, settings]
+properties:
+  schema_version:
+    const: github-ops/repository-state/v1
+  repository:
+    type: string
+    pattern: "^[^/]+/[^/]+$"
+  settings:
+    type: object
+    minProperties: 1
+    additionalProperties: false
+    properties:
+      visibility:
+        enum: [PRIVATE, INTERNAL, PUBLIC]
+      default_branch:
+        type: string
+        minLength: 1
+      description:
+        type: string
+      issues_enabled:
+        type: boolean
+      wiki_enabled:
+        type: boolean
+      discussions_enabled:
+        type: boolean
+      projects_enabled:
+        type: boolean

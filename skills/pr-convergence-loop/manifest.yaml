@@ -1,0 +1,29 @@
+# pr-convergence-loop
+# SSOT in this repository: skills/pr-convergence-loop/
+# 連携先のうち github-cli-ops-guard はこの repository にある。
+# done-verification-closeout と status-sweep は host workspace 側にあり、
+# この repository には無い。正本ではなく実行前提なので SKILL.md の
+# 「前提条件」に書く。ssot_pointers には書かない
+name: pr-convergence-loop
+owner_kind: skill
+ssot_pointers:
+  - skills/pr-convergence-loop/SKILL.md
+  - skills/github-cli-ops-guard/SKILL.md
+runtimes:
+  claude:
+    mode: copy
+    files:
+      - SKILL.md
+  codex:
+    mode: copy
+    files:
+      - SKILL.md
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: copy
+    files:
+      - SKILL.md
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2

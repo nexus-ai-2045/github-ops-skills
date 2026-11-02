@@ -1,0 +1,36 @@
+# post-merge-closeout
+# SSOT in this repository: skills/post-merge-closeout/
+# 手順が呼ぶ collector / cleanup script は host workspace 側にあり、
+# この repository には無い。正本ではなく実行前提なので SKILL.md の
+# 「前提条件」に書く。ssot_pointers には書かない
+name: post-merge-closeout
+owner_kind: skill
+ssot_pointers:
+  - skills/post-merge-closeout/SKILL.md
+runtimes:
+  claude:
+    mode: copy
+    files:
+      - SKILL.md
+  codex:
+    mode: copy
+    files:
+      - SKILL.md
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: copy
+    files:
+      - SKILL.md
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "マージ後クローズアウト"
+  short_description: "PRマージ後のread-only証跡を集め、PR単体とrepo全体の残務を分けて確認する。"
+  default_prompt: "PRマージ後や残務ゼロ確認では $post-merge-closeout を使い、PR単体、repo全体、次の1手を日本語優先で分けて報告する。"
+  instructions: |
+    SKILL.mdを正本手順として読む。
+    repoとPR番号が分かっている時は shared/scripts/post_merge_closeout_report.py collect を実行する。
+    PR単体、repo全体、次の1手を分け、日本語優先で報告する。
+    このskillではapprove、merge、push、branch削除、PR編集をしない。

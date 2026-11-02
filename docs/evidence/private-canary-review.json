@@ -1,0 +1,21 @@
+{
+  "schema_version": "github-ops/private-canary-review/v1",
+  "recorded_at": "2026-07-28T02:32:52.004042+09:00",
+  "request": {
+    "repo": "nexus-ai-2045/github-ops-skills",
+    "visibility": "PRIVATE",
+    "branch": "canary/github-ops-skills",
+    "draft_pr_title": "GitHub操作経路canary",
+    "confirmed": false
+  },
+  "gate": {
+    "status": "BLOCKED",
+    "code": "canary_confirmation_missing",
+    "cause": "現在会話でのcanary承認がありません",
+    "impact": "外部変更は実行しません",
+    "recovery": "review packetを人間確認してください",
+    "evidence": {}
+  },
+  "executed": false,
+  "note": "--execute指定時もこのversionは外部変更を実行しません"
+}

@@ -1,0 +1,189 @@
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from urllib.parse import urlparse
+
+from .command import CommandRunner
+from .result import Outcome, Status
+
+
+TOKEN_ENV_NAMES = {"GH_TOKEN", "GITHUB_TOKEN"}
+
+
+class IdentityProbe:
+    def __init__(self, runner: CommandRunner | None = None) -> None:
+        self.runner = runner or CommandRunner()
+
+    def validate_token_login(
+        self,
+        *,
+        expected_login: str,
+        token: str,
+        cwd: Path | str | None = None,
+    ) -> Outcome:
+        result = self.runner.run(
+            ["gh", "api", "user", "--jq", ".login"],
+            cwd=cwd,
+            scoped_env={"GH_TOKEN": token},
+        )
+        if result.returncode != 0:
+            return Outcome(
+                status=Status.UNKNOWN,
+                code="token_login_unverified",
+                cause="token loginをGitHub APIで確認できませんでした",
+                impact="GitHub書き込みは実行できません",
+                recovery="network、token有効性、GitHub CLIを確認してください",
+                evidence={"api_returncode": result.returncode},
+            )
+        token_login = result.stdout.strip()
+        if token_login != expected_login:
+            return Outcome(
+                status=Status.BLOCKED,
+                code="token_login_mismatch",
+                cause="token loginがexpected loginと一致しません",
+                impact="GitHub書き込みは実行しません",
+                recovery="expected login用のtokenを対象processだけへ渡してください",
+                evidence={
+                    "expected_login": expected_login,
+                    "token_login": token_login,
+                },
+            )
+        return Outcome(
+            status=Status.READY,
+            code="token_login_verified",
+            cause="token loginを確認しました",
+            impact="次のread-only preflightへ進めます",
+            recovery="none",
+            evidence={
+                "expected_login": expected_login,
+                "token_login": token_login,
+            },
+        )
+
+    def active_login(
+        self,
+        *,
+        cwd: Path | str | None = None,
+    ) -> tuple[str | None, str | None]:
+        result = self.runner.run(
+            ["gh", "api", "user", "--jq", ".login"],
+            cwd=cwd,
+            unset_env=TOKEN_ENV_NAMES,
+        )
+        if result.returncode != 0:
+            return None, result.stderr.strip() or "active loginを確認できません"
+        login = result.stdout.strip()
+        return (login or None), None if login else "active loginが空です"
+
+    def probe(
+        self,
+        repo: Path,
+        *,
+        expected_owner: str | None = None,
+        expected_login: str | None = None,
+        token: str | None = None,
+    ) -> Outcome:
+        resolved_repo = repo.resolve()
+        remote = self.runner.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=resolved_repo,
+        )
+        if remote.returncode != 0:
+            return Outcome(
+                status=Status.UNKNOWN,
+                code="remote_unavailable",
+                cause="origin remoteを確認できません",
+                impact="対象GitHub repositoryを確定できません",
+                recovery="originを設定するか、対象repositoryを明示してください",
+                evidence={"repo": resolved_repo.name},
+            )
+        owner, name = parse_github_remote(remote.stdout.strip())
+        if not owner or not name:
+            return Outcome(
+                status=Status.BLOCKED,
+                code="unsupported_remote",
+                cause="originをGitHub owner/nameへ解決できません",
+                impact="GitHub操作は実行しません",
+                recovery="HTTPSまたはSSHのGitHub remoteを確認してください",
+                evidence={"remote_kind": "unsupported"},
+            )
+        if expected_owner and owner != expected_owner:
+            return Outcome(
+                status=Status.BLOCKED,
+                code="remote_owner_mismatch",
+                cause="remote ownerがexpected ownerと一致しません",
+                impact="GitHub操作は実行しません",
+                recovery="account mapまたはremoteを確認してください",
+                evidence={"expected_owner": expected_owner, "remote_owner": owner},
+            )
+
+        if token and expected_login:
+            token_outcome = self.validate_token_login(
+                expected_login=expected_login,
+                token=token,
+                cwd=resolved_repo,
+            )
+            if token_outcome.status is not Status.READY:
+                return token_outcome
+            login = token_outcome.evidence["token_login"]
+            mode = "validated-token"
+        else:
+            login, error = self.active_login(cwd=resolved_repo)
+            if error:
+                return Outcome(
+                    status=Status.UNKNOWN,
+                    code="active_login_unverified",
+                    cause="global active loginを確認できません",
+                    impact="GitHub操作は実行しません",
+                    recovery="gh auth statusとkeyringを確認してください",
+                    evidence={"repository": f"{owner}/{name}"},
+                )
+            if expected_login and login != expected_login:
+                return Outcome(
+                    status=Status.BLOCKED,
+                    code="active_login_mismatch",
+                    cause="global active loginがexpected loginと一致しません",
+                    impact="GitHub操作は実行しません",
+                    recovery="validated-token modeを使用してください",
+                    evidence={
+                        "expected_login": expected_login,
+                        "active_login": login,
+                    },
+                )
+            mode = "global-active"
+
+        return Outcome(
+            status=Status.READY,
+            code="identity_verified",
+            cause="repositoryとGitHub loginを確認しました",
+            impact="read-only repository preflightへ進めます",
+            recovery="none",
+            evidence={
+                "repository": f"{owner}/{name}",
+                "remote_owner": owner,
+                "login": login,
+                "identity_mode": mode,
+            },
+        )
+
+
+def parse_github_remote(remote_url: str) -> tuple[str | None, str | None]:
+    ssh_match = re.fullmatch(
+        r"git@github\.com:(?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?",
+        remote_url,
+    )
+    if ssh_match:
+        return ssh_match.group("owner"), ssh_match.group("name")
+    parsed = urlparse(remote_url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "github.com"
+        or parsed.username
+        or parsed.password
+    ):
+        return None, None
+    parts = [part for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) != 2:
+        return None, None
+    return parts[0], parts[1].removesuffix(".git")

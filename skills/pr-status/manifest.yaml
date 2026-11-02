@@ -1,0 +1,22 @@
+name: pr-status
+owner_kind: skill
+ssot_pointers: []
+runtimes:
+  claude:
+    mode: copy
+    files: [SKILL.md]
+  codex:
+    mode: copy
+    files: [SKILL.md]
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: copy
+    files: [SKILL.md]
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "PR Status"
+  short_description: "現在 branch の PR 状態、CI、review、mergeability を確認する skill。"
+  default_prompt: "Use $pr-status when the user asks for PR state, CI status, review comments, or mergeability."

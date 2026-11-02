@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+REQUIRED_IDS = {
+    "GHO-TYPE-001",
+    "GHO-ID-001",
+    "GHO-ID-002",
+    "GHO-PATH-001",
+    "GHO-PROV-001",
+    "GHO-CHECKER-001",
+    "GHO-EXEC-001",
+    "GHO-SCAN-001",
+    "GHO-BRANCH-001",
+}
+ALLOWED_ENFORCEMENT = {"test", "ci"}
+SCHEMA_VERSION = "github-ops/invariants/v1"
+
+# 検査対象。verify_checker_contracts.py がこれを使って
+# 「対象が無い / 空のとき素通りしないか」を機械で確認する
+SUBJECT = "policy/invariants.json"
+# 構文上validな0件registryをempty variantとして使う
+EMPTY_SUBJECT = json.dumps({"schema_version": SCHEMA_VERSION, "invariants": []}) + "\n"
+
+
+def verify(repo: Path) -> list[str]:
+    # 対象が無い・壊れている時に例外で死ぬと、所見を list で返す契約が破れ、
+    # 呼び出し側は traceback を受け取る (2026-08-29 review)
+    try:
+        raw = (repo / SUBJECT).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [f"{SUBJECT} not found"]
+    except (OSError, UnicodeDecodeError) as exc:
+        return [f"{SUBJECT}: unreadable ({exc})"]
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return [f"{SUBJECT}: invalid JSON ({exc})"]
+    if not isinstance(payload, dict):
+        return [f"{SUBJECT}: top level must be an object"]
+    errors: list[str] = []
+    if payload.get("schema_version") != SCHEMA_VERSION:
+        errors.append("invalid schema_version")
+    items = payload.get("invariants")
+    if not isinstance(items, list) or not items:
+        return errors + ["invariants must be a non-empty list"]
+    tests_root = (repo / "tests").resolve()
+    seen: set[str] = set()
+    for item in items:
+        identifier = item.get("id") if isinstance(item, dict) else None
+        if not isinstance(identifier, str) or not identifier:
+            errors.append("invariant id is required")
+            continue
+        if identifier in seen:
+            errors.append(f"duplicate invariant id: {identifier}")
+        seen.add(identifier)
+        title = item.get("title")
+        if not isinstance(title, str) or not title.strip():
+            errors.append(f"title missing: {identifier}")
+        if item.get("enforcement") not in ALLOWED_ENFORCEMENT:
+            errors.append(f"invalid enforcement: {identifier}")
+        paths = item.get("test_paths")
+        if not isinstance(paths, list) or not paths:
+            errors.append(f"test_paths missing: {identifier}")
+            continue
+        for relative in paths:
+            if not isinstance(relative, str):
+                errors.append(f"test path missing: {identifier}:{relative}")
+                continue
+            relative_path = Path(relative)
+            candidate = (repo / relative_path).resolve()
+            try:
+                candidate.relative_to(repo.resolve())
+            except ValueError:
+                errors.append(f"test path escapes repository: {identifier}:{relative}")
+                continue
+            if relative_path.is_absolute() or ".." in relative_path.parts or not candidate.is_file():
+                errors.append(f"test path missing: {identifier}:{relative}")
+                continue
+            try:
+                candidate.relative_to(tests_root)
+            except ValueError:
+                errors.append(
+                    f"test path outside collected tests: {identifier}:{relative}"
+                )
+                continue
+            if not (
+                candidate.name.startswith("test_")
+                or candidate.name.endswith("_test.py")
+            ) or candidate.suffix != ".py":
+                errors.append(
+                    f"test path is not a collected test module: {identifier}:{relative}"
+                )
+    for missing in sorted(REQUIRED_IDS - seen):
+        errors.append(f"required invariant missing: {missing}")
+    return errors
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--repo", type=Path, default=Path.cwd())
+    args = parser.parse_args()
+    errors = verify(args.repo)
+    print(json.dumps({"status": "ok" if not errors else "error", "errors": errors}, ensure_ascii=False))
+    return 0 if not errors else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

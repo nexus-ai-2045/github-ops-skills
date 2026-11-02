@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nexus-ai-2045/repo-preflight/f825268978228a3cfb2f5ecba16a74d424134b1a/schemas/repository-consistency.schema.json",
+  "schema": "repo-preflight.consistency/v1",
+  "mode": "shadow",
+  "ratchet": {"baseline": []},
+  "markdown": {"include": ["README.md", "CONTRIBUTING.md", "PREFLIGHT.md", "AGENTS.md", "SECURITY.md"]},
+  "readme_contracts": {"required_paths": [], "commands": []},
+  "impact_map": [
+    {
+      "change": [".github/workflows/**", "requirements-tools.txt", ".repo-preflight-consistency.json"],
+      "requires_any": ["PREFLIGHT.md", "CONTRIBUTING.md", "tests/**"],
+      "allow_github_action_ref_updates": true
+    }
+  ],
+  "generated_artifacts": []
+}
