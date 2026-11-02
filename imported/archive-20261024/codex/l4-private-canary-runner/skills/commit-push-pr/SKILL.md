@@ -28,4 +28,4 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 - .env, credentials.json 等のシークレットファイルはステージングしない
 - コミットメッセージはユーザー確認後に実行
 - `gh` CLIが使えない場合はgit push URLを表示して手動PR作成を案内
-- yuhitsu 等の公開協業 repo は push 前に local-verify-before-pr / yuhitsu-pr-local-identity-check (memory) を確認
+- 公開協業 repo は push 前に local-verify-before-pr と、名義を手元で確かめる私的メモ (memory) を確認

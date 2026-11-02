@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -63,7 +63,7 @@ def test_cli_safe_tree_returns_zero_and_ready_json(sample_repo: Path) -> None:
 
 
 def test_cli_exposure_returns_nonzero_and_blocked_json(sample_repo: Path) -> None:
-    sensitive = "\\".join(("C:", "<伏せ字>", "<伏せ字>", "secret.txt"))
+    sensitive = (str(PureWindowsPath("C:/", "Users", "private-person", "secret.txt")))
     (sample_repo / "sample.txt").write_text(sensitive, encoding="utf-8")
     _git(sample_repo, "add", "sample.txt")
     _git(sample_repo, "commit", "-m", "Add exposure fixture")
