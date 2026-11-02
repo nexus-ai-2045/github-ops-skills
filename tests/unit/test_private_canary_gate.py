@@ -79,6 +79,18 @@ def test_mutation_plan_requires_draft_pr_and_read_back() -> None:
     assert any("gh pr view" in operation for operation in operations)
 
 
+def test_mutation_plan_verifies_private_target_before_any_git_write() -> None:
+    request = CanaryRequest("example-org/fixture", "PRIVATE", "canary/test", "検証", False)
+    operations = build_mutation_plan(request)["exact_operation"]
+
+    verify = next(i for i, op in enumerate(operations) if op.startswith("test ") and "gh repo view" in op)
+    first_write = next(i for i, op in enumerate(operations) if op.startswith(("git switch", "git push", "git commit")))
+
+    assert operations[0] == "cd <reviewed-repo-root>"
+    assert verify < first_write
+    assert shlex.quote("example-org/fixture PRIVATE") in operations[verify]
+
+
 def _fill_placeholders(operation: str) -> str:
     return re.sub(r"<([a-z-]+)>", r"\1", operation)
 

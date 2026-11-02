@@ -62,6 +62,12 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
         "changed_paths": [MARKER_PATH],
         "executor": None,
         "exact_operation": [
+            "cd <reviewed-repo-root>",
+            (
+                "test \"$(gh repo view --json nameWithOwner,visibility "
+                "--jq '.nameWithOwner + \" \" + .visibility')\" = "
+                f"{shlex.quote(request.repo + ' PRIVATE')} || exit 1"
+            ),
             "git fetch origin main",
             f"git switch --create {branch} origin/main",
             f"write canary marker to {MARKER_PATH}",
