@@ -15,6 +15,7 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 4. ユーザーにコミットメッセージを提示して確認
 5. 承認されたら:
    - `git add` で関連ファイルをステージング（.env, credentials等は除外）
+   - `git commit` でコミット（［伏せた語］付き）
    - コミット後、`git rev-list --count origin/main..HEAD` で未push数をチェック
    - 未pushが1件以上 → 「未push {N}件。pushする？」とユーザーに確認
    - 承認 → mainなら `git push origin main`、ブランチなら `git push -u origin <branch>`
