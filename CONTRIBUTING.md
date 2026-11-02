@@ -46,6 +46,7 @@ Grok を使っている場合だけ、runtime 差分も見ます。`$HOME/.grok/
 ```
 
 `ai-ratchet-gate` は GitHub Actions が Release wheel を pin して実行します。ローカルで同じ検査をする場合も、PyPI 名ではなく公開 Release の wheel を使います。
+固定先は `v0.2.0` の `ai_ratchet_gate-0.2.0-py3-none-any.whl`（SHA-256 は [requirements-tools.txt](requirements-tools.txt) と workflow の 2 か所で同じ値）です。ローカルでは `python -m pip install --require-hashes -r requirements-tools.txt` で入れます。
 
 公開面・L3 の既存検査（新規 script は足さない）:
 

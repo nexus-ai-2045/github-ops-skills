@@ -15,6 +15,7 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 4. ユーザーにコミットメッセージを提示して確認
 5. 承認されたら:
    - `git add` で関連ファイルをステージング（.env, credentials等は除外）
+   - `git commit` でコミット（［伏せた語］付き）
    - コミット後、`git rev-list --count origin/main..HEAD` で未push数をチェック
    - 未pushが1件以上 → 「未push {N}件。pushする？」とユーザーに確認
    - 承認 → mainなら `git push origin main`、ブランチなら `git push -u origin <branch>`
@@ -28,4 +29,4 @@ description: 変更を commit → push → PR 作成までワンコマンドで�
 - .env, credentials.json 等のシークレットファイルはステージングしない
 - コミットメッセージはユーザー確認後に実行
 - `gh` CLIが使えない場合はgit push URLを表示して手動PR作成を案内
-- yuhitsu 等の公開協業 repo は push 前に local-verify-before-pr / yuhitsu-pr-local-identity-check (memory) を確認
+- 公開協業 repo は push 前に local-verify-before-pr と、名義を手元で確かめる私的メモ (memory) を確認

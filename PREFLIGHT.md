@@ -2,6 +2,12 @@
 
 # 公開準備状況
 
+## 2026-11-03 `base-guard` を外す
+
+- 対象: `base-guard` は検査定義（`.github/workflows/`）を変える `PR` を必ず赤にする。必須チェックにも `ruleset` にも入っておらず、止めるのはマージの入口だけで、毎回人の手作業を要していた。所有者の判断で外す。
+- 残る検査: `preflight`・`ai-ratchet-gate`・`Core Suite CI`・`repository-guarantees`・`PR日本語gate`・`PRセルフレビュー（base監査 advisory）` はそのまま。
+- 判定: 検査定義の変更は、これまでどおり `PR` の差分とレビューで見る。
+
 ## 2026-10-26 main の赤を解く（検査の固定先の更新）
 
 - 対象: `main` の CI が赤のまま。原因は3つで、既存の `PR` #6（wheel）・#2（preflight の固定先）・#1（初回 push の比較元）はそれぞれ1つしか直さないため、互いの赤が残っていた。1本にまとめて直す。
