@@ -1,11 +1,17 @@
+import re
 import shlex
+import shutil
 import subprocess
+
+import pytest
 
 from scripts.run_private_canary import (
     CanaryRequest,
     build_mutation_plan,
     validate_canary_request,
 )
+
+CREATE_PR = "scripts/create_pr_with_japanese_gate.py"
 
 
 def test_canary_requires_exact_confirmation() -> None:
@@ -67,8 +73,14 @@ def test_mutation_plan_requires_draft_pr_and_read_back() -> None:
 
     operations = build_mutation_plan(request)["exact_operation"]
 
-    assert any("gh pr create" in operation and "--draft" in operation for operation in operations)
+    create = next(operation for operation in operations if CREATE_PR in operation)
+    assert "--draft" in create and "--confirm" in create
+    assert not any(operation.startswith("gh pr create") for operation in operations)
     assert any("gh pr view" in operation for operation in operations)
+
+
+def _fill_placeholders(operation: str) -> str:
+    return re.sub(r"<([a-z-]+)>", r"\1", operation)
 
 
 def test_mutation_plan_keeps_reviewed_title_as_one_shell_argument() -> None:
@@ -78,13 +90,14 @@ def test_mutation_plan_keeps_reviewed_title_as_one_shell_argument() -> None:
     create = next(
         operation
         for operation in build_mutation_plan(request)["exact_operation"]
-        if operation.startswith("gh pr create")
+        if CREATE_PR in operation
     )
-    args = shlex.split(create.replace("<reviewed-body-file>", "body.md"))
+    args = shlex.split(_fill_placeholders(create))
 
     assert args[args.index("--title") + 1] == title
 
 
+@pytest.mark.skipif(shutil.which("sh") is None, reason="POSIX shell が無い環境では展開を確かめられない")
 def test_mutation_plan_keeps_reviewed_branch_and_repo_literal() -> None:
     branch = "canary/$USER"
     repo = "example-org/fixture"
@@ -92,14 +105,14 @@ def test_mutation_plan_keeps_reviewed_branch_and_repo_literal() -> None:
 
     commands = [
         subprocess.run(
-            ["sh", "-c", 'printf "%s\\n" ' + operation.split(" ", 2)[2].replace("<reviewed-body-file>", "body.md")],
+            ["sh", "-c", 'printf "%s\\n" ' + _fill_placeholders(operation).split(" ", 2)[2]],
             capture_output=True,
             text=True,
             check=True,
             env={"USER": "someone-else", "PATH": "/usr/bin:/bin"},
         ).stdout.splitlines()
         for operation in build_mutation_plan(request)["exact_operation"]
-        if operation.startswith(("git switch", "git push", "gh pr"))
+        if operation.startswith(("git switch", "git push", "gh pr", "python " + CREATE_PR))
     ]
 
     switch, push, create, view = commands

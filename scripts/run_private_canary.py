@@ -69,9 +69,12 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
             'git commit -m "test: add private L4 canary marker"',
             f"git push origin {refspec}",
             (
-                "gh pr create "
+                "python scripts/create_pr_with_japanese_gate.py "
                 f"--repo {repo} --base main --head {branch} "
-                f"--draft --title {shlex.quote(request.draft_pr_title)} --body-file <reviewed-body-file>"
+                "--repo-root <reviewed-repo-root> --account-map <reviewed-account-map> "
+                "--expected-base-sha <reviewed-base-sha> --expected-head-sha <reviewed-head-sha> "
+                "--expected-visibility PRIVATE "
+                f"--draft --title {shlex.quote(request.draft_pr_title)} --body-file <reviewed-body-file> --confirm"
             ),
             f"gh pr view --repo {repo} {branch} --json number,isDraft,state,url,headRefName,baseRefName",
         ],
