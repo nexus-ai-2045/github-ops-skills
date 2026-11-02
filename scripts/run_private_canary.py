@@ -68,11 +68,12 @@ def build_mutation_plan(request: CanaryRequest) -> dict[str, object]:
                 "--jq '.nameWithOwner + \" \" + .visibility')\" = "
                 f"{shlex.quote(request.repo + ' PRIVATE')} || exit 1"
             ),
+            'test -z "$(git status --porcelain)" || exit 1',
             "git fetch origin main",
             f"git switch --create {branch} origin/main",
             f"write canary marker to {MARKER_PATH}",
             f"git add -- {MARKER_PATH}",
-            'git commit -m "test: add private L4 canary marker"',
+            f'git commit --only -m "test: add private L4 canary marker" -- {MARKER_PATH}',
             f"git push origin {refspec}",
             (
                 "python scripts/create_pr_with_japanese_gate.py "

@@ -6,6 +6,7 @@ import subprocess
 import pytest
 
 from scripts.run_private_canary import (
+    MARKER_PATH,
     CanaryRequest,
     build_mutation_plan,
     validate_canary_request,
@@ -89,6 +90,19 @@ def test_mutation_plan_verifies_private_target_before_any_git_write() -> None:
     assert operations[0] == "cd <reviewed-repo-root>"
     assert verify < first_write
     assert shlex.quote("example-org/fixture PRIVATE") in operations[verify]
+
+
+def test_mutation_plan_rejects_dirty_checkout_and_commits_only_marker() -> None:
+    request = CanaryRequest("example-org/fixture", "PRIVATE", "canary/test", "検証", False)
+    operations = build_mutation_plan(request)["exact_operation"]
+
+    clean = operations.index('test -z "$(git status --porcelain)" || exit 1')
+    switch = next(i for i, op in enumerate(operations) if op.startswith("git switch"))
+    commit = next(op for op in operations if op.startswith("git commit"))
+
+    assert clean < switch
+    assert "--only" in commit
+    assert commit.endswith(f"-- {MARKER_PATH}")
 
 
 def _fill_placeholders(operation: str) -> str:
