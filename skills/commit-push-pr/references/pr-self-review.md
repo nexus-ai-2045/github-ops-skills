@@ -21,7 +21,7 @@ generated_by: pr-review-rule-exporter scripts/export_pr_self_review.py
 
 | | |
 |---|---|
-| rules_version | `dfb366f323516772` |
+| rules_version | `8b20a0967d7aac8e` |
 | 生成元 | `pr-review-rule-exporter` `references/pr-review-recurrence-rules.md` |
 
 更新は正本側で行い、`scripts/export_pr_self_review.py` で再生成して各リポジトリへ配る。
@@ -39,6 +39,9 @@ generated_by: pr-review-rule-exporter scripts/export_pr_self_review.py
 - 「読めなかった」「0 件だった」「例外だった」を `ok` に合流させない。
 - 検査を追加したら、対象を壊した状態で必ず落ちることを 1 回確認する。
 - 終了コードは意味ごとに分ける。整合性失敗と未保護状態を同じコードに畳まない。
+- 比較の入力 (既存クローン・キャッシュ・前回の取得結果) が古い可能性があるなら、比較の前に取得し直す。
+  取得を省く指定は明示引数に限り、省いたことを結果に出す。
+- 比較対象の指定 (パス・参照名) が存在しない時は「差分 0 件」ではなくエラーにする。
 
 ## R2 明示指定は黙って別の対象へ倒れない
 
@@ -59,6 +62,9 @@ generated_by: pr-review-rule-exporter scripts/export_pr_self_review.py
 - 検査から実行 (merge / push / 公開) までの間に対象が変わり得るなら、実行直前に再検証する。
 - 記録する時刻は「実際に観測した時刻」。予定時刻や未来時刻を書かない。
 - 承認は操作単位で結び付ける。汎用の「レビュー済み」を別操作へ流用しない。
+- PR の merge 前には、既存の `github_pr_review_thread_audit.py` の結果を実際に読み、
+  最新の `(base SHA, head SHA)` と一致し、全ページ取得済み・未解決 thread 0・
+  `decision=pass` であることを確認する。CI 成功や merge guard の許可だけで代替しない。
 
 ## R4 宣言と実体を一致させる
 
@@ -69,6 +75,8 @@ generated_by: pr-review-rule-exporter scripts/export_pr_self_review.py
 - 未実施のチェック項目は未チェックのまま残す。予定を完了として書かない。
 - 手順に書いたコマンドは、書いた通りの cwd で実際に走らせて確認する。
 - 追跡できない一次資料は、取得元・ハッシュ・復元手順を残す。
+- 台帳や `manifest` の記録種別ごとに処理を分けるなら、実データの全種別と各種別の用途欄を
+  読んでから分類規則を書き、全種別を 1 件ずつテストに入れる。種別名から用途を推測しない。
 
 ## R5 正本と配布コピーを同時に更新する
 
@@ -163,6 +171,8 @@ generated_by: pr-review-rule-exporter scripts/export_pr_self_review.py
   承認後に base が進んだ場合に head が同じまま merge されるツリーだけが未検査の組み合わせへ
   変わり、ゲートを迂回できる。
 - merge は、検査したその組み合わせに固定して実行する。
+- review-thread 監査を merge の後に回さない。guard 呼出し前と実行直前の監査が
+  失敗・未読・古い組み合わせなら停止する。手順の採用だけで全実行経路の強制を保証しない。
 - ゲート自身の定義ファイルの変更を、免除対象にしない。
 
 ## R13 追跡の取捨は「作り直せるか」で決める
@@ -201,11 +211,15 @@ generated_by: pr-review-rule-exporter scripts/export_pr_self_review.py
 
 1. 追加した検査は、対象を壊した状態で実際に落ちるか (R1)。
 2. 取得失敗・空・例外を `ok` と別の状態で返しているか (R1)。
+   比較の入力が古い時は取得し直すか、未取得と結果に出しているか (`R1`)。
 3. 明示引数が無効なとき、fallback せずエラーにしているか (R2)。
 4. 既定値に個人パス・マシン固有パス・cwd 依存が残っていないか (R2, R6)。
 5. 「検査した」記録に、対象 ID と revision と実測時刻が入っているか (R3)。
 6. 検査から実行までの間に対象が変わり得るなら、直前に再検証しているか (R3)。
+   PR の merge では、同じ base/head の review-thread 監査を guard 前に実読し、
+   全ページ取得済み・未解決 0・pass を確認したか。実行直前にも有効か (R3, R12)。
 7. 文書・台帳・manifest が指す参照先を確認したか (R4, R13)。
+   記録種別ごとの分類規則を、実データの全種別で確かめたか (`R4`)。
    一次資料と再生成できない参照先は、この commit の tree に存在するか。
    再生成できる参照先は、ソース・依存・復元手順が追跡されているか。
 8. 手順のコマンドを、書いた cwd で実際に 1 回走らせたか (R4)。
