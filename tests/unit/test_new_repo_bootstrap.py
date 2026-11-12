@@ -846,3 +846,11 @@ def test_missing_name_with_owner_is_judged_the_same_in_preflight_and_settings(mo
     settings = _settings_responses()
     settings[("gh", "repo", "view")] = (0, json.dumps({"visibility": "PUBLIC"}), "")
     assert module.Bootstrapper(plan, FakeRunner(settings), today=TODAY).apply_settings()["status"] == "READY"
+
+
+def test_grok_only_lint_owner_is_discovered(module, tmp_path):
+    source = Path(module.development_lint_provider().__file__)
+    installer = tmp_path / ".grok/skills/repo-preflight/checkout/scripts/install_development_lint.py"
+    installer.parent.mkdir(parents=True)
+    installer.write_bytes(source.read_bytes())
+    assert Path(module.development_lint_provider(home=tmp_path, env={}).__file__) == installer

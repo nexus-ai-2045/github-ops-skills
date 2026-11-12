@@ -231,7 +231,7 @@ def development_lint_provider(
     candidates = [(explicit.with_name("install_development_lint.py"), explicit_required)] if explicit else []
     if env.get("REPO_PREFLIGHT_ROOT"):
         candidates.append((Path(env["REPO_PREFLIGHT_ROOT"]).expanduser() / "scripts/install_development_lint.py", True))
-    for runtime in (".codex", ".claude", ".agents"):
+    for runtime in (".codex", ".claude", ".agents", ".grok"):
         candidates.append((home / runtime / "skills/repo-preflight/checkout/scripts/install_development_lint.py", False))
     local_roots = (plan.repo_dir.parent,) if plan is not None else (home / DEFAULT_LOCAL_ROOT, home / DEFAULT_LOCAL_ROOT / "private")
     for local_root in local_roots:
