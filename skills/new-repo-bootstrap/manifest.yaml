@@ -12,16 +12,19 @@ runtimes:
     files:
       - SKILL.md
       - scripts/bootstrap_repo.py
+      - scripts/development_lint.py
   codex:
     mode: copy
     files:
       - SKILL.md
       - scripts/bootstrap_repo.py
+      - scripts/development_lint.py
   grok:
     mode: copy
     files:
       - SKILL.md
       - scripts/bootstrap_repo.py
+      - scripts/development_lint.py
 duplication_guard:
   enabled: true
   max_overlap_lines: 2

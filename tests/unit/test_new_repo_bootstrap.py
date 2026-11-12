@@ -309,6 +309,21 @@ def test_templates_scaffold_and_visibility_claim(module, home) -> None:
     assert "README.md" not in written and "LICENSE" in written
     assert (plan.repo_dir / "README.md").read_text(encoding="utf-8") == "mine"
     assert str(home) not in (plan.repo_dir / "PREFLIGHT.md").read_text(encoding="utf-8")
+    contribution = (plan.repo_dir / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "失敗する test" in contribution and "main へ直接 push しない" in contribution
+    assert contribution.count(module.LINT_START) == 1
+
+
+def test_initial_lint_failure_stops_before_commit_and_remote(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    responses = _happy_execute(plan, tools)
+    responses[("python3", "tools/development_lint.py")] = (1, "", "source.py: 説明コメント")
+    runner = FakeRunner(responses)
+    report = module.Bootstrapper(plan, runner, today=TODAY).execute()
+    assert report["status"] == "BLOCKED"
+    assert report["steps"][-1]["name"] == "scaffold_docs"
+    assert not runner.called("git", "commit")
+    assert not runner.called("gh", "repo", "create")
 
 
 def test_registry_local_path_is_workspace_relative_and_falls_back(module, home, tmp_path) -> None:

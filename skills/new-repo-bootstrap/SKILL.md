@@ -36,6 +36,25 @@ done_when: script の execute が READY + gh repo view で read-back 一致 + (r
 
 `approval: missing` なら `--confirm` を付けない (preflight だけ)。
 
+## 開発開始時の静的検査
+
+新規作成では、コメント禁止とバグの再発防止ルールを実行する `tools/development_lint.py`、依存定義、継続検査、開発ルールを雛形に含める。初期コミットの前に検査を実行し、失敗した場合は作成処理を停止する。
+
+既存の独立したアプリ、または開発前のディレクトリには、次のローカル専用入口で同じ検査を導入する。
+
+```bash
+python3 <skill dir>/scripts/bootstrap_repo.py --install-development-lint <repo-dir> --json
+```
+
+既存文書は保持し、`AGENTS.md` と `CONTRIBUTING.md` へ管理ブロックを追記する。既存の同名検査ファイルと内容が違う場合は、書込み前に停止して統合対象を示す。再実行で同じ内容を重複追加しない。依存の導入は利用する開発環境で行い、ローカルと継続検査で次の同じコマンドを使う。
+
+```bash
+python3 -m pip install -r tools/development-lint-requirements.txt
+python3 tools/development_lint.py
+```
+
+初期のコメント検査は `Python`、`JavaScript`、`TypeScript`、`JSX`、`TSX` に対応する。他の言語を採用するときは、その言語の構文解析器と正常例・違反例を追加する。バグ修正時は構造・型・既存の検査を優先し、静的に判定できる誤りには `tools/lint_rules/` のルールと元の違反例・近い正常例を追加する。実行順序や結果に依存する不具合はアプリの回帰テストで再現する。
+
 ## 手順
 
 1. **preflight (read-only)**。何も書かない。
