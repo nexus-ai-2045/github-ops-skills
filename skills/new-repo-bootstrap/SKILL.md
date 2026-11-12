@@ -12,6 +12,10 @@ description: >
 
 # new-repo-bootstrap — 新規 repository は必ずこの経路で作る
 
+## 受付と実行の分担
+
+新規リポジトリ作成の通常の入口は `repo-preflight` の `run_preflight.py --create-repo`。このスキルは、入口から委任された作成・初期送信・設定確認を実行する。コメント禁止と再発防止の検査は `repo-preflight` 正本から導入する。以下の直接呼出しは、この実行担当を検査・再開するときの手順として使う。
+
 ## なぜこの skill があるか
 
 push / PR / 公開判定には既に道具があるが、「repo を新しく立てる」瞬間には道具が無く、

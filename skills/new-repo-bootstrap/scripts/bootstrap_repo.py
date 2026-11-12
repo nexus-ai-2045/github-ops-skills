@@ -50,6 +50,7 @@ INIT_BRANCH = "bootstrap/init"
 SCAN_REQUIRED_CHECKS = ("required_documents", "secret_scan", "personal_path_scan", "commit_identity")
 SCAN_ACCEPTED = {"pass", "not_applicable"}
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+BOOTSTRAP_CAPABILITIES = frozenset({"repo-preflight-development-lint/v1"})
 SCAFFOLD_ORDER = ("LICENSE", "README.md", "SECURITY.md", "PREFLIGHT.md", "CONTRIBUTING.md", ".gitignore")
 STEP_ORDER = (
     "prepare_local", "set_identity", "scaffold_docs", "initial_commit", "readiness_scan",
