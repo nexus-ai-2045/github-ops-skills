@@ -38,13 +38,15 @@ done_when: script の execute が READY + gh repo view で read-back 一致 + (r
 
 ## 開発開始時の静的検査
 
-新規作成では、コメント禁止とバグの再発防止ルールを実行する `tools/development_lint.py`、依存定義、継続検査、開発ルールを雛形に含める。初期コミットの前に検査を実行し、失敗した場合は作成処理を停止する。
+開発ライフサイクルと検査の正本は `repo-preflight`。新規作成では、その `scripts/install_development_lint.py` を呼び、コメント禁止とバグの再発防止ルールを実行する `tools/development_lint.py`、依存定義、継続検査、開発ルールを雛形に含める。初期コミットの前に検査を実行し、失敗した場合は作成処理を停止する。
 
-既存の独立したアプリ、または開発前のディレクトリには、次のローカル専用入口で同じ検査を導入する。
+既存の独立したアプリ、または開発前のディレクトリには、正本のローカル専用入口で同じ検査を導入する。
 
 ```bash
-python3 <skill dir>/scripts/bootstrap_repo.py --install-development-lint <repo-dir> --json
+python3 <repo-preflight>/scripts/install_development_lint.py --repo <repo-dir> --json
 ```
+
+既存呼出しの `bootstrap_repo.py --install-development-lint <repo-dir> --json` も、同じ正本へ委任する。導入処理は `--preflight-script` と同じディレクトリ、`REPO_PREFLIGHT_ROOT`、実行環境の `repo-preflight/checkout`、ローカルの既定正本の順で探す。正本が見つからない場合は停止する。
 
 既存文書は保持し、`AGENTS.md` と `CONTRIBUTING.md` へ管理ブロックを追記する。既存の同名検査ファイルと内容が違う場合は、書込み前に停止して統合対象を示す。再実行で同じ内容を重複追加しない。依存の導入は利用する開発環境で行い、ローカルと継続検査で次の同じコマンドを使う。
 

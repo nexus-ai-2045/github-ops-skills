@@ -19,10 +19,12 @@ owner の token だけを使った GitHub 作成、公開直後の lockdown、ca
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -48,36 +50,7 @@ INIT_BRANCH = "bootstrap/init"
 SCAN_REQUIRED_CHECKS = ("required_documents", "secret_scan", "personal_path_scan", "commit_identity")
 SCAN_ACCEPTED = {"pass", "not_applicable"}
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
-LINT_FILES = (
-    "tools/development_lint.py", "tools/development-lint-requirements.txt",
-    "tools/lint_rules/README.md", ".github/workflows/development-lint.yml",
-)
-LINT_START = "<!-- development-lint:start -->"
-LINT_END = "<!-- development-lint:end -->"
-CONTRIBUTING_BASE = (
-    "# コントリビューション\n\n"
-    "- 挙動を変える時は失敗する test を先に追加する。\n"
-    "- secret / token / 個人の絶対 path を commit しない。\n"
-    "- main へ直接 push しない。branch を切って PR を出す。\n"
-)
-LINT_INSTRUCTIONS = (
-    LINT_START + "\n"
-    "## 開発開始時とバグ修正時の検査\n\n"
-    "説明コメント、コメントアウトした旧コード、説明専用の文書文字列は禁止します。"
-    "命名・構造・テストで処理を表し、設計理由は文書へ移します。"
-    "ライセンス・実行環境指定・型検査や静的検査の指示は用途を確認した例外です。\n\n"
-    "開発開始時に `python3 -m pip install -r tools/development-lint-requirements.txt` を実行し、"
-    "`python3 tools/development_lint.py` が通ることを確認します。ローカルと継続検査で同じ入口を使います。\n\n"
-    "バグを修正したら、構造・型・既存の静的検査で同じ原因を防げるか確認します。"
-    "静的に判定できる誤りには `tools/lint_rules/` へ対象を絞ったルールを追加し、"
-    "元の違反例と近い正常例を同名の `.cases.json` に残します。"
-    "実行順序や結果に依存するバグはアプリの回帰テストで再現します。\n"
-    + LINT_END + "\n"
-)
-SCAFFOLD_ORDER = (
-    "LICENSE", "README.md", "SECURITY.md", "PREFLIGHT.md", "CONTRIBUTING.md", ".gitignore",
-    "AGENTS.md", *LINT_FILES,
-)
+SCAFFOLD_ORDER = ("LICENSE", "README.md", "SECURITY.md", "PREFLIGHT.md", "CONTRIBUTING.md", ".gitignore")
 STEP_ORDER = (
     "prepare_local", "set_identity", "scaffold_docs", "initial_commit", "readiness_scan",
     "create_remote", "repo_settings", "lockdown", "add_remote", "push", "promote_main", "verify", "register",
@@ -102,6 +75,7 @@ class Plan:
     registry_file: Path | None = None
     push_wrapper: Path | None = None
     preflight_script: Path | None = None
+    preflight_script_explicit: bool = False
 
     @property
     def nwo(self) -> str:
@@ -178,6 +152,7 @@ def build_plan(
         registry_file=registry_file if registry_file is not None else _optional_default(home, DEFAULT_REGISTRY),
         push_wrapper=push_wrapper if push_wrapper is not None else _optional_default(home, DEFAULT_PUSH_WRAPPER),
         preflight_script=preflight_script if preflight_script is not None else _default_preflight_script(root),
+        preflight_script_explicit=preflight_script is not None,
     )
 
 
@@ -190,6 +165,7 @@ def visibility_claim_line(visibility: str) -> str:
 
 def render_templates(plan: Plan, *, today: date) -> dict[str, str]:
     year = today.year
+    lint = development_lint_provider(plan)
     templates = {
         "LICENSE": (
             "MIT License\n\n"
@@ -234,89 +210,75 @@ def render_templates(plan: Plan, *, today: date) -> dict[str, str]:
             "公開・push・merge・visibility 変更は人が別に判断する。\n\n"
             f"## レビュー記録 ({today.isoformat()})\n\n- bootstrap_repo.py で作成。repo-preflight の検査結果は作成時の report を参照。\n"
         ),
-        "CONTRIBUTING.md": CONTRIBUTING_BASE,
+        "CONTRIBUTING.md": lint.CONTRIBUTING_BASE,
         ".gitignore": "__pycache__/\n*.pyc\n.pytest_cache/\n.venv/\nnode_modules/\n.next/\ndist/\nbuild/\n.DS_Store\n.env\n.env.*\n",
     }
-    templates["AGENTS.md"] = "# 開発ルール\n\n" + LINT_INSTRUCTIONS
-    templates["CONTRIBUTING.md"] += "\n" + LINT_INSTRUCTIONS
-    templates.update(development_lint_templates())
+    templates["AGENTS.md"] = "# 開発ルール\n\n" + lint.LINT_INSTRUCTIONS
+    templates["CONTRIBUTING.md"] += "\n" + lint.LINT_INSTRUCTIONS
+    templates.update(lint.development_lint_templates())
     return templates
 
 
-def development_lint_templates() -> dict[str, str]:
-    script = Path(__file__).with_name("development_lint.py")
-    return {
-        "tools/development_lint.py": script.read_text(encoding="utf-8"),
-        "tools/development-lint-requirements.txt": "tree-sitter-language-pack==0.13.0\ntree-sitter==0.25.2\n",
-        "tools/lint_rules/README.md": (
-            "# バグの再発防止ルール\n\n"
-            "ルールは `rule_name.py` に `check(path, source)` を定義します。"
-            "引数はリポジトリ相対の `pathlib.Path` とソース文字列です。"
-            "違反には修正方法を含む診断文字列のリストを、正常時は空のリストを返します。\n\n"
-            "同名の `rule_name.cases.json` に `invalid` と `valid` の配列を置きます。"
-            "各要素は相対パスの文字列 `path` とソース文字列 `source` を持ちます。"
-            "元のバグと近い正常コードを1件以上ずつ入れます。"
-            "`python3 tools/development_lint.py` は毎回この両方を検証してからソースを検査します。\n\n"
-            "初期のコメント検査は `Python`、`JavaScript`、`TypeScript`、`JSX`、`TSX` に対応します。"
-            "その他の言語は、採用時に構文解析器と正常例・違反例を追加して確認します。"
-            "実行時に読むヘルプ等の文書文字列が必要なら、その用途のテストと対象を限定した例外判定を同じ変更で加えます。\n"
-        ),
-        ".github/workflows/development-lint.yml": (
-            "name: 開発規約の検査\non:\n  pull_request:\n  push:\n"
-            "permissions:\n  contents: read\njobs:\n  development-lint:\n"
-            "    runs-on: ubuntu-latest\n    steps:\n"
-            "      - uses: actions/checkout@v4\n"
-            "      - uses: actions/setup-python@v5\n        with:\n          python-version: '3.12'\n"
-            "      - run: python3 -m pip install -r tools/development-lint-requirements.txt\n"
-            "      - run: python3 tools/development_lint.py\n"
-        ),
-    }
-
-
-def install_development_lint(root: Path) -> list[str]:
-    root = root.expanduser().resolve()
-    if root.exists() and not root.is_dir():
-        raise BootstrapError("導入先はディレクトリにしてください")
-    templates = development_lint_templates()
-    compile(templates["tools/development_lint.py"], "tools/development_lint.py", "exec")
-    for filename, text in templates.items():
-        target = root / filename
-        for ancestor in (target, *target.parents):
-            if ancestor == root:
-                break
-            if ancestor.is_symlink():
-                raise BootstrapError(f"検査設定の導入先がシンボリックリンクです: {filename}")
-            if ancestor != target and ancestor.exists() and not ancestor.is_dir():
-                raise BootstrapError(f"検査設定の親パスがディレクトリではありません: {filename}")
-        if target.exists() and (not target.is_file() or target.read_text(encoding="utf-8") != text):
-            raise BootstrapError(f"既存の検査設定を保持しました。差分をレビューして統合してください: {filename}")
-    for filename, heading in (("AGENTS.md", "# 開発ルール"), ("CONTRIBUTING.md", "# コントリビューション")):
-        target = root / filename
-        if target.is_symlink() or (target.exists() and not target.is_file()):
-            raise BootstrapError(f"既存文書へ安全に追記できません: {filename}")
-        initial = CONTRIBUTING_BASE if filename == "CONTRIBUTING.md" else heading + "\n"
-        text = target.read_text(encoding="utf-8") if target.exists() else initial
-        if LINT_START in text or LINT_END in text:
-            if text.count(LINT_START) != 1 or text.count(LINT_END) != 1 or LINT_INSTRUCTIONS not in text:
-                raise BootstrapError(f"既存の開発ルールを保持しました。管理ブロックを確認してください: {filename}")
-        else:
-            templates[filename] = text.rstrip() + "\n\n" + LINT_INSTRUCTIONS
-    written = []
-    for filename, text in templates.items():
-        target = root / filename
-        if target.exists() and target.read_text(encoding="utf-8") == text:
+def development_lint_provider(
+    plan: Plan | None = None, *, preflight_script: Path | None = None,
+    home: Path | None = None, env: dict[str, str] | None = None,
+):
+    home = home or (plan.home if plan is not None else Path.home())
+    env = dict(os.environ) if env is None else env
+    explicit = preflight_script or (plan.preflight_script if plan is not None else None)
+    explicit_required = preflight_script is not None or (plan is not None and plan.preflight_script_explicit)
+    candidates = [(explicit.with_name("install_development_lint.py"), explicit_required)] if explicit else []
+    if env.get("REPO_PREFLIGHT_ROOT"):
+        candidates.append((Path(env["REPO_PREFLIGHT_ROOT"]).expanduser() / "scripts/install_development_lint.py", True))
+    for runtime in (".codex", ".claude", ".agents"):
+        candidates.append((home / runtime / "skills/repo-preflight/checkout/scripts/install_development_lint.py", False))
+    local_roots = (plan.repo_dir.parent,) if plan is not None else (home / DEFAULT_LOCAL_ROOT, home / DEFAULT_LOCAL_ROOT / "private")
+    for local_root in local_roots:
+        fallback = _default_preflight_script(local_root)
+        if fallback is not None:
+            candidates.append((fallback.with_name("install_development_lint.py"), False))
+    for source, must_exist in candidates:
+        if not source.is_file():
+            if must_exist:
+                raise BootstrapError("指定された repo-preflight に install_development_lint.py が見つかりません")
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
-        written.append(filename)
-    return written
+        spec = importlib.util.spec_from_file_location("repo_preflight_development_lint", source)
+        if spec is None or spec.loader is None:
+            raise BootstrapError("repo-preflight の開発規約導入処理を読み込めません")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+        except (ImportError, OSError, SyntaxError) as exc:
+            raise BootstrapError(f"repo-preflight の開発規約導入処理を読み込めません: {type(exc).__name__}") from exc
+        exports = (
+            "LINT_FILES", "LINT_START", "LINT_END", "LINT_INSTRUCTIONS", "CONTRIBUTING_BASE",
+            "development_lint_templates", "install_development_lint",
+        )
+        if any(not hasattr(module, name) for name in exports):
+            raise BootstrapError("repo-preflight の開発規約導入処理を更新してください")
+        if not all(callable(getattr(module, name)) for name in ("development_lint_templates", "install_development_lint")):
+            raise BootstrapError("repo-preflight の開発規約導入処理が不正です")
+        return module
+    raise BootstrapError(
+        "repo-preflight の install_development_lint.py が見つかりません。"
+        "--preflight-script または REPO_PREFLIGHT_ROOT で正本を指定してください"
+    )
+
+
+def install_development_lint(root: Path, plan: Plan | None = None, **options) -> list[str]:
+    return development_lint_provider(plan, **options).install_development_lint(root)
+
+
+def scaffold_order(plan: Plan) -> tuple[str, ...]:
+    return (*SCAFFOLD_ORDER, "AGENTS.md", *development_lint_provider(plan).LINT_FILES)
 
 
 def scaffold_docs(plan: Plan, *, today: date) -> list[str]:
-    written = install_development_lint(plan.repo_dir)
+    written = install_development_lint(plan.repo_dir, plan)
     plan.repo_dir.mkdir(parents=True, exist_ok=True)
     templates = render_templates(plan, today=today)
-    for filename in SCAFFOLD_ORDER:
+    for filename in scaffold_order(plan):
         target = plan.repo_dir / filename
         if target.exists():
             continue
@@ -627,7 +589,7 @@ class Bootstrapper:
             if status.strip():
                 return "fail", "既存 commit があり worktree が dirty。先に commit するか片付ける: " + status.strip()[:300]
             return "skipped", "既存 commit あり"
-        rc, _, err = self._git("add", "--", *SCAFFOLD_ORDER)
+        rc, _, err = self._git("add", "--", *scaffold_order(self.plan))
         if rc != 0:
             return "fail", err.strip()
         _, status, _ = self._git("status", "--porcelain", "--untracked-files=all")
@@ -894,7 +856,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--owner", default="nexus-ai-2045")
     parser.add_argument("--name")
     parser.add_argument("--visibility", choices=["public", "private"])
-    parser.add_argument("--install-development-lint", type=Path, help="ローカルへ開発規約の検査だけを導入する。作成・認証・送信・フック設定は行わない")
+    parser.add_argument("--install-development-lint", type=Path, help="repo-preflight 正本へ委任して開発規約の検査だけを導入する")
     parser.add_argument("--description", default="")
     parser.add_argument("--local-root", type=Path, help="既定: ~/Projects/Documents/.repos/nexus_ai (private は /private)")
     parser.add_argument("--repo-dir", type=Path, help="既定: <local-root>/<name>")
@@ -921,7 +883,9 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
         if args.name or args.visibility or args.confirm or args.resume or args.settings_only or args.skip_push:
             parser.error("--install-development-lint はリポジトリ作成・設定の操作と併用できません")
         try:
-            written = install_development_lint(args.install_development_lint)
+            written = install_development_lint(
+                args.install_development_lint, preflight_script=args.preflight_script, home=home, env=env,
+            )
             result = {"mode": "install-development-lint", "status": "READY", "written": written,
                       "next": "python3 -m pip install -r tools/development-lint-requirements.txt && python3 tools/development_lint.py"}
         except (OSError, ValueError, SyntaxError) as exc:

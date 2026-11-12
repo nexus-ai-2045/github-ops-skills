@@ -177,7 +177,33 @@ def _scan(ok: bool = True, **overrides: str) -> str:
 
 
 @pytest.fixture
-def module():  # noqa: ANN201
+def module(tmp_path, monkeypatch):
+    if not os.environ.get("REPO_PREFLIGHT_ROOT"):
+        owner = tmp_path / "repo-preflight"
+        (owner / "scripts").mkdir(parents=True)
+        (owner / "scripts/install_development_lint.py").write_text(
+            'from pathlib import Path\n'
+            'LINT_FILES = ("tools/development_lint.py",)\n'
+            'LINT_START = "<!-- development-lint:start -->"\n'
+            'LINT_END = "<!-- development-lint:end -->"\n'
+            'LINT_INSTRUCTIONS = LINT_START + "\\n検査する。\\n" + LINT_END + "\\n"\n'
+            'CONTRIBUTING_BASE = "# コントリビューション\\n\\n失敗する test。main へ直接 push しない。\\n"\n'
+            'def development_lint_templates():\n'
+            '    return {"tools/development_lint.py": "raise SystemExit(0)\\n"}\n'
+            'def install_development_lint(root):\n'
+            '    root = Path(root)\n'
+            '    templates = development_lint_templates()\n'
+            '    templates.update({"AGENTS.md": LINT_INSTRUCTIONS, "CONTRIBUTING.md": CONTRIBUTING_BASE + LINT_INSTRUCTIONS})\n'
+            '    written = []\n'
+            '    for name, text in templates.items():\n'
+            '        target = root / name\n'
+            '        if not target.exists():\n'
+            '            target.parent.mkdir(parents=True, exist_ok=True)\n'
+            '            target.write_text(text, encoding="utf-8")\n'
+            '            written.append(name)\n'
+            '    return written\n', encoding="utf-8",
+        )
+        monkeypatch.setenv("REPO_PREFLIGHT_ROOT", str(owner))
     return _load_module()
 
 
@@ -188,12 +214,17 @@ def home(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def tools(tmp_path: Path) -> dict:
+def tools(tmp_path: Path, module) -> dict:
     registry = _make_workspace(tmp_path / "workspace") / REGISTRY_REL
     wrapper = tmp_path / "push.sh"
     wrapper.write_text("#!/bin/sh\n", encoding="utf-8")
     preflight = tmp_path / "readiness_scan.py"
     preflight.write_text("", encoding="utf-8")
+    owner_source = Path(module.development_lint_provider(home=tmp_path).__file__)
+    (tmp_path / "install_development_lint.py").write_bytes(owner_source.read_bytes())
+    checker = owner_source.with_name("development_lint.py")
+    if checker.exists():
+        (tmp_path / checker.name).write_bytes(checker.read_bytes())
     return {"registry_file": registry, "push_wrapper": wrapper, "preflight_script": preflight}
 
 
@@ -299,7 +330,7 @@ def test_resume_requires_local_state_and_matching_visibility(module, home, tools
 def test_templates_scaffold_and_visibility_claim(module, home) -> None:
     plan = _plan(module, home)
     templates = module.render_templates(plan, today=TODAY)
-    assert set(templates) == set(module.SCAFFOLD_ORDER)
+    assert set(templates) == set(module.scaffold_order(plan))
     assert "Copyright (c) 2026 nexus_ai" in templates["LICENSE"]
     assert "repo-preflight:review-record" in templates["PREFLIGHT.md"] and "状態: 公開済み" in templates["PREFLIGHT.md"]
     assert "状態: 非公開" in module.render_templates(_plan(module, home, "private"), today=TODAY)["PREFLIGHT.md"]
@@ -311,7 +342,7 @@ def test_templates_scaffold_and_visibility_claim(module, home) -> None:
     assert str(home) not in (plan.repo_dir / "PREFLIGHT.md").read_text(encoding="utf-8")
     contribution = (plan.repo_dir / "CONTRIBUTING.md").read_text(encoding="utf-8")
     assert "失敗する test" in contribution and "main へ直接 push しない" in contribution
-    assert contribution.count(module.LINT_START) == 1
+    assert contribution.count(module.development_lint_provider(plan).LINT_START) == 1
 
 
 def test_initial_lint_failure_stops_before_commit_and_remote(module, home, tools) -> None:
@@ -324,6 +355,44 @@ def test_initial_lint_failure_stops_before_commit_and_remote(module, home, tools
     assert report["steps"][-1]["name"] == "scaffold_docs"
     assert not runner.called("git", "commit")
     assert not runner.called("gh", "repo", "create")
+
+
+def test_development_lint_owner_missing_is_explicit(module, tmp_path):
+    with pytest.raises(module.BootstrapError, match="repo-preflight"):
+        module.development_lint_provider(home=tmp_path / "empty-home", env={})
+
+
+def test_invalid_explicit_lint_owner_never_falls_back(module, tmp_path):
+    with pytest.raises(module.BootstrapError, match="指定された"):
+        module.development_lint_provider(preflight_script=tmp_path / "absent/readiness_scan.py")
+    with pytest.raises(module.BootstrapError, match="指定された"):
+        module.development_lint_provider(env={"REPO_PREFLIGHT_ROOT": str(tmp_path / "absent")})
+
+
+@pytest.mark.parametrize("visibility", ["public", "private"])
+def test_local_lint_owner_default_source(module, tmp_path, visibility):
+    home = tmp_path / "fallback-home"
+    root = home / module.DEFAULT_LOCAL_ROOT
+    if visibility == "private":
+        root /= "private"
+    scripts = root / "repo-preflight/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "readiness_scan.py").write_text("", encoding="utf-8")
+    source = Path(module.development_lint_provider().__file__)
+    installer = scripts / "install_development_lint.py"
+    installer.write_bytes(source.read_bytes())
+    assert Path(module.development_lint_provider(home=home, env={}).__file__) == installer
+
+
+def test_local_lint_install_delegates_without_remote(module, tmp_path, capsys):
+    root = tmp_path / "existing-app"
+    class ForbiddenRunner:
+        def run(self, *args, **kwargs):
+            raise AssertionError("外部操作を呼んではいけません")
+    assert module.main(["--install-development-lint", str(root), "--json"], runner=ForbiddenRunner()) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "READY"
+    assert (root / "tools/development_lint.py").is_file()
+    assert not (root / ".git").exists()
 
 
 def test_registry_local_path_is_workspace_relative_and_falls_back(module, home, tmp_path) -> None:
