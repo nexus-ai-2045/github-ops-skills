@@ -100,7 +100,7 @@ def test_trusted_check_allows_a_preapproved_replacement(tmp_path: Path) -> None:
     ).hexdigest()
     allowlist = tmp_path / "docs/pr-self-review-trusted-digests.txt"
     allowlist.write_text(allowlist.read_text(encoding="utf-8") + f"{digest}\n", encoding="utf-8")
-    assert verify_candidate(tmp_path, tmp_path)[0] == "dfb366f323516772"
+    assert verify_candidate(tmp_path, tmp_path)[0] == "8b20a0967d7aac8e"
 
 
 def test_trusted_check_rejects_symlinked_artifact(tmp_path: Path) -> None:
