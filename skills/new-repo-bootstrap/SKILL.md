@@ -1,16 +1,16 @@
 ---
 name: new-repo-bootstrap
 description: >
-  新しい GitHub repository を作る時の入口。「リポジトリを切る」「repo を新しく作る」「新規 repo」
-  「git init したい」「gh repo create」「別リポジトリに分ける」「public で公開する repo を作る」と言われたら、
-  自分で git init / gh repo create を組み立てず、必ずこの skill を使う。
+  repo-preflight から委任された新規 GitHub repository 作成の実行担当。
+  新規作成の受付は repo-preflight の --create-repo に統一する。
+  この skill は委任された作成・初期送信・設定確認と再開を担当する。
   置き場所の固定・commit 名義・公開前文書・repo-preflight 検査・owner の token での作成・公開直後の lockdown・
   canonical wrapper 経由の作業 branch push と API による main 作成・台帳登録 branch の commit・read-back を 1 本の script が順番に行い、
   台帳登録の push と PR は手順 4 で canonical wrapper から出す。
   Do NOT use for: 既存 repo への push / PR (commit-push-pr, github-cli-ops-guard)、公開判定の整備だけ (public-repo-readiness)。
 ---
 
-# new-repo-bootstrap — 新規 repository は必ずこの経路で作る
+# 新規リポジトリ作成の実行担当
 
 ## 受付と実行の分担
 

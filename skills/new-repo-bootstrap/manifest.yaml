@@ -27,5 +27,5 @@ duplication_guard:
   max_overlap_lines: 2
 interface:
   display_name: "New Repo Bootstrap"
-  short_description: "新規 repository の作成 (場所・名義・文書・検査・作成・push・lockdown・登録) を fail-closed で 1 本にする。"
-  default_prompt: "Use $new-repo-bootstrap whenever a new GitHub repository must be created instead of running git init or gh repo create by hand."
+  short_description: "repo-preflight から委任された新規リポジトリ作成を実行する。"
+  default_prompt: "Use $new-repo-bootstrap as the execution backend of repo-preflight --create-repo for repository creation and resumption."
