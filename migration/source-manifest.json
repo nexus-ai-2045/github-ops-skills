@@ -239,27 +239,27 @@
       "source_root": "github-ops-skills",
       "source_path": "skills/new-repo-bootstrap/manifest.yaml",
       "target_path": "skills/new-repo-bootstrap/manifest.yaml",
-      "sha256": "1d87a31b3807ee4eed634e7416b7368ca167d8c7327e79542b2c113920714a8d",
-      "source_sha256": "1d87a31b3807ee4eed634e7416b7368ca167d8c7327e79542b2c113920714a8d",
-      "target_sha256": "1d87a31b3807ee4eed634e7416b7368ca167d8c7327e79542b2c113920714a8d",
+      "sha256": "a9bbbc32d4a8d1a50f3956a31b25255532d44471fecb7a165d3b5b437d94a4f7",
+      "source_sha256": "a9bbbc32d4a8d1a50f3956a31b25255532d44471fecb7a165d3b5b437d94a4f7",
+      "target_sha256": "a9bbbc32d4a8d1a50f3956a31b25255532d44471fecb7a165d3b5b437d94a4f7",
       "normalized": false
     },
     {
       "source_root": "github-ops-skills",
       "source_path": "skills/new-repo-bootstrap/SKILL.md",
       "target_path": "skills/new-repo-bootstrap/SKILL.md",
-      "sha256": "00e6e1b3bbec7e48026be42d0c2b821645bb042533bedf8272f4a1f825589b7b",
-      "source_sha256": "00e6e1b3bbec7e48026be42d0c2b821645bb042533bedf8272f4a1f825589b7b",
-      "target_sha256": "00e6e1b3bbec7e48026be42d0c2b821645bb042533bedf8272f4a1f825589b7b",
+      "sha256": "1fb0c720a6195a759a54ff97585fa94e00d62430127d921d1e284e9fb80f701c",
+      "source_sha256": "1fb0c720a6195a759a54ff97585fa94e00d62430127d921d1e284e9fb80f701c",
+      "target_sha256": "1fb0c720a6195a759a54ff97585fa94e00d62430127d921d1e284e9fb80f701c",
       "normalized": false
     },
     {
       "source_root": "github-ops-skills",
       "source_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
       "target_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
-      "sha256": "8ab101d4714228d27407eb255f53432122233091919a9db51e8594e911954f95",
-      "source_sha256": "8ab101d4714228d27407eb255f53432122233091919a9db51e8594e911954f95",
-      "target_sha256": "8ab101d4714228d27407eb255f53432122233091919a9db51e8594e911954f95",
+      "sha256": "4bbe1f041ea4fd64a7a5aa265fa18246b224504487bf55bc82ed05603e09f14d",
+      "source_sha256": "4bbe1f041ea4fd64a7a5aa265fa18246b224504487bf55bc82ed05603e09f14d",
+      "target_sha256": "4bbe1f041ea4fd64a7a5aa265fa18246b224504487bf55bc82ed05603e09f14d",
       "normalized": false
     }
   ]
