@@ -248,18 +248,18 @@
       "source_root": "github-ops-skills",
       "source_path": "skills/new-repo-bootstrap/SKILL.md",
       "target_path": "skills/new-repo-bootstrap/SKILL.md",
-      "sha256": "00e6e1b3bbec7e48026be42d0c2b821645bb042533bedf8272f4a1f825589b7b",
-      "source_sha256": "00e6e1b3bbec7e48026be42d0c2b821645bb042533bedf8272f4a1f825589b7b",
-      "target_sha256": "00e6e1b3bbec7e48026be42d0c2b821645bb042533bedf8272f4a1f825589b7b",
+      "sha256": "7092b208130ff4d189a69650f427d2574e6012d0f9dbe26d71046b6f66eb4e55",
+      "source_sha256": "7092b208130ff4d189a69650f427d2574e6012d0f9dbe26d71046b6f66eb4e55",
+      "target_sha256": "7092b208130ff4d189a69650f427d2574e6012d0f9dbe26d71046b6f66eb4e55",
       "normalized": false
     },
     {
       "source_root": "github-ops-skills",
       "source_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
       "target_path": "skills/new-repo-bootstrap/scripts/bootstrap_repo.py",
-      "sha256": "8ab101d4714228d27407eb255f53432122233091919a9db51e8594e911954f95",
-      "source_sha256": "8ab101d4714228d27407eb255f53432122233091919a9db51e8594e911954f95",
-      "target_sha256": "8ab101d4714228d27407eb255f53432122233091919a9db51e8594e911954f95",
+      "sha256": "7a31d3ddee7bc4d4d0f1d0cf4f55842ecde743e97a876db3df8f278ba96c768b",
+      "source_sha256": "7a31d3ddee7bc4d4d0f1d0cf4f55842ecde743e97a876db3df8f278ba96c768b",
+      "target_sha256": "7a31d3ddee7bc4d4d0f1d0cf4f55842ecde743e97a876db3df8f278ba96c768b",
       "normalized": false
     }
   ]

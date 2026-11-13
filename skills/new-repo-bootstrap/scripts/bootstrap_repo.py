@@ -32,7 +32,9 @@ KNOWN_IDENTITIES: dict[str, tuple[str, str]] = {
     "nexus-ai-2045": ("nexus_ai", "273569186+nexus-ai-2045@users.noreply.github.com"),
 }
 WORKSPACE_ROOT = Path("Projects")
-DEFAULT_LOCAL_ROOT = WORKSPACE_ROOT / "Documents/.repos/nexus_ai"
+NEXUS_OWNER = "nexus-ai-2045"
+REPOS_ROOT = WORKSPACE_ROOT / "repos"
+DEFAULT_LOCAL_ROOT = REPOS_ROOT / "nexus_ai"
 DEFAULT_REGISTRY = Path("Projects/Documents/references/github-account-repo-map.md")
 DEFAULT_PUSH_WRAPPER = Path("Projects/shared/scripts/cc-push-resolved.sh")
 REGISTRY_ANCHOR = "| 公開協業 repo 全般"
@@ -102,12 +104,11 @@ class SubprocessRunner:
 
 # ---------- plan ----------
 
-def default_local_root(home: Path, visibility: str, env: dict[str, str]) -> Path:
+def default_local_root(home: Path, visibility: str, env: dict[str, str], *, owner: str = NEXUS_OWNER) -> Path:
     override = env.get("GITHUB_OPS_REPO_ROOT")
     if override:
         return Path(override).expanduser()
-    root = home / DEFAULT_LOCAL_ROOT
-    return root / "private" if visibility == "private" else root
+    return home / REPOS_ROOT / ("nexus_ai" if owner.casefold() == NEXUS_OWNER else owner)
 
 
 def _optional_default(home: Path, relative: Path) -> Path | None:
@@ -115,10 +116,11 @@ def _optional_default(home: Path, relative: Path) -> Path | None:
     return candidate if candidate.exists() else None
 
 
-def _default_preflight_script(local_root: Path) -> Path | None:
-    for base in (local_root, local_root.parent):
+def _default_preflight_script(home: Path) -> Path | None:
+    legacy = home / WORKSPACE_ROOT / "Documents/.repos/nexus_ai"
+    for base in (home / DEFAULT_LOCAL_ROOT, legacy, legacy / "private"):
         candidate = base / "repo-preflight" / "scripts" / "readiness_scan.py"
-        if candidate.exists():
+        if candidate.is_file():
             return candidate
     return None
 
@@ -141,14 +143,14 @@ def build_plan(
         if identity is None:
             raise BootstrapError(f"owner {owner} の commit 名義が未登録。--commit-name と --commit-email を指定する")
         commit_name, commit_email = identity
-    root = local_root or default_local_root(home, visibility, env)
+    root = local_root or default_local_root(home, visibility, env, owner=owner)
     directory = repo_dir or (root / name)
     return Plan(
         owner=owner, name=name, visibility=visibility, description=description,
         repo_dir=directory, commit_name=commit_name, commit_email=commit_email, home=home,
         registry_file=registry_file if registry_file is not None else _optional_default(home, DEFAULT_REGISTRY),
         push_wrapper=push_wrapper if push_wrapper is not None else _optional_default(home, DEFAULT_PUSH_WRAPPER),
-        preflight_script=preflight_script if preflight_script is not None else _default_preflight_script(root),
+        preflight_script=preflight_script if preflight_script is not None else _default_preflight_script(home),
     )
 
 
@@ -794,13 +796,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--name", required=True)
     parser.add_argument("--visibility", choices=["public", "private"], required=True)
     parser.add_argument("--description", default="")
-    parser.add_argument("--local-root", type=Path, help="既定: ~/Projects/Documents/.repos/nexus_ai (private は /private)")
+    parser.add_argument("--local-root", type=Path, help="既定: ~/Projects/repos/<所有者>（組織の別名は nexus_ai）")
     parser.add_argument("--repo-dir", type=Path, help="既定: <local-root>/<name>")
     parser.add_argument("--commit-name")
     parser.add_argument("--commit-email")
     parser.add_argument("--registry-file", type=Path, help="account↔repo map。既定: ~/Projects/Documents/references/github-account-repo-map.md")
     parser.add_argument("--push-wrapper", type=Path, help="既定: ~/Projects/shared/scripts/cc-push-resolved.sh")
-    parser.add_argument("--preflight-script", type=Path, help="既定: <local-root>/repo-preflight/scripts/readiness_scan.py")
+    parser.add_argument("--preflight-script", type=Path, help="既定: 組織側の repo-preflight/scripts/readiness_scan.py")
     parser.add_argument("--allow-no-preflight", action="store_true", help="repo-preflight が無い環境で検査を skip する (非推奨)")
     parser.add_argument("--confirm", action="store_true", help="実際に作成する。無い時は preflight だけ")
     parser.add_argument("--resume", action="store_true", help="途中で止まった作成を続きから再実行する (remote / origin / visibility が一致している時だけ)")
