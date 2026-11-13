@@ -31,7 +31,7 @@ push / PR / 公開判定には既に道具があるが、「repo を新しく立
 entry: new repository bootstrap
 repository: <owner>/<name>
 visibility: public | private
-local_dir: ~/Projects/Documents/.repos/nexus_ai/<name>  (private は /private/<name>)
+local_dir: ~/Projects/repos/<所有者>/<name>  (組織の別名は nexus_ai。公開・非公開とも同じ配置)
 commit_identity: nexus_ai <273569186+nexus-ai-2045@users.noreply.github.com>  (owner=nexus-ai-2045 の既定)
 approval: current_turn_yes | missing   ← visibility と名前を CEO が現在会話で言っていること
 registry_pr: 台帳 repo への登録 PR (1 行追加) も同じ承認で出す。merge は人が行う
@@ -80,7 +80,7 @@ python3 <skill dir>/scripts/bootstrap_repo.py --name <name> --visibility <public
    | `remote_absent: ok_renamed_away` | 同名の旧 repo が別名へ変えられ、GitHub が転送しているだけ | 止まらない。同名で作り直してよい (作成で転送は終わる) |
    | `local_dir: has_origin` | 手元の directory に origin が既にある | 既存 repo。commit-push-pr を使う |
    | `commit_identity: mismatch` | 既存 commit が個人名義 | 公開 repo には出せない。作り直す |
-   | `preflight_script: missing` | repo-preflight の checkout が無い (preflight はここで BLOCKED) | `~/Projects/Documents/.repos/nexus_ai/repo-preflight` を clone する。`--allow-no-preflight` は非推奨 |
+   | `preflight_script: missing` | repo-preflight の checkout が無い (preflight はここで BLOCKED) | `~/Projects/repos/nexus_ai/repo-preflight` を clone する。`--allow-no-preflight` は非推奨 |
    | `local_dir: nested_in_other_repo` | 指定 directory が別 repo の中 | 別の場所を指定する |
    | `remote_absent: exists_visibility_<x>` | `--resume` 先の remote の visibility が指定と違う | 指定を合わせるか、visibility 変更を別承認で行う |
    | `registry_file: not_git` / `no_origin_main` | 台帳の main checkout を特定できない (git の外、submodule 等) / 台帳 repo に origin/main が無い | 台帳は branch → PR でしか更新しない。台帳 repo の checkout を直す |
