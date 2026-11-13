@@ -33,4 +33,5 @@ interface:
     SKILL.mdを正本手順として読む。
     repoとPR番号が分かっている時は shared/scripts/post_merge_closeout_report.py collect を実行する。
     PR単体、repo全体、次の1手を分け、日本語優先で報告する。
-    このskillではapprove、merge、push、branch削除、PR編集をしない。
+    証跡収集はread-onlyで行い、approve、merge、push、PR編集はしない。
+    branch / worktree削除は現在会話の承認とSKILL.mdの保全確認後だけ実行する。
