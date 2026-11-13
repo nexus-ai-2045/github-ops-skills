@@ -203,15 +203,29 @@ def _plan(module, home, visibility="public", **kw):  # noqa: ANN001, ANN202
 
 # ---------- plan ----------
 
-def test_default_local_root_depends_on_visibility_and_env(module, home) -> None:
-    assert module.default_local_root(home, "public", {}) == home / "Projects/Documents/.repos/nexus_ai"
-    assert module.default_local_root(home, "private", {}) == home / "Projects/Documents/.repos/nexus_ai/private"
+def test_default_local_root_uses_owner_and_respects_override(module, home) -> None:
+    assert module.default_local_root(home, "public", {}) == home / "Projects/repos/nexus_ai"
+    assert module.default_local_root(home, "private", {}) == home / "Projects/repos/nexus_ai"
     assert module.default_local_root(home, "public", {"GITHUB_OPS_REPO_ROOT": str(home / "x")}) == home / "x"
+
+
+def test_other_owner_uses_organization_preflight(module, home):
+    scanner = Path("repo-preflight/scripts/readiness_scan.py")
+    expected = home / module.DEFAULT_LOCAL_ROOT / scanner
+    other = home / module.REPOS_ROOT / "example-owner" / scanner
+    for path in (expected, other):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+    plan = module.build_plan(owner="example-owner", name="demo", visibility="public",
+                             description="demo", home=home, env={},
+                             commit_name="Test", commit_email="test@example.invalid")
+    assert plan.preflight_script == expected
+    assert plan.repo_dir.parent == other.parents[2]
 
 
 def test_build_plan_identity_and_validation(module, home) -> None:
     plan = _plan(module, home)
-    assert plan.repo_dir == home / "Projects/Documents/.repos/nexus_ai/demo"
+    assert plan.repo_dir == home / "Projects/repos/nexus_ai/demo"
     assert (plan.commit_name, plan.commit_email) == ("nexus_ai", NEXUS_EMAIL)
     with pytest.raises(module.BootstrapError):
         module.build_plan(owner="someone-else", name="demo", visibility="public", description="d", home=home, env={})
@@ -314,7 +328,7 @@ def test_templates_scaffold_and_visibility_claim(module, home) -> None:
 def test_registry_local_path_is_workspace_relative_and_falls_back(module, home, tmp_path) -> None:
     """台帳の local: は workspace 相対。workspace の外なら ~ 表記へ落とす。"""
     plan = _plan(module, home)
-    assert module.registry_local_path(plan) == "Documents/.repos/nexus_ai/demo"
+    assert module.registry_local_path(plan) == "repos/nexus_ai/demo"
 
     outside = _plan(module, home, repo_dir=tmp_path / "elsewhere" / "demo")
     assert module.registry_local_path(outside).startswith(("~/", "/"))
@@ -324,7 +338,7 @@ def test_registry_row_dedup_by_repository_key(module, home) -> None:
     plan = _plan(module, home)
     row = module.registry_row(plan, today=TODAY)
     assert row.startswith(f"| `{OWNER}/demo`（デモ） | `public` | **`{OWNER}`** |")
-    assert "ローカル: `Documents/.repos/nexus_ai/demo`" in row
+    assert "ローカル: `repos/nexus_ai/demo`" in row
     assert "~/" not in row and str(home) not in row
     text = "| a | b | c | d |\n| 公開協業 repo 全般 | - | x | y |\n"
     updated = module.insert_registry_row(text, row, key=f"{OWNER}/demo")
