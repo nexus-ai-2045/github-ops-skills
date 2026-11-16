@@ -185,9 +185,9 @@
       "source_root": "shared",
       "source_path": "skills/post-merge-closeout/manifest.yaml",
       "target_path": "skills/post-merge-closeout/manifest.yaml",
-      "sha256": "f17819b856df7753d6af1ab956f69894939bb7ee420246113800720a3cbd1114",
+      "sha256": "cf96e510af87aa982579dbe52e5632334ff9c3bded5fd602a76c847e9d6279f2",
       "source_sha256": "66e7c0df107b969c96ebb0da71f28516596fa8277027d76afab2a0c804753068",
-      "target_sha256": "f17819b856df7753d6af1ab956f69894939bb7ee420246113800720a3cbd1114",
+      "target_sha256": "cf96e510af87aa982579dbe52e5632334ff9c3bded5fd602a76c847e9d6279f2",
       "normalized": true
     },
     {
@@ -203,9 +203,9 @@
       "source_root": "shared",
       "source_path": "skills/post-merge-closeout/SKILL.md",
       "target_path": "skills/post-merge-closeout/SKILL.md",
-      "sha256": "44d33115e66c5c3f211c1040496258665374259d0de3c89f1524039bcf605623",
+      "sha256": "4c1086f27ad3c07a2b09f583cc3bd5710e999968cebe09580e64ea7cacf2d7c5",
       "source_sha256": "916f255cc72757a917b2e7ba987ceed14d8a6912bde9917cddbc8c990b8ed31c",
-      "target_sha256": "44d33115e66c5c3f211c1040496258665374259d0de3c89f1524039bcf605623",
+      "target_sha256": "4c1086f27ad3c07a2b09f583cc3bd5710e999968cebe09580e64ea7cacf2d7c5",
       "normalized": true
     },
     {
