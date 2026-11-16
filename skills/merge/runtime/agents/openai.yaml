@@ -1,0 +1,6 @@
+name: merge
+description: "名指しされた PR を1件、承認つきで guarded merge 入口からマージし、止まったら原因と次の1手を1行で返す。"
+interface:
+  key: merge
+  display_name: "Merge"
+  short_description: "single pull request guarded merge workflow。"

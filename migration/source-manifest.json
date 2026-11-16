@@ -261,6 +261,33 @@
       "source_sha256": "7a31d3ddee7bc4d4d0f1d0cf4f55842ecde743e97a876db3df8f278ba96c768b",
       "target_sha256": "7a31d3ddee7bc4d4d0f1d0cf4f55842ecde743e97a876db3df8f278ba96c768b",
       "normalized": false
+    },
+    {
+      "source_root": "github-ops-skills",
+      "source_path": "skills/merge/SKILL.md",
+      "target_path": "skills/merge/SKILL.md",
+      "sha256": "4ee6fecced9baf134d50f7a6983da6377593789da0a29adba047cb90fd1eccbf",
+      "source_sha256": "4ee6fecced9baf134d50f7a6983da6377593789da0a29adba047cb90fd1eccbf",
+      "target_sha256": "4ee6fecced9baf134d50f7a6983da6377593789da0a29adba047cb90fd1eccbf",
+      "normalized": false
+    },
+    {
+      "source_root": "github-ops-skills",
+      "source_path": "skills/merge/manifest.yaml",
+      "target_path": "skills/merge/manifest.yaml",
+      "sha256": "a4f23c6b5f25a13a9613835f6ad5d7ace55b8bc3ed87ca30275500602054d702",
+      "source_sha256": "a4f23c6b5f25a13a9613835f6ad5d7ace55b8bc3ed87ca30275500602054d702",
+      "target_sha256": "a4f23c6b5f25a13a9613835f6ad5d7ace55b8bc3ed87ca30275500602054d702",
+      "normalized": false
+    },
+    {
+      "source_root": "github-ops-skills",
+      "source_path": "skills/merge/runtime/agents/openai.yaml",
+      "target_path": "skills/merge/runtime/agents/openai.yaml",
+      "sha256": "775c0644a5b0b7afb8df1d3440463df5332336b455a326b1062f9d6cf14aace0",
+      "source_sha256": "775c0644a5b0b7afb8df1d3440463df5332336b455a326b1062f9d6cf14aace0",
+      "target_sha256": "775c0644a5b0b7afb8df1d3440463df5332336b455a326b1062f9d6cf14aace0",
+      "normalized": false
     }
   ]
 }

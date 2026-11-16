@@ -1,0 +1,22 @@
+name: merge
+owner_kind: skill
+ssot_pointers: []
+runtimes:
+  claude:
+    mode: copy
+    files: [SKILL.md]
+  codex:
+    mode: copy
+    files: [SKILL.md]
+    extra:
+      agents/openai.yaml: runtime/agents/openai.yaml
+  grok:
+    mode: copy
+    files: [SKILL.md]
+duplication_guard:
+  enabled: true
+  max_overlap_lines: 2
+interface:
+  display_name: "Merge"
+  short_description: "名指しされた PR を1件、guarded merge 入口の dry-run・実行・実測の順でマージする skill。"
+  default_prompt: "Use $merge when the user asks to merge one named pull request."

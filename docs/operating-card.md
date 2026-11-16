@@ -18,7 +18,7 @@ GitHub を触る直前（この repo）
   READY だけ次へ
 
 実行（外側・明示承認）
-  commit / push / PR / merge
+  commit / push / PR / merge（1件のマージは merge skill）
 
 収束
   post-merge-closeout / pr-status
