@@ -44,7 +44,7 @@ fractal-decision-ecosystem の `scripts/post_merge_cleanup.py` は別実装で�
 ## 手順
 
 1. 対象PR番号とrepoを確認する。
-2. 実行するcommandがread-onlyであることを確認する。このskillではapprove、merge、push、branch削除、PR編集をしない。
+2. 証跡の収集はread-onlyで行う。approve、merge、push、PR編集はしない。branch / worktreeのcleanupは手順8の対象と承認を確認してから行う。
 3. repo rootからcollectorを実行する。
 
 ```bash
@@ -65,7 +65,8 @@ python3 shared/scripts/post_merge_closeout_report.py collect --repo <owner/name>
 git worktree list --porcelain
 git -C <target-worktree> status --porcelain --ignored
 git ls-remote --heads origin <target-branch>
-python3 shared/scripts/post_merge_cleanup.py --check --cwd <repo-root> --json
+python3 shared/scripts/post_merge_cleanup.py --check --cwd <repo-root> \
+  --target-branch <target-branch> --json
 ```
 
 7. 次の条件をすべて満たす対象だけをcleanup候補にする。
@@ -73,12 +74,14 @@ python3 shared/scripts/post_merge_cleanup.py --check --cwd <repo-root> --json
    - remote branchが `not_found`
    - 対象worktreeがclean
    - 対象branchが `main` ではない
-   - 現在処理中のworktreeではなく、別worktreeから削除できる
+   - 対象へ書き込む処理を停止でき、削除コマンドを対象外のrepository本体から実行できる
    - 別セッション所有・用途不明ではない
 8. worktree削除とlocal branch削除はwrite操作として、現在会話の明示承認後だけcleanupを適用する。
 
 ```bash
 python3 shared/scripts/post_merge_cleanup.py --apply --cwd <repo-root> \
+  --target-branch <target-branch> \
+  --expected-sha <target-branch>=<full-sha-from-check> \
   --confirm-merged-branch <target-branch> --json
 ```
 
@@ -94,6 +97,28 @@ dirty / locked / owner不明のworktreeは削除せず、`保留: 理由` とし
    - 片付けは削除ではなく、まずrepositoryの追跡対象外の退避場所へ移す。削除は人間確認後に行う。「移行時点の保持用コピー」として元に残すことはしない。
    - 台帳への登録、移し漏れの追加、元からの退避は、どれも別のcheckoutへの書き込みになる。書く前に、触るcheckoutごとに `git rev-parse --show-toplevel`、`git remote get-url origin`、`git status --short --branch`（branch・上流・先行と遅れ・未commit変更）を測り、意図したrepository・branchであること、未commit変更が片付け候補（上で内容を照合して一致した未追跡file）だけで、それ以外の変更が1件も無いことを確かめる。合わない時や、そのcheckoutへの書き込みの承認が現在会話に無い時は書かず、その操作を「保留」として報告する。
 10. 結果は下の出力形で報告する。
+
+## 残ったworktreeの削除経路
+
+branchのcleanupが済み、detached HEADのworktreeだけが残った場合も、承認済みの掃除を続ける。新しい削除scriptは作らず、次の確認後にGitの正規コマンドを使う。
+
+1. **対象と承認。** repository、削除するworktreeの絶対path、HEAD、所有者を照合する。同一会話で対象のworktree削除を承認済みなら、前提が変わっていない限り同じ承認を取り直さない。別セッションの作業や用途不明の対象は止める。
+2. **未保存の作業。** `git -C <target-worktree> status --porcelain --untracked-files=all` で未コミット変更と未追跡fileを確認する。HEADのcommitがremote mainまたは検証した復旧用refへ保全されていることも確認する。変更が残る、履歴の保全が不明、locked、Git登録との不一致がある場合は削除しない。
+3. **退避とcache。** `git -C <target-worktree> ls-files --others --ignored --exclude-standard` でignored fileも棚卸しする。必要資料・auditは対象外へ退避し、file件数と内容hashの一致を確認する。再生成できるPython / pytest cacheと、退避を照合できた資料だけなら残っていてよい。未知のfileや退避不一致があれば止める。既存のbackupをこのcleanupで一緒に削除しない。
+4. **参照と実行場所。** liveなGit hook、AI skill、他の作業が対象に依存していないことを確認する。対象へ書き込む処理を静止させ、削除コマンドのcwdをrepository本体など対象外へ固定する。本体のbranchや別作業の変更は動かさない。コマンドのcwd指定と、アプリのチャットの作業場所変更は別の操作として報告する。
+5. **実行。** 強制オプションなしで、確認済みの対象1個だけを削除する。
+
+```bash
+git -C <repo-root> worktree remove <target-worktree>
+```
+
+6. **読戻し。** 対象directoryが消え、`git worktree list --porcelain` の登録も消えたこと、退避資料・復旧用refが残ること、本体のHEAD / branch / 作業差分が実行前と同じことを確認する。実行結果が不明なら再削除せず、まず状態を読み直す。
+
+### 禁止の適用範囲を混同しない
+
+`rm -rf` や `shutil.rmtree` の再帰削除禁止を、`git worktree remove` の一律禁止へ読み替えない。削除対象がcleanで、保全と承認を確認したGitのworktree削除は別の経路である。既存guardの設定は変更せず、その経路の判定に従う。
+
+アプリのアーカイブ操作が「現在の作業場所」として拒否されても、その拒否をGitコマンドも禁止されている証拠にしない。上の前提を確認したら、repository本体から通常の `git worktree remove` を実際に試す。Gitや実行前guardが拒否した時は、そのコマンドの具体的な理由で止め、強制削除・guardの無効化・別の再帰削除で迂回しない。未実行のコマンドを禁止・実行不能と断定しない。
 
 ## 出力形
 
