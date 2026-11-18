@@ -27,7 +27,7 @@ NEXUS = f"nexus_ai|{NEXUS_EMAIL}"
 SHA = "a" * 40
 TODAY = date(2026, 9, 5)
 REGISTRY_REL = "Documents/references/github-account-repo-map.md"
-REGISTRY_TEXT = "| a | b | c | d |\n| 公開協業 repo 全般 | - | x | y |\n"
+REGISTRY_TEXT = "| `repo` | `visibility` | 使う `account` | 根拠 |\n|---|---|---|---|\n| 公開協業 repo 全般 | - | x | y |\n"
 # workspace の commit wrapper (cc-commit.sh) の最小 fake: CC_COMMIT_PROJECTS_DIR の worktree で --only の path だけを commit する
 FAKE_COMMIT_WRAPPER = """#!/bin/sh
 set -eu
@@ -59,8 +59,8 @@ path = Path(sys.argv[2])
 path.write_text(path.read_text(encoding="utf-8").replace("（デモ）", "（デモ・整形済み）"), encoding="utf-8")
 """
 FAILING_FORMATTER = "import sys\nsys.exit(3)\n"
-OVERREACHING_FORMATTER = FAKE_FORMATTER.replace('.replace("（デモ）", "（デモ・整形済み）")', '.replace("| a |", "| A |")')
-FORMATTED_REGISTRY_TEXT = "| a | b | c | d |\n| 公開協業 `repo` 全般 | - | **`x`** に統一 | y |\n"
+OVERREACHING_FORMATTER = FAKE_FORMATTER.replace('.replace("（デモ）", "（デモ・整形済み）")', '.replace("使う", "誤り")')
+FORMATTED_REGISTRY_TEXT = "| `repo` | `visibility` | 使う `account` | 根拠 |\n|---|---|---|---|\n| 公開協業 `repo` 全般 | - | **`x`** に統一 | y |\n"
 
 
 def _isolated_env(scoped_env: dict | None = None) -> dict[str, str]:
@@ -345,31 +345,91 @@ def test_registry_local_path_is_workspace_relative_and_falls_back(module, home, 
 
 def test_registry_row_dedup_by_repository_key(module, home) -> None:
     plan = _plan(module, home)
-    row = module.registry_row(plan, today=TODAY)
+    row = module.registry_row(plan, today=TODAY, include_visibility=True)
     assert row.startswith(f"| `{OWNER}/demo`（デモ） | `public` | **`{OWNER}`** |")
     assert "ローカル: `repos/nexus_ai/demo`" in row
     assert "~/" not in row and str(home) not in row
-    text = "| a | b | c | d |\n| 公開協業 repo 全般 | - | x | y |\n"
-    updated = module.insert_registry_row(text, row, key=f"{OWNER}/demo")
+    text = REGISTRY_TEXT
+    updated = module.insert_registry_row(text, plan, today=TODAY)
     assert updated is not None and updated.index(row) < updated.index("| 公開協業 repo 全般")
-    assert module.insert_registry_row(updated, row, key=f"{OWNER}/demo") == updated
-    later = module.registry_row(plan, today=date(2026, 9, 6))
-    again = module.insert_registry_row(updated, later, key=f"{OWNER}/demo")
-    assert again.count(f"| `{OWNER}/demo`") == 1 and "2026-09-06" in again
-    assert module.insert_registry_row("no anchor\n", row, key=f"{OWNER}/demo") is None
+    assert module.insert_registry_row(updated, plan, today=TODAY) == updated
+    assert module.insert_registry_row(updated, plan, today=date(2026, 9, 6)) == updated
+    with pytest.raises(module.BootstrapError, match="registry_anchor_missing"):
+        module.insert_registry_row("no anchor\n", plan, today=TODAY)
 
 
 def test_registry_matching_ignores_inline_code_formatting(module, home) -> None:
     """台帳が日本語ゲート向けにコード表記へ整形されても、挿入位置の行と既存行を見失わない。"""
     plan = _plan(module, home)
-    row = module.registry_row(plan, today=TODAY)
-    formatted = "| a | b | c | d |\n| 公開協業 `repo` 全般 | - | **`x`** に統一 | y |\n"
-    updated = module.insert_registry_row(formatted, row, key=f"{OWNER}/demo")
+    row = module.registry_row(plan, today=TODAY, include_visibility=True)
+    formatted = FORMATTED_REGISTRY_TEXT
+    updated = module.insert_registry_row(formatted, plan, today=TODAY)
     assert updated is not None and updated.index(row) < updated.index("| 公開協業 `repo` 全般")
-    assert module.registry_has_key(updated.replace(f"`{OWNER}/demo`", f"{OWNER}/demo"), f"{OWNER}/demo")
+    assert module.insert_registry_row(updated.replace(f"`{OWNER}/demo`", f"{OWNER}/demo"), plan, today=TODAY).count(f"{OWNER}/demo") == 1
     for other in ("demo.v2", "demo_x", "demo-x"):
-        assert not module.registry_has_key(f"| `{OWNER}/{other}`（x） |\n", f"{OWNER}/demo")
-    assert module.registry_has_key(f"| `{OWNER}/demo`の説明 |\n", f"{OWNER}/demo")
+        assert not module._is_registry_row_for(f"| `{OWNER}/{other}`（x） |\n", f"{OWNER}/demo")
+    assert module._is_registry_row_for(f"| `{OWNER}/demo`の説明 |\n", f"{OWNER}/demo")
+
+
+@pytest.mark.parametrize(("registry", "expected_cells"), [
+    ("| `repo` | 使う `account` | 根拠 |\n|---|---|---|\n"
+     "| 公開協業 `repo` 全般 | **`example`** に統一 | 既定の方針 |\n", [f"**`{OWNER}`**"]),
+    (FORMATTED_REGISTRY_TEXT, ["`public`", f"**`{OWNER}`**"]),
+])
+def test_register_uses_the_target_table_header(module, home, tmp_path, tools, registry, expected_cells):
+    checkout = _make_workspace(tmp_path / "columns", registry_text=registry)
+    plan = _plan(module, home, **{**tools, "registry_file": checkout / REGISTRY_REL})
+    boot = module.Bootstrapper(plan, FakeRunner({}), today=TODAY)
+    assert boot._register()[0] == "ok"
+    result = _git(checkout, "show", f"{boot.registration['branch']}:{REGISTRY_REL}")
+    row = next(line for line in result.splitlines() if f"`{plan.nwo}`" in line)
+    cells = [cell.strip() for cell in row.strip("|").split("|")]
+    assert cells[1:-1] == expected_cells
+    assert result.replace(row + "\n", "") == registry.rstrip("\n")
+
+
+@pytest.mark.parametrize("registry", [
+    REGISTRY_TEXT.replace("使う `account`", "不明"),
+    REGISTRY_TEXT.replace("|---|---|---|---|", "|---|---|"),
+    REGISTRY_TEXT.replace("| - | x | y |", "| x | y |"),
+    REGISTRY_TEXT + REGISTRY_TEXT,
+])
+def test_register_rejects_unknown_table_before_committing(module, home, tmp_path, tools, registry):
+    checkout = _make_workspace(tmp_path / "unknown", registry_text=registry)
+    plan = _plan(module, home, **{**tools, "registry_file": checkout / REGISTRY_REL})
+    boot = module.Bootstrapper(plan, FakeRunner({}), today=TODAY)
+    assert boot._check_registry() == "registry_schema_unknown"
+    assert boot._register() == ("fail", "registry_schema_unknown")
+    assert not (checkout / ".worktrees").exists()
+
+
+def test_register_preserves_malformed_existing_row_and_reports_failure(module, home, tmp_path, tools):
+    original = ("| `repo` | 使う `account` | 根拠 |\n|---|---|---|\n"
+                f"| `{OWNER}/demo` | `private` | **`{OWNER}`** | 既存の登録 |\n"
+                "| 公開協業 `repo` 全般 | 既定の名義 | 方針 |\n")
+    checkout = _make_workspace(tmp_path / "existing", registry_text=original)
+    plan = _plan(module, home, **{**tools, "registry_file": checkout / REGISTRY_REL})
+    boot = module.Bootstrapper(plan, FakeRunner({}), today=TODAY)
+    assert boot._register() == ("fail", "registry_row_invalid")
+    assert (checkout / REGISTRY_REL).read_text() == original
+    assert not (checkout / ".worktrees").exists()
+
+
+@pytest.mark.parametrize("fence", ["```", "~~~~"])
+def test_registry_ignores_code_examples(module, home, fence):
+    plan = _plan(module, home)
+    example = f"{fence}markdown\n{REGISTRY_TEXT}{fence}\n"
+    with pytest.raises(module.BootstrapError, match="registry_anchor_missing"):
+        module.insert_registry_row(example, plan, today=TODAY)
+    updated = module.insert_registry_row(example + REGISTRY_TEXT, plan, today=TODAY)
+    assert updated.startswith(example)
+    assert updated.removeprefix(example).count(plan.nwo) == 1
+
+
+def test_registered_row_with_escaped_pipe_is_preserved(module, home):
+    plan = _plan(module, home)
+    registered = REGISTRY_TEXT.replace("| 公開協業", f"| `{plan.nwo}` | public | 登録名義 | 原文 A \\| B |\n| 公開協業")
+    assert module.insert_registry_row(registered, plan, today=TODAY) == registered
 
 
 def test_register_works_on_registry_already_formatted_for_japanese_gate(module, home, tmp_path, tools) -> None:
@@ -380,7 +440,7 @@ def test_register_works_on_registry_already_formatted_for_japanese_gate(module, 
     status, detail = boot._register()
     assert status == "ok", detail
     shown = _git(checkout, "show", f"{boot.registration['branch']}:{REGISTRY_REL}")
-    assert shown.index(module.registry_row(plan, today=TODAY)) < shown.index("| 公開協業 `repo` 全般")
+    assert shown.index(module.registry_row(plan, today=TODAY, include_visibility=True)) < shown.index("| 公開協業 `repo` 全般")
 
 
 def test_register_commits_on_branch_from_origin_main_and_keeps_main_checkout_clean(module, home, tools) -> None:
@@ -399,7 +459,7 @@ def test_register_commits_on_branch_from_origin_main_and_keeps_main_checkout_cle
     assert branch == module.register_names(plan)[1] == f"{module.REGISTER_BRANCH_PREFIX}{OWNER}-demo"
     assert _git(checkout, "rev-parse", f"{branch}~1") == _git(checkout, "rev-parse", "origin/main")
     assert _git(checkout, "diff", "--name-only", f"origin/main...{branch}").splitlines() == [REGISTRY_REL]
-    assert module.registry_row(plan, today=TODAY) in _git(checkout, "show", f"{branch}:{REGISTRY_REL}")
+    assert module.registry_row(plan, today=TODAY, include_visibility=True) in _git(checkout, "show", f"{branch}:{REGISTRY_REL}")
     assert registration["commit"] == _git(checkout, "rev-parse", branch)
     assert registration["file"] == REGISTRY_REL and str(home) not in json.dumps(registration)
     skill_text = SKILL_DOC.read_text(encoding="utf-8")
@@ -454,7 +514,7 @@ def test_register_reattaches_branch_when_worktree_was_removed(module, home, tool
 
 def test_register_skips_repository_already_on_origin_main(module, home, tmp_path, tools) -> None:
     plan = _plan(module, home, **tools)
-    registered = module.insert_registry_row(REGISTRY_TEXT, module.registry_row(plan, today=TODAY), key=f"{OWNER}/demo")
+    registered = module.insert_registry_row(REGISTRY_TEXT, plan, today=TODAY)
     checkout = _make_workspace(tmp_path / "registered", registry_text=registered)
     plan.registry_file = checkout / REGISTRY_REL
     status, detail = module.Bootstrapper(plan, FakeRunner({}), today=date(2026, 9, 6))._register()
