@@ -37,7 +37,7 @@ REPOS_ROOT = WORKSPACE_ROOT / "repos"
 DEFAULT_LOCAL_ROOT = REPOS_ROOT / "nexus_ai"
 DEFAULT_REGISTRY = Path("Projects/Documents/references/github-account-repo-map.md")
 DEFAULT_PUSH_WRAPPER = Path("Projects/shared/scripts/cc-push-resolved.sh")
-REGISTRY_ANCHOR = "| 公開協業 repo 全般"
+REGISTRY_ANCHOR = "公開協業 repo 全般"
 # 台帳を持つ workspace repository 側の約束。登録は origin/main から切った専用 worktree の branch に commit する
 REGISTER_BRANCH_PREFIX = "bootstrap/register-"
 REGISTER_WORKTREE_DIR = ".worktrees"                     # main checkout 直下。.gitignore 済みであること
@@ -289,11 +289,12 @@ def registry_local_path(plan: Plan) -> str:
         return plan.tilde(plan.repo_dir)
 
 
-def registry_row(plan: Plan, *, today: date) -> str:
+def registry_row(plan: Plan, *, today: date, include_visibility: bool) -> str:
     """台帳の今の書式 (識別子をインラインコードにした日本語ゲート準拠の行) で 1 行を作る。"""
     local = registry_local_path(plan)
+    visibility_cell = f" `{plan.visibility}` |" if include_visibility else ""
     return (
-        f"| `{plan.nwo}`（{plan.description}） | `{plan.visibility}` | **`{plan.owner}`** | "
+        f"| `{plan.nwo}`（{plan.description}） |{visibility_cell} **`{plan.owner}`** | "
         f"{today.isoformat()} `bootstrap_repo.py` で作成と同時登録。ローカル: `{local}` |"
     )
 
@@ -307,16 +308,8 @@ def _is_registry_row_for(line: str, key: str) -> bool:
     return re.match(rf"\|\s*{re.escape(key)}(?![A-Za-z0-9_.-])", _registry_plain(line)) is not None
 
 
-def _registry_lines_except(text: str, key: str) -> list[str]:
-    return [line for line in text.splitlines() if not _is_registry_row_for(line, key)]
-
-
 def _is_registry_anchor(line: str) -> bool:
-    return _registry_plain(line).startswith(REGISTRY_ANCHOR)
-
-
-def registry_has_key(text: str, key: str) -> bool:
-    return any(_is_registry_row_for(line, key) for line in text.splitlines())
+    return line.startswith("|") and _registry_cells(line)[0] == REGISTRY_ANCHOR
 
 
 def register_names(plan: Plan) -> tuple[str, str]:
@@ -325,20 +318,64 @@ def register_names(plan: Plan) -> tuple[str, str]:
     return f"register-{slug}", REGISTER_BRANCH_PREFIX + slug
 
 
-def insert_registry_row(text: str, row: str, *, key: str) -> str | None:
-    """`key` (owner/name) の行があれば置き換え、無ければ anchor の直前に入れる。anchor が無ければ None。"""
-    lines = text.splitlines(keepends=True)
-    for index, line in enumerate(lines):
-        if _is_registry_row_for(line, key):
-            if line.rstrip("\n") == row:
-                return text
-            lines[index] = row + "\n"
-            return "".join(lines)
-    for index, line in enumerate(lines):
-        if _is_registry_anchor(line):
-            lines.insert(index, row + "\n")
-            return "".join(lines)
-    return None
+def _registry_cells(line: str) -> tuple[str, ...]:
+    body = _registry_plain(line.strip()).removeprefix("|").removesuffix("|")
+    return tuple(cell.strip() for cell in re.split(r"(?<!\\)(?:\\\\)*\|", body))
+
+
+def _registry_table_lines(lines: list[str]) -> list[str]:
+    """コードフェンス内の使用例を除き、元の行番号は維持する。"""
+    visible = []
+    fence = ""
+    for line in lines:
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})([^\r\n]*)", line)
+        if fence:
+            if marker and marker[1].startswith(fence) and not marker[2].strip():
+                fence = ""
+            visible.append("")
+        elif marker and (marker[1][0] == "~" or "`" not in marker[2]):
+            fence = marker[1]
+            visible.append("")
+        else:
+            visible.append(line)
+    return visible
+
+
+def insert_registry_row(text: str, plan: Plan, *, today: date) -> str:
+    """登録先の表を検査し、既存の行は保ったまま新規行をアンカーの直前に挿入する。"""
+    original = text.splitlines(keepends=True)
+    lines = _registry_table_lines(original)
+    anchors = [i for i, line in enumerate(lines) if _is_registry_anchor(line)]
+    if not anchors:
+        raise BootstrapError("registry_anchor_missing")
+    if len(anchors) != 1:
+        raise BootstrapError("registry_schema_unknown")
+    anchor = anchors[0]
+    header = anchor
+    while header > 0 and lines[header - 1].startswith("|"):
+        header -= 1
+    columns = _registry_cells(lines[header])
+    if columns not in (("repo", "使う account", "根拠"), ("repo", "visibility", "使う account", "根拠")):
+        raise BootstrapError("registry_schema_unknown")
+    width = len(columns)
+    separators = _registry_cells(lines[header + 1])
+    if (header + 1 >= anchor or len(separators) != width
+            or not all(re.fullmatch(r":?-{3,}:?", cell) for cell in separators)
+            or len(_registry_cells(lines[anchor])) != width):
+        raise BootstrapError("registry_schema_unknown")
+    end = anchor + 1
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    existing = [i for i, line in enumerate(lines) if _is_registry_row_for(line, plan.nwo)]
+    if existing:
+        if len(existing) != 1 or not header + 2 <= existing[0] < end or len(_registry_cells(lines[existing[0]])) != width:
+            raise BootstrapError("registry_row_invalid")
+        return text
+    row = registry_row(plan, today=today, include_visibility="visibility" in columns)
+    if len(row.splitlines()) != 1 or len(_registry_cells(row)) != width:
+        raise BootstrapError("registry_row_invalid")
+    original.insert(anchor, row + "\n")
+    return "".join(original)
 
 
 # ---------- bootstrap ----------
@@ -396,9 +433,10 @@ class Bootstrapper:
         rc, text, _ = self._git_at(root, "show", f"origin/main:{rel}")
         if rc != 0:
             return "registry_not_on_origin_main"
-        lines = text.splitlines()
-        if not any(_is_registry_anchor(line) for line in lines) and not registry_has_key(text, self.plan.nwo):
-            return "registry_anchor_missing"
+        try:
+            insert_registry_row(text, self.plan, today=self.today)
+        except BootstrapError as exc:
+            return str(exc)
         if self._git_at(root, "cat-file", "-e", f"origin/main:{REGISTRY_COMMIT_WRAPPER}")[0] != 0:
             return "commit_wrapper_missing"
         worktree, _ = self._register_target(root)
@@ -847,7 +885,11 @@ class Bootstrapper:
         rc, base_text, err = self._git_at(root, "show", f"origin/main:{rel}")
         if rc != 0:
             return "fail", f"origin/main に台帳 {rel} が無い: " + err.strip()
-        if registry_has_key(base_text, self.plan.nwo):
+        try:
+            updated = insert_registry_row(base_text, self.plan, today=self.today)
+        except BootstrapError as exc:
+            return "fail", str(exc)
+        if updated == base_text:
             return "skipped", f"{self.plan.nwo} は origin/main の台帳に登録済み"
         worktree, branch = self._register_target(root)
         status, detail = self._ensure_register_worktree(root, worktree, branch)
@@ -892,12 +934,12 @@ class Bootstrapper:
         rc, committed, err = self._git_at(worktree, "show", f"HEAD:{rel}")
         if rc != 0:
             return "fail", "登録用 branch の台帳を読めない: " + err.strip()
-        if registry_has_key(committed, key):
+        try:
+            updated = insert_registry_row(committed, self.plan, today=self.today)
+        except BootstrapError as exc:
+            return "fail", str(exc)
+        if updated == committed:
             return "ok", "commit 済み"
-        # 前回の未 commit の行は捨て、commit 済みの台帳から今の引数で作り直す
-        updated = insert_registry_row(committed, registry_row(self.plan, today=self.today), key=key)
-        if updated is None:
-            return "fail", f"registry anchor '{REGISTRY_ANCHOR}' が見つからない"
         target.write_text(updated, encoding="utf-8")
         formatter = worktree / REGISTRY_FORMATTER
         if formatter.exists():
@@ -905,7 +947,20 @@ class Bootstrapper:
             if rc != 0:
                 return "fail", "台帳行の日本語ゲート整形に失敗 (commit しない): " + (err or out).strip()[-400:]
             formatted = target.read_text(encoding="utf-8")
-            if not registry_has_key(formatted, key) or _registry_lines_except(formatted, key) != _registry_lines_except(updated, key):
+            try:
+                row_present = insert_registry_row(formatted, self.plan, today=self.today) == formatted
+            except BootstrapError:
+                row_present = False
+            if row_present:
+                unchanged_lines = []
+                mapped_cells = []
+                for content in (updated, formatted):
+                    lines = content.splitlines()
+                    index = next(i for i, line in enumerate(_registry_table_lines(lines)) if _is_registry_row_for(line, key))
+                    mapped_cells.append(_registry_cells(lines.pop(index))[1:-1])
+                    unchanged_lines.append(lines)
+                row_present = unchanged_lines[0] == unchanged_lines[1] and mapped_cells[0] == mapped_cells[1]
+            if not row_present:
                 return "fail", "台帳行の日本語ゲート整形が登録行以外を変えたか、登録行を見失った (commit しない)"
         wrapper = worktree / REGISTRY_COMMIT_WRAPPER
         if not wrapper.exists():
