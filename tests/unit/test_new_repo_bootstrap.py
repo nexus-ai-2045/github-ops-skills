@@ -1,8 +1,7 @@
 """new-repo-bootstrap: 新規 repository の作成を 1 本の fail-closed 手順にまとめる script のテスト。
 
-runner を差し替えて gh と新 repository 側の git を呼ばずに検査する。token は出力へ出ない。
-台帳の登録だけは、台帳を持つ workspace repository を tmp に本物の git で作り、
-main checkout が汚れないことと、差分が origin/main から切った branch に乗ることを実物で確かめる。
+gh は runner を差し替えて検査する。token は出力へ出ない。
+初期ブランチの push と台帳の登録は、一時ディレクトリの Git リポジトリで動作を確かめる。
 """
 
 from __future__ import annotations
@@ -119,12 +118,13 @@ def _load_module():  # noqa: ANN202
 class FakeRunner:
     """argv の最長一致 prefix で応答を返す。呼び出しと scoped_env を記録する。
 
-    台帳 workspace への `git -C` と commit wrapper (cc-commit.sh) だけは、応答が無ければ tmp の実 repository で実行する。
+    台帳用コマンドと real_repo で指定した初期ブランチのコマンドは、一時リポジトリで実行できる。
     """
 
-    def __init__(self, responses: dict[tuple[str, ...], tuple[int, str, str]]) -> None:
+    def __init__(self, responses: dict[tuple[str, ...], tuple[int, str, str]], *, real_repo: Path | None = None) -> None:
         self.responses = dict(responses)
         self.calls: list[tuple[tuple[str, ...], dict]] = []
+        self.real_repo = str(real_repo) if real_repo is not None else None
 
     def run(self, argv, *, cwd=None, scoped_env=None, timeout=30):  # noqa: ANN001
         argv = tuple(argv)
@@ -136,7 +136,11 @@ class FakeRunner:
         if best:
             return best[1]
         workspace_tool = argv[:1] in {("bash",), ("python3",)} and argv[1].endswith(("cc-commit.sh", "japanese_gate_autoformat.py"))
-        if argv[:2] == ("git", "-C") or workspace_tool:
+        bootstrap_tool = self.real_repo is not None and (
+            (argv[0] == "git" and cwd == self.real_repo)
+            or (argv[0] == "bash" and argv[2:4] == ("--repo", self.real_repo))
+        )
+        if argv[:2] == ("git", "-C") or workspace_tool or bootstrap_tool:
             return _run_real(argv, cwd=cwd, scoped_env=scoped_env, timeout=timeout)
         return (0, "", "")
 
@@ -152,6 +156,11 @@ def _fresh(repo_dir: Path) -> dict:
         ("gh", "repo", "view"): (1, "", "GraphQL: Could not resolve to a Repository"),
         ("git", "rev-parse", "--show-toplevel"): (0, str(repo_dir) + "\n", ""),
         ("git", "rev-parse", "HEAD"): (0, SHA + "\n", ""),
+        ("git", "rev-parse", "--verify", "refs/heads/main"): (0, SHA + "\n", ""),
+        ("git", "symbolic-ref"): (1, "", ""),
+        ("git", "symbolic-ref", "--quiet", "--no-recurse", "HEAD"): (0, "refs/heads/main\n", ""),
+        ("git", "for-each-ref"): (0, f"refs/heads/main\t{SHA}\tcommit\t\n", ""),
+        ("git", "worktree", "list"): (0, f"worktree {repo_dir}\0HEAD {SHA}\0branch refs/heads/main\0\0", ""),
         ("git", "remote", "get-url", "origin"): (1, "", "error: No such remote"),
         ("git", "log", "--format=%an|%ae|%cn|%ce"): (0, "", ""),
         ("git", "rev-list", "--count", "HEAD"): (1, "", "fatal: bad revision"),
@@ -170,7 +179,7 @@ def _remote(visibility: str, *, sha: str = SHA) -> dict:
 
 def _scan(ok: bool = True, **overrides: str) -> str:
     checks = {k: {"status": "pass"} for k in ("required_documents", "secret_scan", "personal_path_scan", "commit_identity")}
-    checks.update({"ci_configuration": {"status": "unknown"}, "origin": {"status": "unknown"}})
+    checks.update({"ci_configuration": {"status": "pass"}, "origin": {"status": "unknown"}})
     for name, status in overrides.items():
         checks[name] = {"status": status}
     return json.dumps({"status": "pass" if ok else "blocked", "checks": checks})
@@ -499,6 +508,142 @@ def test_preflight_blocks_registry_that_cannot_be_committed_through_a_branch(mod
 
 # ---------- execute ----------
 
+@pytest.fixture
+def bootstrap_git(module, home, tools, tmp_path):  # noqa: ANN201
+    plan = _plan(module, home, **tools)
+    remote = tmp_path / "bootstrap-remote.git"
+    assert _run_real(["git", "init", "-q", "--bare", "-b", "main", str(remote)])[0] == 0
+    plan.repo_dir.mkdir(parents=True)
+    _git(plan.repo_dir, "init", "-q", "-b", "main")
+    _git(plan.repo_dir, "config", "user.name", plan.commit_name)
+    _git(plan.repo_dir, "config", "user.email", plan.commit_email)
+    _git(plan.repo_dir, "commit", "-q", "--allow-empty", "-m", "initial")
+    plan.push_wrapper.write_text(
+        '#!/bin/sh\nset -eu\n'
+        '[ "$1" = "--repo" ] && [ "$3" = "--branch" ]\n'
+        '[ "$(git -C "$2" branch --show-current)" = "$4" ]\n'
+        f'git -C "$2" push -q "{remote}" "$4"\n',
+        encoding="utf-8",
+    )
+    responses = {args: result for args, result in _fresh(plan.repo_dir).items() if args[0] == "gh"}
+    runner = FakeRunner(responses, real_repo=plan.repo_dir)
+    return plan, remote, runner
+
+
+@pytest.mark.parametrize("existing_init", ["absent", "available", "checked-out"])
+def test_push_reuses_matching_init_and_returns_to_main(module, bootstrap_git, existing_init) -> None:
+    plan, remote, runner = bootstrap_git
+    repo = plan.repo_dir
+    sha = _git(repo, "rev-parse", "HEAD")
+    if existing_init != "absent":
+        _git(repo, "branch", module.INIT_BRANCH)
+    if existing_init == "checked-out":
+        _git(repo, "switch", module.INIT_BRANCH)
+
+    boot = module.Bootstrapper(plan, runner, today=TODAY, resume=existing_init != "absent")
+    status, detail = boot._push()
+    assert status == "ok", detail
+    assert _git(remote, "rev-parse", module.INIT_REF) == sha
+    assert _git(repo, "rev-parse", module.MAIN_REF, module.INIT_REF).splitlines() == [sha, sha]
+    assert _git(repo, "branch", "--show-current") == "main"
+    assert _git(repo, "status", "--porcelain") == ""
+    assert not runner.called("git", "branch", "-f")
+
+
+@pytest.mark.parametrize("state,reason", [
+    ("detached", "チェックアウトしてください"),
+    ("unrelated", "チェックアウトしてください"),
+    ("diverged", "一致しません"),
+    ("diverged-checked-out", "一致しません"),
+    ("occupied-init", "別の作業ツリー"),
+    ("occupied-main", "別の作業ツリー"),
+    ("symbolic", "直接参照"),
+    ("dangling-symbolic", "参照"),
+    ("missing-main", "一致しません"),
+    ("collision", "衝突"),
+])
+def test_invalid_initial_branches_block_before_writes(module, bootstrap_git, tmp_path, state, reason) -> None:
+    plan, remote, runner = bootstrap_git
+    repo = plan.repo_dir
+    if state == "collision":
+        _git(repo, "branch", f"{module.INIT_BRANCH}/child")
+    elif state == "symbolic":
+        _git(repo, "symbolic-ref", module.INIT_REF, module.MAIN_REF)
+    elif state == "dangling-symbolic":
+        _git(repo, "symbolic-ref", module.INIT_REF, "refs/heads/missing")
+    else:
+        _git(repo, "branch", module.INIT_BRANCH)
+    if state == "detached":
+        _git(repo, "switch", "--detach")
+    elif state == "unrelated":
+        _git(repo, "switch", "-c", "unrelated")
+    elif state == "missing-main":
+        _git(repo, "switch", module.INIT_BRANCH)
+        _git(repo, "branch", "-d", "main")
+    elif state.startswith("diverged"):
+        _git(repo, "switch", module.INIT_BRANCH)
+        _git(repo, "commit", "-q", "--allow-empty", "-m", "diverged")
+        if state == "diverged":
+            _git(repo, "switch", "main")
+    elif state.startswith("occupied"):
+        if state == "occupied-main":
+            _git(repo, "switch", module.INIT_BRANCH)
+        branch = "main" if state == "occupied-main" else module.INIT_BRANCH
+        _git(repo, "worktree", "add", str(tmp_path / "other\nworktree"), branch)
+    refs_before = _git(repo, "for-each-ref")
+    worktrees_before = _git(repo, "worktree", "list", "--porcelain", "-z")
+
+    boot = module.Bootstrapper(plan, runner, today=TODAY, resume=True)
+    report = boot.execute()
+    assert reason in report["preflight"]["initial_branches"]
+    assert report["status"] == "BLOCKED"
+    assert len(report["steps"]) == 1
+    assert boot._push()[0] == "fail"
+    assert not runner.called("git", "switch") and not runner.called("git", "config", "user.name")
+    assert not runner.called("bash") and not runner.called("gh", "repo", "create")
+    assert _git(repo, "for-each-ref") == refs_before
+    assert _git(repo, "worktree", "list", "--porcelain", "-z") == worktrees_before
+    assert _git(remote, "for-each-ref") == ""
+
+
+def test_failed_wrapper_reports_known_reasons_without_replaying_outputs(module, bootstrap_git) -> None:
+    plan, remote, runner = bootstrap_git
+    repo = plan.repo_dir
+    _git(repo, "switch", "-c", module.INIT_BRANCH)
+    runner.responses[("bash", str(plan.push_wrapper))] = (
+        7,
+        f'{{"status":"blocked","code":"managed_public_readiness_unverified","secret":"{TOKEN}"}}',
+        f"[cc-push-resolved] ERROR: canonical public readiness denied the operation {TOKEN}\n",
+    )
+    boot = module.Bootstrapper(plan, runner, today=TODAY, resume=True)
+    status, detail = boot._push()
+    assert status == "fail" and "rc=7" in detail
+    assert "canonical public readiness denied the operation" in detail
+    assert "managed_public_readiness_unverified" in detail
+    assert TOKEN not in detail
+    assert _git(repo, "branch", "--show-current") == "main"
+    assert boot._promote_main()[0] == "fail"
+    assert not runner.called("gh", "api", "-X", "POST")
+    assert _git(remote, "for-each-ref") == ""
+
+
+def test_wrapper_timeout_restores_main_without_reporting_subprocess_output(module, bootstrap_git, monkeypatch) -> None:
+    plan, remote, runner = bootstrap_git
+    run = runner.run
+
+    def timeout_wrapper(argv, **kwargs):  # noqa: ANN001, ANN202
+        if argv[:2] == ["bash", str(plan.push_wrapper)]:
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output=TOKEN, stderr=TOKEN)
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(runner, "run", timeout_wrapper)
+    boot = module.Bootstrapper(plan, runner, today=TODAY)
+    status, detail = boot._push()
+    assert status == "fail" and "タイムアウト" in detail and TOKEN not in detail
+    assert _git(plan.repo_dir, "branch", "--show-current") == "main"
+    assert _git(remote, "for-each-ref") == ""
+
+
 def _happy_execute(plan, tools, visibility="public"):  # noqa: ANN001, ANN202
     responses = _fresh(plan.repo_dir)
     responses[("python3", str(tools["preflight_script"]))] = (0, _scan(), "")
@@ -591,14 +736,47 @@ def test_execute_private_skips_lockdown_and_missing_wrapper_fails_closed(module,
     assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "push"
 
 
+@pytest.mark.parametrize("post", [(0, "{}", ""), (1, "", "Reference already exists")])
+@pytest.mark.parametrize("readback,reason", [
+    ((0, SHA + "\n", ""), ""),
+    ((0, "b" * 40 + "\n", ""), "一致しない"),
+    ((1, SHA + "\n", "Not Found"), "取得できない"),
+    ((0, "", ""), "取得できない"),
+])
+def test_main_promotion_checks_remote_sha_before_changing_default_or_deleting_init(
+    module, home, tools, post, readback, reason,
+) -> None:
+    plan = _plan(module, home, **tools)
+    responses = _happy_execute(plan, tools)
+    create = ("gh", "api", "-X", "POST", f"repos/{plan.nwo}/git/refs")
+    read = ("gh", "api", f"repos/{plan.nwo}/branches/main")
+    default = ("gh", "api", "-X", "PATCH", f"repos/{plan.nwo}", "-f", "default_branch=main")
+    delete = ("gh", "api", "-X", "DELETE", f"repos/{plan.nwo}/git/refs/heads/{module.INIT_BRANCH}")
+    responses[create] = post
+    responses[read] = readback
+    runner = FakeRunner(responses)
+
+    report = module.Bootstrapper(plan, runner, today=TODAY, resume=True).execute()
+    calls = runner.calls
+    assert calls.index(runner.called(*create)[0]) < calls.index(runner.called(*read)[0])
+    if reason:
+        assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "promote_main"
+        assert reason in report["steps"][-1]["detail"]
+        assert not runner.called(*default) and not runner.called(*delete)
+        assert not runner.called("git", "branch", "-d") and not runner.called("git", "update-ref")
+    else:
+        assert report["status"] == "READY", report
+        assert calls.index(runner.called(*read)[0]) < calls.index(runner.called(*default)[0]) < calls.index(runner.called(*delete)[0])
+
+
 def test_verify_requires_remote_main_matching_local_head(module, home, tools) -> None:
     plan = _plan(module, home, **tools)
     responses = _happy_execute(plan, tools)
     responses[("gh", "api", f"repos/{OWNER}/demo/branches/main")] = (1, "", "Not Found")
-    report = module.Bootstrapper(plan, FakeRunner(responses), today=TODAY).execute()
-    assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "verify" and "main が無い" in report["steps"][-1]["detail"]
+    report = module.Bootstrapper(plan, FakeRunner(responses), today=TODAY, resume=True, skip_push=True).execute()
+    assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "verify" and "取得できない" in report["steps"][-1]["detail"]
     responses[("gh", "api", f"repos/{OWNER}/demo/branches/main")] = (0, "b" * 40 + "\n", "")
-    report = module.Bootstrapper(plan, FakeRunner(responses), today=TODAY).execute()
+    report = module.Bootstrapper(plan, FakeRunner(responses), today=TODAY, resume=True, skip_push=True).execute()
     assert report["steps"][-1]["status"] == "fail" and "一致しない" in report["steps"][-1]["detail"]
 
 
