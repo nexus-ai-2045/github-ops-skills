@@ -47,15 +47,29 @@ REGISTRY_COMMIT_DIR_ENV = "CC_COMMIT_PROJECTS_DIR"       # commit 入口に work
 REGISTRY_FORMATTER = "shared/scripts/japanese_gate_autoformat.py"  # 台帳を日本語ゲート準拠に整える入口 (あれば commit 前に使う)
 REGISTRATION_NEXT = "台帳登録の branch を canonical wrapper で push し、PR を作る (SKILL の「台帳登録を PR にして」)"
 INIT_BRANCH = "bootstrap/init"
+MAIN_REF = "refs/heads/main"
+INIT_REF = f"refs/heads/{INIT_BRANCH}"
 SCAN_REQUIRED_CHECKS = ("required_documents", "secret_scan", "personal_path_scan", "commit_identity")
 SCAN_ACCEPTED = {"pass", "not_applicable"}
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
-SCAFFOLD_ORDER = ("LICENSE", "README.md", "SECURITY.md", "PREFLIGHT.md", "CONTRIBUTING.md", ".gitignore")
+BOOTSTRAP_WORKFLOW = ".github/workflows/bootstrap-documents.yml"
+SCAFFOLD_ORDER = ("LICENSE", "README.md", "SECURITY.md", "PREFLIGHT.md", "CONTRIBUTING.md", ".gitignore", BOOTSTRAP_WORKFLOW)
 STEP_ORDER = (
     "prepare_local", "set_identity", "scaffold_docs", "initial_commit", "readiness_scan",
     "create_remote", "repo_settings", "lockdown", "add_remote", "push", "promote_main", "verify", "register",
 )
 REPO_SETTINGS = (("delete_branch_on_merge", "true"),)
+PUSH_WRAPPER_ERRORS = (
+    "required pre-push hook verification failed",
+    "account resolver failed",
+    "cannot resolve a verified token",
+    "fresh-base assertion failed",
+    "canonical public readiness denied the operation",
+    "push_gate.sh denied the operation",
+    "reviewed origin changed before push",
+    "required pre-push hook revalidation failed",
+)
+PUSH_WRAPPER_CODES = ("managed_public_readiness_unverified", "reviewed_origin_changed_before_push")
 
 
 class BootstrapError(ValueError):
@@ -213,8 +227,34 @@ def render_templates(plan: Plan, *, today: date) -> dict[str, str]:
             "- secret / token / 個人の絶対 path を commit しない。\n"
             "- main へ直接 push しない。branch を切って PR を出す。\n"
         ),
+        BOOTSTRAP_WORKFLOW: (
+            "name: 文書検査\n"
+            "on: [push, pull_request]\n"
+            "permissions:\n  contents: read\n"
+            "jobs:\n  documents:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262\n"
+            "        with:\n          persist-credentials: false\n"
+            "      - run: |\n"
+            "          for file in README.md CONTRIBUTING.md SECURITY.md PREFLIGHT.md LICENSE; do\n"
+            "            test -s \"$file\" || exit 1\n"
+            "          done\n"
+        ),
         ".gitignore": "__pycache__/\n*.pyc\n.pytest_cache/\n.DS_Store\n.env\n.env.*\n",
     }
+
+
+def workflow_files(repo: Path) -> list[str]:
+    directory = (repo / BOOTSTRAP_WORKFLOW).parent
+    if directory.parent.is_symlink() or directory.is_symlink():
+        raise BootstrapError("CI ワークフローの配置先がシンボリックリンクです")
+    names = []
+    for path in sorted(directory.glob("*")):
+        if path.suffix not in {".yml", ".yaml"}:
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise BootstrapError(f"CI ワークフローが通常ファイルではありません: {path.name}")
+        names.append(path.relative_to(repo).as_posix())
+    return names
 
 
 def scaffold_docs(plan: Plan, *, today: date) -> list[str]:
@@ -223,6 +263,10 @@ def scaffold_docs(plan: Plan, *, today: date) -> list[str]:
     templates = render_templates(plan, today=today)
     for filename in SCAFFOLD_ORDER:
         target = plan.repo_dir / filename
+        if filename == BOOTSTRAP_WORKFLOW:
+            if workflow_files(plan.repo_dir):
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
             continue
         target.write_text(templates[filename], encoding="utf-8")
@@ -310,6 +354,7 @@ class Bootstrapper:
         self.skip_push = skip_push    # push を別経路で済ませた時だけ。verify が main の実在と sha を確認する
         self._token: str | None = None
         self._remote: dict[str, Any] | None = None   # gh repo view の結果 (存在する時)
+        self._pushed_sha: str | None = None
         self.registration: dict[str, Any] | None = None   # 台帳の登録 branch (push と PR はまだ)
 
     # -- helpers --
@@ -372,6 +417,11 @@ class Bootstrapper:
     def _head_sha(self) -> str | None:
         rc, out, _ = self._git("rev-parse", "HEAD")
         return out.strip() if rc == 0 and out.strip() else None
+
+    def _remote_main_sha(self) -> str | None:
+        rc, out, _ = self._gh("api", f"repos/{self.plan.nwo}/branches/main", "--jq", ".commit.sha")
+        sha = out.strip()
+        return sha if rc == 0 and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", sha) else None
 
     def _resolve_token(self) -> str:
         rc, out, _ = self.runner.run(["gh", "auth", "token", "--hostname", "github.com", "--user", self.plan.owner])
@@ -436,6 +486,13 @@ class Bootstrapper:
                     checks["local_dir"] = "origin_matches"
                 else:
                     checks["local_dir"] = "has_origin"
+                if not self.skip_push:
+                    try:
+                        self._initial_branch_state(allow_unborn=True)
+                    except BootstrapError as exc:
+                        checks["initial_branches"] = str(exc)
+                    else:
+                        checks["initial_branches"] = "ok"
             rc, log, _ = self._git("log", "--format=%an|%ae|%cn|%ce")
             expected = "|".join([self.plan.commit_name, self.plan.commit_email] * 2)
             identities = {line.strip() for line in log.splitlines() if line.strip()} if rc == 0 else set()
@@ -451,6 +508,7 @@ class Bootstrapper:
             or checks["local_dir"] in {"not_git", "has_origin", "nested_in_other_repo"}
             or (checks["remote_absent"] == "exists_resume" and checks["local_dir"] != "origin_matches")
             or checks["commit_identity"] == "mismatch"
+            or checks.get("initial_branches", "ok") != "ok"
             or checks["preflight_script"] == "missing"
             or checks["registry_file"] not in {"ok", "skipped"}
         )
@@ -518,6 +576,8 @@ class Bootstrapper:
         return "ok", f"{self.plan.commit_name} <{self.plan.commit_email}> (repository-local)"
 
     def _scaffold(self) -> tuple[str, str]:
+        if self.resume and self._git("rev-list", "--count", "HEAD")[0] == 0:
+            return "skipped", "既存 commit の内容を readiness_scan で確認する"
         written = scaffold_docs(self.plan, today=self.today)
         return "ok", ("wrote " + ", ".join(written)) if written else "all present"
 
@@ -528,7 +588,9 @@ class Bootstrapper:
             if status.strip():
                 return "fail", "既存 commit があり worktree が dirty。先に commit するか片付ける: " + status.strip()[:300]
             return "skipped", "既存 commit あり"
-        rc, _, err = self._git("add", "--", *SCAFFOLD_ORDER)
+        targets = [name for name in SCAFFOLD_ORDER if name != BOOTSTRAP_WORKFLOW]
+        targets.extend(workflow_files(self.plan.repo_dir))
+        rc, _, err = self._git("--literal-pathspecs", "add", "--", *targets)
         if rc != 0:
             return "fail", err.strip()
         _, status, _ = self._git("status", "--porcelain", "--untracked-files=all")
@@ -549,8 +611,7 @@ class Bootstrapper:
         except json.JSONDecodeError:
             return "fail", f"readiness_scan の出力を解釈できない (rc={rc})"
         top = str(payload.get("status", ""))
-        # scanner の status: pass / blocked (fail か unknown あり) / tool_error。remote 未作成の時点では
-        # origin / CI が unknown なので blocked は正常。tool_error と個別 check の fail だけを止める。
+        # origin は作成前なら unknown。CI 設定は初回 commit で検査できる。
         if top == "tool_error" or top not in {"pass", "blocked"}:
             return "fail", f"readiness_scan が異常終了 (rc={rc}, status={top or 'missing'}, issues={payload.get('issues')})"
         checks = payload.get("checks") or {}
@@ -558,9 +619,17 @@ class Bootstrapper:
                   if isinstance(item, dict) and item.get("status") == "fail"}
         bad = {name: (checks.get(name) or {}).get("status", "missing") for name in SCAN_REQUIRED_CHECKS
                if (checks.get(name) or {}).get("status") not in SCAN_ACCEPTED}
+        ci_status = (checks.get("ci_configuration") or {}).get("status", "missing")
+        if ci_status != "pass":
+            bad["ci_configuration"] = ci_status
         if failed or bad:
-            return "fail", "readiness_scan: " + json.dumps({**failed, **bad}, ensure_ascii=False)
-        return "ok", f"status={top}; fail 0; required_documents / secret / personal_path / identity pass (unknown は remote 未作成のため許容)"
+            detail = "readiness_scan: " + json.dumps({**failed, **bad}, ensure_ascii=False)
+            if ci_status != "pass":
+                detail += ("。初回 commit に有効な .github/workflows/ の CI 設定が必要です。"
+                           "既存履歴を保持し、別ディレクトリで CI を含む初回候補を作成して "
+                           "正規 wrapper の --dry-run で確認してください。")
+            return "fail", detail
+        return "ok", f"status={top}; fail 0; required_documents / secret / personal_path / identity / ci_configuration pass"
 
     def _create_remote(self) -> tuple[str, str]:
         if self.resume and self._remote is not None:
@@ -637,35 +706,116 @@ class Bootstrapper:
         rc, _, err = self._git("remote", "add", "origin", self.plan.remote_url)
         return ("ok", self.plan.remote_url) if rc == 0 else ("fail", err.strip())
 
+    def _initial_branch_state(self, *, allow_unborn: bool = False) -> tuple[str, str | None, bool]:
+        rc, head, _ = self._git("symbolic-ref", "--quiet", "--no-recurse", "HEAD")
+        current = head.strip()
+        if rc != 0 or current not in {MAIN_REF, INIT_REF}:
+            raise BootstrapError(f"対象の作業ツリーで main または {INIT_BRANCH} をチェックアウトしてください")
+        if current == INIT_REF and not self.resume:
+            raise BootstrapError(f"{INIT_BRANCH} からの再開には --resume が必要です")
+
+        rc, out, err = self._git("for-each-ref", "--format=%(refname)%09%(objectname)%09%(objecttype)%09%(symref)",
+                                 MAIN_REF, "refs/heads/bootstrap")
+        if rc != 0 or err:
+            raise BootstrapError("初期ブランチの参照を検証できません")
+        refs = {}
+        for line in out.splitlines():
+            ref, sha, object_type, target = line.split("\t")
+            if ref in {MAIN_REF, INIT_REF}:
+                if object_type != "commit" or target:
+                    raise BootstrapError(f"{ref} がコミットへの直接参照ではありません")
+                refs[ref] = sha
+            elif ref == "refs/heads/bootstrap" or ref.startswith(f"{INIT_REF}/"):
+                raise BootstrapError(f"{INIT_BRANCH} と名前が衝突するブランチがあります")
+        for ref in (MAIN_REF, INIT_REF):
+            if ref not in refs:
+                rc, _, _ = self._git("symbolic-ref", "--quiet", "--no-recurse", ref)
+                if rc != 1:
+                    raise BootstrapError(f"{ref} の参照を検証できません")
+        main_sha = refs.get(MAIN_REF)
+        init_sha = refs.get(INIT_REF)
+        if init_sha is not None and init_sha != main_sha:
+            raise BootstrapError(f"main と {INIT_BRANCH} のコミットが一致しません")
+        if main_sha is None and not (allow_unborn and current == MAIN_REF):
+            raise BootstrapError("main のコミットを確認できません")
+        if current == INIT_REF and init_sha is None:
+            raise BootstrapError(f"{INIT_BRANCH} のコミットを確認できません")
+
+        rc, out, _ = self._git("worktree", "list", "--porcelain", "-z")
+        if rc != 0 or not out:
+            raise BootstrapError("初期ブランチの作業ツリーを確認できません")
+        for record in out.split("\0\0"):
+            path, _, fields = record.partition("\0")
+            if path.startswith("worktree ") and Path(path.removeprefix("worktree ")).resolve() != self.plan.repo_dir.resolve():
+                if {f"branch {MAIN_REF}", f"branch {INIT_REF}"}.intersection(fields.split("\0")):
+                    raise BootstrapError(f"main または {INIT_BRANCH} は別の作業ツリーで使われています")
+        return current, main_sha, init_sha is not None
+
+    def _push_wrapper(self, wrapper: Path) -> str:
+        try:
+            rc, out, err = self.runner.run(
+                ["bash", str(wrapper), "--repo", str(self.plan.repo_dir), "--branch", INIT_BRANCH], timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            return "push wrapper がタイムアウトしました"
+        except OSError as exc:
+            return f"push wrapper を起動できません (errno={exc.errno})"
+        if rc == 0:
+            return ""
+        reasons = [reason for reason in PUSH_WRAPPER_ERRORS if f"[cc-push-resolved] ERROR: {reason}" in err]
+        reasons.extend(code for code in PUSH_WRAPPER_CODES if re.search(rf'"code"\s*:\s*"{code}"', out))
+        detail = f"push wrapper 失敗 (rc={rc})"
+        return detail + ("。判別できた理由は " + " / ".join(reasons) if reasons else "")
+
     def _push(self) -> tuple[str, str]:
+        self._pushed_sha = None
         if self.skip_push:
             return "skipped", "--skip-push (push は別経路で済ませた前提。verify が main の実在と sha を確認する)"
         wrapper = self.plan.push_wrapper
         if wrapper is None:
             return "fail", f"push wrapper (cc-push-resolved.sh) が見つからない。{INIT_BRANCH} の push を手で行い --resume --skip-push で再実行する"
-        rc, _, err = self._git("branch", "-f", INIT_BRANCH, "HEAD")
+        try:
+            current, main_sha, init_exists = self._initial_branch_state()
+        except BootstrapError as exc:
+            return "fail", str(exc)
+        if main_sha is None:
+            return "fail", "main のコミットを確認できません"
+        if current == MAIN_REF:
+            args = (INIT_BRANCH,) if init_exists else ("--no-track", "-c", INIT_BRANCH, main_sha)
+            rc, _, _ = self._git("switch", "--no-guess", *args)
+            if rc != 0:
+                return "fail", f"{INIT_BRANCH} へ切り替えられません (rc={rc})"
+        if self._head_sha() != main_sha:
+            return "fail", f"{INIT_BRANCH} が確認済みの main コミットを指していません"
+        error = self._push_wrapper(wrapper)
+        rc, out, _ = self._git("rev-parse", "--verify", MAIN_REF)
+        if rc != 0 or out.strip() != main_sha or self._head_sha() != main_sha:
+            return "fail", "。".join(filter(None, (error, "ブランチのコミットが変わったため main に戻しません")))
+        rc, _, _ = self._git("switch", "--no-guess", "main")
         if rc != 0:
-            return "fail", err.strip()
-        rc, _, err = self._git("switch", INIT_BRANCH)
-        if rc != 0:
-            return "fail", err.strip()
-        rc, out, err = self.runner.run(["bash", str(wrapper), "--repo", str(self.plan.repo_dir), "--branch", INIT_BRANCH], timeout=300)
-        rc_back, _, err_back = self._git("switch", "main")
-        if rc != 0:
-            return "fail", (err or out).strip()[-800:]
-        if rc_back != 0:
-            return "fail", "main へ戻れない: " + err_back.strip()
+            return "fail", "。".join(filter(None, (error, f"main へ戻れません (rc={rc})")))
+        if error:
+            return "fail", error
+        if self._head_sha() != main_sha:
+            return "fail", "切り替え後の main が push 済みのコミットと一致しません"
+        self._pushed_sha = main_sha
         return "ok", f"pushed {INIT_BRANCH} via wrapper"
 
     def _promote_main(self) -> tuple[str, str]:
         if self.skip_push:
             return "skipped", "--skip-push"
-        sha = self._head_sha()
-        if not sha:
-            return "fail", "HEAD sha を取れない"
+        sha = self._pushed_sha
+        rc, current, _ = self._git("symbolic-ref", "--quiet", "--no-recurse", "HEAD")
+        if not sha or rc != 0 or current.strip() != MAIN_REF or self._head_sha() != sha:
+            return "fail", "push 済みのコミットと local main の一致を確認できません"
         rc, _, err = self._gh("api", "-X", "POST", f"repos/{self.plan.nwo}/git/refs", "-f", "ref=refs/heads/main", "-f", f"sha={sha}")
         if rc != 0 and "already exists" not in err:
             return "fail", "main ref の作成: " + err.strip()
+        remote_sha = self._remote_main_sha()
+        if remote_sha is None:
+            return "fail", "remote main のコミットを取得できない"
+        if remote_sha != sha:
+            return "fail", f"remote main ({remote_sha[:12]}) が push 済みのコミット ({sha[:12]}) と一致しない"
         rc, _, err = self._gh("api", "-X", "PATCH", f"repos/{self.plan.nwo}", "-f", "default_branch=main")
         if rc != 0:
             return "fail", "default branch: " + err.strip()
@@ -778,10 +928,9 @@ class Bootstrapper:
             return "fail", f"read-back 不一致: {payload}"
         if payload.get("default_branch") != "main":
             return "fail", f"default branch が main ではない: {payload.get('default_branch')}"
-        rc, out, err = self._gh("api", f"repos/{self.plan.nwo}/branches/main", "--jq", ".commit.sha")
-        remote_sha = out.strip()
-        if rc != 0 or not remote_sha:
-            return "fail", "remote に main が無い (push 未完了): " + err.strip()
+        remote_sha = self._remote_main_sha()
+        if remote_sha is None:
+            return "fail", "remote main のコミットを取得できない"
         local_sha = self._head_sha()
         if local_sha and remote_sha != local_sha:
             return "fail", f"remote main ({remote_sha[:12]}) が local HEAD ({local_sha[:12]}) と一致しない"
