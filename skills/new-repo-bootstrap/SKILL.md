@@ -77,6 +77,7 @@ python3 <skill dir>/scripts/bootstrap_repo.py --name <name> --visibility <public
    create_remote → repo_settings → lockdown (public のみ、push より先) → add_remote → push → promote_main → verify → register` の順。
    `repo_settings` は公開・非公開とも、統合後に head branch を自動で消す設定 (`delete_branch_on_merge`) を有効にし、読み戻して確かめる。
    既存の repository にこの設定だけを当てる時は `--name <name> --visibility <public|private> --settings-only --confirm` を使う。作成・push・台帳は触らない。
+   既定の枝の保護も当てる時は、さらに `--protect-main --require-check <検査の名前>`（検査ごとに繰り返す）を足す。プルリクエスト必須（承認0）、会話の解決必須、強制の送信と枝の削除の禁止、指定した検査の必須化を当て、読み戻して照合する。既に別の保護がある時は、全項目の上書きになるため置き換えずに止まる。保護の書き込みには本人の承認が要る。
    公開の repository では、続けて公開時の lockdown（秘密情報の走査、送信時の保護、脆弱性の非公開の受付）も当て、読み戻して確かめる。別の入口で公開へ切り替えた後は、これで設定を揃える。公開範囲そのものは変えない。
    途中で `fail` が出たらそれ以降は走らない。`steps` をそのまま報告し、失敗した step の `detail` を人間語に直して伝える。
 

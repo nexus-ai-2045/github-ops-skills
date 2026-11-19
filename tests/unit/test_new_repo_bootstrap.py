@@ -1102,3 +1102,116 @@ def test_missing_name_with_owner_is_judged_the_same_in_preflight_and_settings(mo
     settings = _settings_responses()
     settings[("gh", "repo", "view")] = (0, json.dumps({"visibility": "PUBLIC"}), "")
     assert module.Bootstrapper(plan, FakeRunner(settings), today=TODAY).apply_settings()["status"] == "READY"
+
+
+# ---------- settings-only: 本流の保護 ----------
+
+PROTECT_CHECKS = ("verify", "gate / preflight", "validate")
+PROTECTION_PATH = f"repos/{OWNER}/demo/branches/main/protection"
+
+
+def _protection_state(checks=PROTECT_CHECKS, approvals=0, conversation=True, force=False, deletions=False) -> str:
+    return json.dumps([approvals, conversation, force, deletions, sorted(checks)], separators=(",", ":")) + "\n"
+
+
+def _protection_responses(module, *, existing=None, readback=None) -> dict:  # noqa: ANN001
+    query = module.PROTECTION_QUERY
+    current = (1, "", "gh: Branch not protected (HTTP 404)") if existing is None else (0, existing, "")
+    return {
+        **_settings_responses(),
+        ("gh", "api", f"repos/{OWNER}/demo", "--jq", ".default_branch"): (0, "main\n", ""),
+        ("gh", "api", PROTECTION_PATH, "--jq", query): current,
+        ("gh", "api", "-X", "PUT", PROTECTION_PATH): (0, "{}", ""),
+    }
+
+
+class _ReadbackAfterPut(FakeRunner):
+    """PUT の後だけ保護の読み戻しを返す。"""
+
+    def __init__(self, responses, readback):  # noqa: ANN001
+        super().__init__(responses)
+        self.readback = readback
+        self.put_seen = False
+        self.bodies: list[dict] = []
+
+    def run(self, argv, *, cwd=None, scoped_env=None, timeout=30):  # noqa: ANN001
+        argv = tuple(argv)
+        if argv[:5] == ("gh", "api", "-X", "PUT", PROTECTION_PATH):
+            self.put_seen = True
+            self.bodies.append(json.loads(Path(argv[argv.index("--input") + 1]).read_text(encoding="utf-8")))
+        if self.put_seen and argv[:3] == ("gh", "api", PROTECTION_PATH):
+            self.calls.append((argv, {"cwd": cwd, "scoped_env": dict(scoped_env or {})}))
+            return (0, self.readback, "")
+        return super().run(argv, cwd=cwd, scoped_env=scoped_env, timeout=timeout)
+
+
+def test_settings_only_protects_main_and_reads_back(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    runner = _ReadbackAfterPut(_protection_responses(module), _protection_state())
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    assert report["status"] == "READY", report
+    assert [s["name"] for s in report["steps"]][-2:] == ["lockdown", "branch_protection"]
+    body = runner.bodies[0]
+    assert sorted(c["context"] for c in body["required_status_checks"]["checks"]) == sorted(PROTECT_CHECKS)
+    assert body["required_pull_request_reviews"]["required_approving_review_count"] == 0
+    assert body["required_conversation_resolution"] is True
+    assert body["allow_force_pushes"] is False and body["allow_deletions"] is False
+    order = [call[0] for call in runner.calls]
+    lockdown_put = next(i for i, a in enumerate(order) if a[:4] == ("gh", "api", "-X", "PUT") and a[4].endswith("private-vulnerability-reporting"))
+    protect_put = next(i for i, a in enumerate(order) if a[:5] == ("gh", "api", "-X", "PUT", PROTECTION_PATH))
+    assert lockdown_put < protect_put
+    assert TOKEN not in json.dumps(report)
+
+
+def test_settings_only_without_protect_flag_does_not_touch_protection(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    runner = FakeRunner(_protection_responses(module))
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
+    assert report["status"] == "READY"
+    assert "branch_protection" not in [s["name"] for s in report["steps"]]
+    assert not any("/branches/" in " ".join(call[0]) and "protection" in " ".join(call[0]) for call in runner.calls)
+
+
+def test_settings_only_keeps_identical_existing_protection_without_writing(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    runner = FakeRunner(_protection_responses(module, existing=_protection_state()))
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    assert report["status"] == "READY" and report["steps"][-1]["status"] == "ok", report
+    assert not runner.called("gh", "api", "-X", "PUT", PROTECTION_PATH)
+
+
+def test_settings_only_refuses_to_replace_different_existing_protection(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    runner = FakeRunner(_protection_responses(module, existing=_protection_state(approvals=1)))
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "branch_protection"
+    assert not runner.called("gh", "api", "-X", "PUT", PROTECTION_PATH)
+
+
+def test_settings_only_blocks_when_protection_readback_differs(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    runner = _ReadbackAfterPut(_protection_responses(module), _protection_state(checks=("verify",)))
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    assert report["status"] == "BLOCKED" and report["steps"][-1]["status"] == "fail"
+
+
+def test_settings_only_blocks_when_protection_cannot_be_read(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    responses = _protection_responses(module)
+    responses[("gh", "api", PROTECTION_PATH, "--jq", module.PROTECTION_QUERY)] = (1, "", "HTTP 403")
+    runner = FakeRunner(responses)
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "branch_protection"
+    assert not runner.called("gh", "api", "-X", "PUT", PROTECTION_PATH)
+
+
+def test_cli_protect_main_needs_settings_only_and_checks(module, home, tools) -> None:
+    base = ["--name", "demo", "--visibility", "public", *_cli_tool_args(tools)]
+    runner = FakeRunner(_protection_responses(module))
+    with pytest.raises(SystemExit):
+        module.main([*base, "--description", "デモ", "--protect-main", "--require-check", "verify"], runner=runner, home=home, env={}, today=TODAY)
+    with pytest.raises(SystemExit):
+        module.main([*base, "--settings-only", "--confirm", "--protect-main"], runner=runner, home=home, env={}, today=TODAY)
+    with pytest.raises(SystemExit):
+        module.main([*base, "--settings-only", "--confirm", "--require-check", "verify"], runner=runner, home=home, env={}, today=TODAY)
+    assert not runner.called("gh", "api", "-X")

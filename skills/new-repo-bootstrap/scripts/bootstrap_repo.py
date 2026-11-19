@@ -23,6 +23,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -59,6 +60,10 @@ STEP_ORDER = (
     "create_remote", "repo_settings", "lockdown", "add_remote", "push", "promote_main", "verify", "register",
 )
 REPO_SETTINGS = (("delete_branch_on_merge", "true"),)
+PROTECTION_QUERY = (
+    "[.required_pull_request_reviews.required_approving_review_count, .required_conversation_resolution.enabled,"
+    " .allow_force_pushes.enabled, .allow_deletions.enabled, ([.required_status_checks.checks[].context] | sort)] | tojson"
+)
 LOCKDOWN_SCANNING_QUERY = (
     "[.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status]"
     ' | join(" ")'
@@ -693,7 +698,7 @@ class Bootstrapper:
             applied.append(f"{key}={value}")
         return "ok", ", ".join(applied)
 
-    def apply_settings(self) -> dict[str, Any]:
+    def apply_settings(self, protect_checks: tuple[str, ...] | None = None) -> dict[str, Any]:
         report: dict[str, Any] = {"repository": self.plan.nwo, "visibility": self.plan.visibility, "steps": []}
         token = self._resolve_token()
         report["steps"].append({"name": "token_login", "status": "ok" if token == "ok" else "fail", "detail": token})
@@ -730,8 +735,49 @@ class Bootstrapper:
         if status == "ok":
             status, detail = self._lockdown_readback()
         report["steps"].append({"name": "lockdown", "status": status, "detail": detail})
+        if status in {"ok", "skipped"} and protect_checks is not None:
+            status, detail = self._protect_main(protect_checks)
+            report["steps"].append({"name": "branch_protection", "status": status, "detail": detail})
         report["status"] = "READY" if status in {"ok", "skipped"} else "BLOCKED"
         return report
+
+    def _protect_main(self, checks: tuple[str, ...]) -> tuple[str, str]:
+        rc, out, err = self._gh("api", f"repos/{self.plan.nwo}", "--jq", ".default_branch")
+        branch = out.strip()
+        if rc != 0 or not branch:
+            return "fail", "既定の枝を読めない: " + err.strip()
+        path = f"repos/{self.plan.nwo}/branches/{branch}/protection"
+        wanted = json.dumps([0, True, False, False, sorted(checks)], separators=(",", ":"))
+        rc, out, err = self._gh("api", path, "--jq", PROTECTION_QUERY)
+        if rc == 0:
+            if out.strip() == wanted:
+                return "ok", f"{branch} は既に同じ保護 (書き込みなし)"
+            return "fail", f"{branch} に別の保護がある ({out.strip()})。置き換えは全項目の上書きになるため、別に判断する"
+        if "Branch not protected" not in err + out:
+            return "fail", "保護の読み取りに失敗: " + err.strip()
+        body = {
+            "required_status_checks": {"strict": False, "checks": [{"context": name} for name in checks]},
+            "enforce_admins": False,
+            "required_pull_request_reviews": {"required_approving_review_count": 0},
+            "restrictions": None,
+            "required_conversation_resolution": True,
+            "allow_force_pushes": False,
+            "allow_deletions": False,
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
+            json.dump(body, handle)
+        try:
+            rc, _, err = self._gh("api", "-X", "PUT", path, "--input", handle.name)
+        finally:
+            Path(handle.name).unlink(missing_ok=True)
+        if rc != 0:
+            return "fail", "保護の書き込みに失敗: " + err.strip()
+        rc, out, err = self._gh("api", path, "--jq", PROTECTION_QUERY)
+        if rc != 0:
+            return "fail", "保護の読み戻しに失敗: " + err.strip()
+        if out.strip() != wanted:
+            return "fail", f"保護の読み戻しが {out.strip()} で {wanted} にならない"
+        return "ok", f"{branch}: プルリクエスト必須 (承認0)、会話の解決必須、強制の送信と削除を禁止、必須の検査 {', '.join(checks)} (読み戻しで確認)"
 
     def _lockdown(self) -> tuple[str, str]:
         if self.plan.visibility != "public":
@@ -1037,6 +1083,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-push", action="store_true", help="push を別経路で済ませた後に残りだけを行う (--resume と併用)")
     parser.add_argument("--settings-only", action="store_true",
                         help="既存の repository に REPO_SETTINGS と、public なら公開時の lockdown を当てる (--confirm と併用)。作成・push・台帳は触らない")
+    parser.add_argument("--protect-main", action="store_true",
+                        help="--settings-only と併用し、既定の枝に保護を当てて読み戻す。既に別の保護があれば置き換えずに止まる")
+    parser.add_argument("--require-check", action="append", default=[], metavar="NAME",
+                        help="--protect-main で必須にする検査の名前。繰り返して複数指定する")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -1047,6 +1097,10 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
     args = parser.parse_args(argv)
     if not args.settings_only and not args.description:
         parser.error("--description は新規作成に必須")
+    if args.protect_main and not args.settings_only:
+        parser.error("--protect-main は --settings-only と併用する")
+    if args.protect_main != bool(args.require_check):
+        parser.error("--protect-main と --require-check は組で指定する")
     home = home or Path.home()
     env = dict(os.environ) if env is None else env
     today = today or date.today()
@@ -1067,7 +1121,7 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
             print(json.dumps({"mode": "settings", "status": "BLOCKED", "cause": "--settings-only は --confirm と併用する",
                               "settings": dict(REPO_SETTINGS)}, ensure_ascii=False))
             return 1
-        result = boot.apply_settings()
+        result = boot.apply_settings(tuple(args.require_check) if args.protect_main else None)
         result["mode"] = "settings"
     elif args.confirm:
         result = boot.execute()
