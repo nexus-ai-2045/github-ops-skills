@@ -28,6 +28,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any
 
 KNOWN_IDENTITIES: dict[str, tuple[str, str]] = {
@@ -62,7 +63,7 @@ STEP_ORDER = (
     "branch_protection",
 )
 REPO_SETTINGS = (("delete_branch_on_merge", "true"),)
-GATE_SCRIPT_BLOB = "e14661211a0c9543811abc6533ed4d0e8da9fdb1"  # repo-preflight の scripts/github_settings_gate.py を中身で固定する
+GATE_SCRIPT_BLOB = "512cdac7aae4206ef63ee7061c6fac88f1b1a376"  # repo-preflight の scripts/github_settings_gate.py を中身で固定する
 GATE_PLAN_SCHEMA = "repo-preflight.branch-protection-plan/v1"
 GATE_PROFILE = "solo_public"
 PROTECTION_STATES = ("noop", "create", "overlay", "blocked")
@@ -143,19 +144,21 @@ def protection_plan_problem(plan: Any, nwo: str, checks: tuple[str, ...]) -> str
         return "関門の計画の状態が分からない"
     if plan["state"] == "blocked":
         return None
-    prefix = f"repos/{nwo}/branches/".lower()
     readback, basis, operation = plan.get("readback"), plan.get("basis"), plan.get("operation")
     if not isinstance(readback, dict) or not isinstance(basis, dict):
         return "関門の計画に読み戻しか取り直しの基準が無い"
+    if not isinstance(readback.get("jq"), str) or not isinstance(readback.get("expected"), list) or len(readback["expected"]) < 6:
+        return "関門の計画の読み戻しの照会式か期待値が無い"
+    if basis.get("state") not in {"absent", "present"} or not isinstance(plan.get("default_branch"), str) or not plan["default_branch"]:
+        return "関門の計画の取り直しの基準か既定の枝が無い"
+    target = f"repos/{nwo}/branches/{quote(plan['default_branch'], safe='/')}/protection"
     endpoints = [readback.get("endpoint"), basis.get("endpoint")]
     if plan["state"] != "noop":
         if not isinstance(operation, dict) or operation.get("method") != "PUT" or not isinstance(operation.get("body"), dict):
             return "関門の計画に書き込みの中身が無い"
         endpoints.append(operation.get("endpoint"))
-    if len(set(endpoints)) != 1 or not all(
-        isinstance(e, str) and e.lower().startswith(prefix) and e.endswith("/protection") for e in endpoints
-    ):
-        return "関門の計画の書き込み先が対象の枝の保護でない"
+    if any(not isinstance(e, str) or e.lower() != target.lower() for e in endpoints):
+        return "関門の計画の書き込み先が対象の既定の枝の保護でない"
     return None
 
 
@@ -647,6 +650,11 @@ class Bootstrapper:
                 status, detail = actions[name]()
             except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
                 status, detail = "fail", f"{type(exc).__name__}: {exc}"
+            if name == "branch_protection" and status == "pending":
+                record(name, "pending", detail)
+                report["pending"] = [name]
+                report["protection_next"] = PROTECTION_LATER
+                continue
             if not record(name, status, detail):
                 break
         else:
@@ -660,9 +668,9 @@ class Bootstrapper:
         if self.plan.visibility != "public":
             return "skipped", "private は既定の枝の保護の対象外 (無料の契約では使えない)"
         if self.protect_checks is None:
-            return "fail", "既定の枝の保護は未適用。" + PROTECTION_LATER
+            return "pending", "既定の枝の保護は未適用。" + PROTECTION_LATER
         status, detail = self._protect_main(self.protect_checks)
-        return (status, detail) if status == "ok" else (status, detail + "。" + PROTECTION_LATER)
+        return (status, detail) if status == "ok" else ("pending", "既定の枝の保護は未適用 (" + detail + ")。" + PROTECTION_LATER)
 
     def _prepare_local(self) -> tuple[str, str]:
         if self.plan.repo_dir.exists():
@@ -792,7 +800,10 @@ class Bootstrapper:
             status, detail = self._lockdown_readback()
         report["steps"].append({"name": "lockdown", "status": status, "detail": detail})
         if status in {"ok", "skipped"} and protect_checks is not None:
-            status, detail = self._protect_main(protect_checks)
+            if self.plan.visibility != "public":
+                status, detail = "skipped", "private は既定の枝の保護の対象外 (無料の契約では使えない)"
+            else:
+                status, detail = self._protect_main(protect_checks)
             report["steps"].append({"name": "branch_protection", "status": status, "detail": detail})
         report["status"] = "READY" if status in {"ok", "skipped"} else "BLOCKED"
         return report
@@ -852,10 +863,10 @@ class Bootstrapper:
             return "fail", "保護の読み戻しに失敗: " + err.strip()
         if _parse_json(out) != readback["expected"]:
             return "fail", f"保護の読み戻しが {out.strip()} で {json.dumps(readback['expected'], ensure_ascii=False)} にならない"
-        admins, approvals, _, _, _, required = readback["expected"]
+        admins, approvals, conversation, force, deletions, required = readback["expected"][:6]
         action = {"noop": "既に満たしていて書き込みなし", "create": "新しく当てた", "overlay": "既存の保護に重ねた"}[plan["state"]]
-        return "ok", (f"{plan.get('default_branch')}: {action}。管理者も対象={admins}、プルリクエスト必須 (承認{approvals})、"
-                      f"会話の解決必須、強制の送信と削除を禁止、必須の検査 {', '.join(required)} (読み戻しで確認)")
+        return "ok", (f"{plan['default_branch']}: {action}。管理者も対象={admins}、承認数={approvals}、会話の解決必須={conversation}、"
+                      f"強制の送信={force}、枝の削除={deletions}、必須の検査 {', '.join(required)} (読み戻しで確認)")
 
     def _lockdown(self) -> tuple[str, str]:
         if self.plan.visibility != "public":

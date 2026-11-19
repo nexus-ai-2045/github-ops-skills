@@ -78,7 +78,7 @@ python3 <skill dir>/scripts/bootstrap_repo.py --name <name> --visibility <public
    `repo_settings` は公開・非公開とも、統合後に head branch を自動で消す設定 (`delete_branch_on_merge`) を有効にし、読み戻して確かめる。
    既存の repository にこの設定だけを当てる時は `--name <name> --visibility <public|private> --settings-only --confirm` を使う。作成・push・台帳は触らない。
    既定の枝の保護は `--protect-main --require-check <検査の名前>`（検査ごとに繰り返す）で当てる。当てる中身はこの台本が持たず、repo-preflight の `scripts/github_settings_gate.py protection-plan`（中身の blob を `GATE_SCRIPT_BLOB` で固定）が出す計画に従う。条件の正本は repo-preflight の `references/github-settings.md` の「既定の枝に保護を当てる計画」。管理者も対象にし、検査名は直近のマージ済みプルリクエストで照らす。関門が `blocked` を返したら書き込まずに理由を報告する。`create` / `overlay` は、書き込む直前に保護を取り直して計画の指紋と比べ、違えば止まる。書いた後は計画の照会式で読み戻して照合する。固定した blob が手元に無ければ repo-preflight を fetch する。保護の書き込みには本人の承認が要る。
-   新規作成（`--confirm`）では、公開の repository だけ最後の `branch_protection` で同じ計画を使う。マージ済みのプルリクエストがまだ無いので関門は検査名を照らせず、この段は `fail` で止まり、全体は `BLOCKED` になる（作成と台帳登録は済んでいる）。最初のプルリクエストをマージした後に `--settings-only --confirm --protect-main --require-check <検査の名前>` で当てる。非公開は無料の契約で保護が使えないため `skipped`。
+   新規作成（`--confirm`）では、公開の repository だけ最後の `branch_protection` で同じ計画を使う。マージ済みのプルリクエストがまだ無いので関門は検査名を照らせず、この段は `pending`（未適用）になる。全体は `READY` のまま、`pending: ["branch_protection"]` と `protection_next` を返す。これは失敗ではないので `--resume` しない。最初のプルリクエストをマージした後に `--settings-only --confirm --protect-main --require-check <検査の名前>` で当てる。非公開は無料の契約で保護が使えないため `skipped`（`--settings-only` でも同じ）。
    公開の repository では、続けて公開時の lockdown（秘密情報の走査、送信時の保護、脆弱性の非公開の受付）も当て、読み戻して確かめる。別の入口で公開へ切り替えた後は、これで設定を揃える。公開範囲そのものは変えない。
    途中で `fail` が出たらそれ以降は走らない。`steps` をそのまま報告し、失敗した step の `detail` を人間語に直して伝える。
 

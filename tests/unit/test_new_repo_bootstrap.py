@@ -720,10 +720,11 @@ def _happy_execute(plan, tools, visibility="public"):  # noqa: ANN001, ANN202
 
 
 def _created_with_protection_pending(module, report) -> bool:  # noqa: ANN001
-    """公開の新規作成は、保護の段だけが未適用で止まり、それ以外の段は通る。"""
+    """公開の新規作成は、保護の段だけが未適用 (pending) で、それ以外の段は通る。"""
     *done, last = report["steps"]
-    return (report["status"] == "BLOCKED" and all(s["status"] in {"ok", "skipped"} for s in done)
-            and last["name"] == "branch_protection" and module.PROTECTION_LATER in last["detail"])
+    return (report["status"] == "READY" and all(s["status"] in {"ok", "skipped"} for s in done)
+            and last["name"] == "branch_protection" and last["status"] == "pending"
+            and report["pending"] == ["branch_protection"] and report["protection_next"] == module.PROTECTION_LATER)
 
 
 def test_execute_order_lockdown_before_push_and_main_promotion(module, home, tools) -> None:
@@ -1272,6 +1273,12 @@ def test_non_ascii_check_names_round_trip_through_plan_and_readback(module, home
         lambda p: p["operation"].update(endpoint=f"repos/{OWNER}/other/branches/main/protection"),
         lambda p: p["operation"].update(endpoint=f"repos/{OWNER}/demo/rulesets"),
         lambda p: p.update(operation=None),
+        lambda p: p["readback"].update(endpoint=f"repos/{OWNER}/demo/branches/other/protection"),
+        lambda p: p["basis"].update(endpoint=f"repos/{OWNER}/demo/branches/other/protection"),
+        lambda p: p.update(default_branch="other"),
+        lambda p: p["readback"].pop("jq"),
+        lambda p: p["readback"].update(expected=None),
+        lambda p: p["basis"].update(state="unknown"),
     ],
 )
 def test_malformed_or_foreign_plan_is_refused(module, home, tools, pinned_gate, mutate) -> None:
@@ -1281,7 +1288,7 @@ def test_malformed_or_foreign_plan_is_refused(module, home, tools, pinned_gate, 
     runner = GateRunner(_protect_responses(pinned_gate), gate_plan)
     report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
     assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "branch_protection"
-    assert not runner.called("gh", "api", "-X", "PUT")[-1:] or runner.called("gh", "api", "-X", "PUT")[-1][0][4] != PROTECTION_PATH
+    assert not any(call[0][:3] == ("gh", "api", "-X") and "/branches/" in call[0][4] for call in runner.calls)
 
 
 def test_gate_must_match_the_pinned_blob(module, home, tools, pinned_gate) -> None:
@@ -1307,21 +1314,20 @@ def test_execute_public_without_checks_registers_but_reports_protection_pending(
     plan = _plan(module, home, **tools)
     runner = FakeRunner(_happy_execute(plan, tools))
     report = module.Bootstrapper(plan, runner, today=TODAY).execute()
-    assert report["status"] == "BLOCKED"
+    assert _created_with_protection_pending(module, report), report
     assert [s["name"] for s in report["steps"]] == ["preflight", *module.STEP_ORDER]
-    assert all(s["status"] in {"ok", "skipped"} for s in report["steps"][:-1])
-    assert report["steps"][-1]["status"] == "fail" and "--protect-main" in report["steps"][-1]["detail"]
+    assert "--protect-main" in report["steps"][-1]["detail"]
     assert report["registration"] and report["next"] == module.REGISTRATION_NEXT
 
 
-def test_execute_public_uses_the_same_gate_plan(module, home, tools, pinned_gate) -> None:
+def test_execute_resume_on_repository_with_merged_pr_uses_the_same_gate_plan(module, home, tools, pinned_gate) -> None:
     plan = _plan(module, home, **tools)
     responses = {**_happy_execute(plan, tools), **pinned_gate,
                  ("gh", "api", PROTECTION_PATH): (1, "", "gh: Branch not protected (HTTP 404)")}
     runner = GateRunner(responses, _gate_plan("create"))
     report = module.Bootstrapper(plan, runner, today=TODAY, protect_checks=PROTECT_CHECKS).execute()
-    assert report["status"] == "READY", report
-    assert report["steps"][-1]["name"] == "branch_protection" and runner.bodies
+    assert report["status"] == "READY" and "pending" not in report, report
+    assert report["steps"][-1]["name"] == "branch_protection" and report["steps"][-1]["status"] == "ok" and runner.bodies
 
 
 def test_execute_public_new_repository_is_blocked_by_gate_until_a_pr_merges(module, home, tools, pinned_gate) -> None:
@@ -1329,8 +1335,8 @@ def test_execute_public_new_repository_is_blocked_by_gate_until_a_pr_merges(modu
     reason = "check_evidence_unavailable:no_recent_merged_pull_request"
     runner = GateRunner({**_happy_execute(plan, tools), **pinned_gate}, _gate_plan("blocked", reasons=(reason,)))
     report = module.Bootstrapper(plan, runner, today=TODAY, protect_checks=PROTECT_CHECKS).execute()
-    assert report["status"] == "BLOCKED" and reason in report["steps"][-1]["detail"]
-    assert "--settings-only" in report["steps"][-1]["detail"]
+    assert _created_with_protection_pending(module, report), report
+    assert reason in report["steps"][-1]["detail"] and "--settings-only" in report["steps"][-1]["detail"]
     assert report["registration"]
     assert not runner.called("gh", "api", "-X", "PUT", PROTECTION_PATH)
 
@@ -1360,3 +1366,39 @@ def test_cli_rejects_empty_or_duplicate_check_names(module, home, tools) -> None
         with pytest.raises(SystemExit):
             module.main([*base, *extra], runner=runner, home=home, env={}, today=TODAY)
     assert not runner.called("gh", "api", "-X")
+
+
+def test_put_body_file_is_removed_after_writing(module, home, tools, pinned_gate) -> None:
+    plan = _plan(module, home, **tools)
+    runner = GateRunner(_protect_responses(pinned_gate), _gate_plan("create"))
+    module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    put = runner.called("gh", "api", "-X", "PUT", PROTECTION_PATH)[0][0]
+    assert not Path(put[put.index("--input") + 1]).exists()
+
+
+def test_settings_only_private_skips_protection_without_calling_gate(module, home, tools, pinned_gate) -> None:
+    plan = _plan(module, home, visibility="private", **tools)
+    responses = {**_protect_responses(pinned_gate), **_remote("private")}
+    runner = GateRunner(responses, _gate_plan("create"))
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    assert report["status"] == "READY" and report["steps"][-1] == {
+        "name": "branch_protection", "status": "skipped", "detail": report["steps"][-1]["detail"]}
+    assert not runner.gate_calls
+
+
+REPO_PREFLIGHT = Path.home() / "Projects" / "repos" / "nexus_ai" / "repo-preflight"
+
+
+def test_protection_digest_matches_the_pinned_gate(module, tmp_path) -> None:
+    rc, source, _ = _run_real(["git", "-C", str(REPO_PREFLIGHT), "cat-file", "blob", module.GATE_SCRIPT_BLOB])
+    if rc != 0:
+        pytest.skip("固定した関門の blob が手元の repo-preflight に無い")
+    gate_path = tmp_path / "github_settings_gate.py"
+    gate_path.write_text(source, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("pinned_gate", gate_path)
+    gate = importlib.util.module_from_spec(spec)
+    sys.modules["pinned_gate"] = gate
+    spec.loader.exec_module(gate)
+    sample = {"enforce_admins": {"enabled": True}, "required_status_checks": {"checks": [{"context": "題の検査", "app_id": 1}]}}
+    assert module.protection_digest(sample) == gate.protection_digest(sample)
+    assert module.GATE_PLAN_SCHEMA == gate.PROTECTION_PLAN_SCHEMA_VERSION
