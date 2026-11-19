@@ -62,7 +62,7 @@ STEP_ORDER = (
 REPO_SETTINGS = (("delete_branch_on_merge", "true"),)
 PROTECTION_QUERY = (
     "[.required_pull_request_reviews.required_approving_review_count, .required_conversation_resolution.enabled,"
-    " .allow_force_pushes.enabled, .allow_deletions.enabled, ([.required_status_checks.checks[].context] | sort)] | tojson"
+    " .allow_force_pushes.enabled, .allow_deletions.enabled, ([(.required_status_checks.checks // [])[].context] | sort)] | tojson"
 )
 LOCKDOWN_SCANNING_QUERY = (
     "[.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status]"
@@ -112,6 +112,13 @@ class Plan:
             return "~/" + path.resolve().relative_to(self.home.resolve()).as_posix()
         except ValueError:
             return path.as_posix()
+
+
+def _parse_json(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
 
 
 class SubprocessRunner:
@@ -747,10 +754,10 @@ class Bootstrapper:
         if rc != 0 or not branch:
             return "fail", "既定の枝を読めない: " + err.strip()
         path = f"repos/{self.plan.nwo}/branches/{branch}/protection"
-        wanted = json.dumps([0, True, False, False, sorted(checks)], separators=(",", ":"))
+        wanted = [0, True, False, False, sorted(checks)]
         rc, out, err = self._gh("api", path, "--jq", PROTECTION_QUERY)
         if rc == 0:
-            if out.strip() == wanted:
+            if _parse_json(out) == wanted:
                 return "ok", f"{branch} は既に同じ保護 (書き込みなし)"
             return "fail", f"{branch} に別の保護がある ({out.strip()})。置き換えは全項目の上書きになるため、別に判断する"
         if "Branch not protected" not in err + out:
@@ -775,8 +782,8 @@ class Bootstrapper:
         rc, out, err = self._gh("api", path, "--jq", PROTECTION_QUERY)
         if rc != 0:
             return "fail", "保護の読み戻しに失敗: " + err.strip()
-        if out.strip() != wanted:
-            return "fail", f"保護の読み戻しが {out.strip()} で {wanted} にならない"
+        if _parse_json(out) != wanted:
+            return "fail", f"保護の読み戻しが {out.strip()} で {json.dumps(wanted, ensure_ascii=False)} にならない"
         return "ok", f"{branch}: プルリクエスト必須 (承認0)、会話の解決必須、強制の送信と削除を禁止、必須の検査 {', '.join(checks)} (読み戻しで確認)"
 
     def _lockdown(self) -> tuple[str, str]:
@@ -1101,6 +1108,8 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
         parser.error("--protect-main は --settings-only と併用する")
     if args.protect_main != bool(args.require_check):
         parser.error("--protect-main と --require-check は組で指定する")
+    if any(not name.strip() for name in args.require_check) or len(set(args.require_check)) != len(args.require_check):
+        parser.error("--require-check に空の名前や重複がある")
     home = home or Path.home()
     env = dict(os.environ) if env is None else env
     today = today or date.today()

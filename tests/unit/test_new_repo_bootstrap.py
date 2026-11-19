@@ -1215,3 +1215,37 @@ def test_cli_protect_main_needs_settings_only_and_checks(module, home, tools) ->
     with pytest.raises(SystemExit):
         module.main([*base, "--settings-only", "--confirm", "--require-check", "verify"], runner=runner, home=home, env={}, today=TODAY)
     assert not runner.called("gh", "api", "-X")
+
+
+def test_settings_only_accepts_non_ascii_check_names_as_gh_prints_them(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    checks = ("題の検査", "verify")
+    raw = json.dumps([0, True, False, False, sorted(checks)], separators=(",", ":"), ensure_ascii=False) + "\n"
+    runner = _ReadbackAfterPut(_protection_responses(module), raw)
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=checks)
+    assert report["status"] == "READY", report
+    rerun = FakeRunner(_protection_responses(module, existing=raw))
+    report = module.Bootstrapper(plan, rerun, today=TODAY).apply_settings(protect_checks=checks)
+    assert report["status"] == "READY" and not rerun.called("gh", "api", "-X", "PUT", PROTECTION_PATH), report
+
+
+def test_protection_query_tolerates_protection_without_status_checks(module) -> None:
+    assert "// []" in module.PROTECTION_QUERY
+
+
+def test_settings_only_reports_other_protection_when_existing_has_no_checks(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    existing = json.dumps([None, None, False, False, []]) + "\n"
+    runner = FakeRunner(_protection_responses(module, existing=existing))
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    assert report["status"] == "BLOCKED" and "別の保護" in report["steps"][-1]["detail"]
+    assert not runner.called("gh", "api", "-X", "PUT", PROTECTION_PATH)
+
+
+def test_cli_rejects_empty_or_duplicate_check_names(module, home, tools) -> None:
+    base = ["--name", "demo", "--visibility", "public", "--settings-only", "--confirm", "--protect-main", *_cli_tool_args(tools)]
+    runner = FakeRunner(_protection_responses(module))
+    for extra in (["--require-check", ""], ["--require-check", "verify", "--require-check", "verify"]):
+        with pytest.raises(SystemExit):
+            module.main([*base, *extra], runner=runner, home=home, env={}, today=TODAY)
+    assert not runner.called("gh", "api", "-X")
