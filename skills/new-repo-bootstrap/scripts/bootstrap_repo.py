@@ -59,6 +59,10 @@ STEP_ORDER = (
     "create_remote", "repo_settings", "lockdown", "add_remote", "push", "promote_main", "verify", "register",
 )
 REPO_SETTINGS = (("delete_branch_on_merge", "true"),)
+LOCKDOWN_SCANNING_QUERY = (
+    "[.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status]"
+    ' | join(" ")'
+)
 PUSH_WRAPPER_ERRORS = (
     "required pre-push hook verification failed",
     "account resolver failed",
@@ -719,7 +723,14 @@ class Bootstrapper:
         report["steps"].append({"name": "remote_match", "status": "ok", "detail": self.plan.nwo})
         status, detail = self._repo_settings()
         report["steps"].append({"name": "repo_settings", "status": status, "detail": detail})
-        report["status"] = "READY" if status == "ok" else "BLOCKED"
+        if status != "ok":
+            report["status"] = "BLOCKED"
+            return report
+        status, detail = self._lockdown()
+        if status == "ok":
+            status, detail = self._lockdown_readback()
+        report["steps"].append({"name": "lockdown", "status": status, "detail": detail})
+        report["status"] = "READY" if status in {"ok", "skipped"} else "BLOCKED"
         return report
 
     def _lockdown(self) -> tuple[str, str]:
@@ -735,7 +746,20 @@ class Bootstrapper:
         rc, _, err = self._gh("api", "-X", "PUT", f"repos/{self.plan.nwo}/private-vulnerability-reporting")
         if rc != 0:
             return "fail", "private vulnerability reporting: " + err.strip()
-        return "ok", "secret scanning + push protection + private vulnerability reporting (push より前に適用)"
+        return "ok", "secret scanning + push protection + private vulnerability reporting"
+
+    def _lockdown_readback(self) -> tuple[str, str]:
+        rc, out, err = self._gh("api", f"repos/{self.plan.nwo}", "--jq", LOCKDOWN_SCANNING_QUERY)
+        if rc != 0:
+            return "fail", "secret scanning の読み戻しに失敗: " + err.strip()
+        if out.split() != ["enabled", "enabled"]:
+            return "fail", f"secret scanning / push protection の読み戻しが {out.strip()!r} で enabled にならない"
+        rc, out, err = self._gh("api", f"repos/{self.plan.nwo}/private-vulnerability-reporting", "--jq", ".enabled")
+        if rc != 0:
+            return "fail", "private vulnerability reporting の読み戻しに失敗: " + err.strip()
+        if out.strip().lower() != "true":
+            return "fail", f"private vulnerability reporting の読み戻しが {out.strip()!r} で true にならない"
+        return "ok", "secret scanning + push protection + private vulnerability reporting (読み戻しで確認)"
 
     def _add_remote(self) -> tuple[str, str]:
         rc, url, _ = self._git("remote", "get-url", "origin")
@@ -1012,7 +1036,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resume", action="store_true", help="途中で止まった作成を続きから再実行する (remote / origin / visibility が一致している時だけ)")
     parser.add_argument("--skip-push", action="store_true", help="push を別経路で済ませた後に残りだけを行う (--resume と併用)")
     parser.add_argument("--settings-only", action="store_true",
-                        help="既存の repository に REPO_SETTINGS だけを当てる (--confirm と併用)。作成・push・台帳は触らない")
+                        help="既存の repository に REPO_SETTINGS と、public なら公開時の lockdown を当てる (--confirm と併用)。作成・push・台帳は触らない")
     parser.add_argument("--json", action="store_true")
     return parser
 

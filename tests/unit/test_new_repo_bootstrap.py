@@ -903,12 +903,18 @@ def test_skill_document_matches_script_step_order_and_registry_checks(module) ->
 
 # ---------- settings-only ----------
 
-def _settings_responses(visibility: str = "public", readback: str = "true\n") -> dict:
+LOCKDOWN_SCANNING_QUERY = "[.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status] | join(\" \")"
+
+
+def _settings_responses(visibility: str = "public", readback: str = "true\n", lockdown_readback: str = "enabled enabled\n",
+                        reporting_readback: str = "true\n") -> dict:
     return {
         ("gh", "auth", "token"): (0, TOKEN + "\n", ""),
         ("gh", "api", "user"): (0, OWNER + "\n", ""),
         **_remote(visibility),
         ("gh", "api", "-X", "PATCH", f"repos/{OWNER}/demo", "-F"): (0, readback, ""),
+        ("gh", "api", f"repos/{OWNER}/demo", "--jq", LOCKDOWN_SCANNING_QUERY): (0, lockdown_readback, ""),
+        ("gh", "api", f"repos/{OWNER}/demo/private-vulnerability-reporting", "--jq", ".enabled"): (0, reporting_readback, ""),
     }
 
 
@@ -917,12 +923,94 @@ def test_settings_only_applies_delete_branch_on_merge_to_existing_repo(module, h
     runner = FakeRunner(_settings_responses())
     report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
     assert report["status"] == "READY", report
-    assert [s["name"] for s in report["steps"]] == ["token_login", "remote_match", "repo_settings"]
+    assert [s["name"] for s in report["steps"]] == ["token_login", "remote_match", "repo_settings", "lockdown"]
     assert not runner.called("gh", "repo", "create") and not runner.called("git")
     assert not runner.called("bash") and not runner.called("python3")
     patches = runner.called("gh", "api", "-X", "PATCH")
-    assert len(patches) == 1 and patches[0][0][4:7] == (f"repos/{OWNER}/demo", "-F", "delete_branch_on_merge=true")
+    assert patches[0][0][4:7] == (f"repos/{OWNER}/demo", "-F", "delete_branch_on_merge=true")
     assert TOKEN not in json.dumps(report)
+
+
+def test_settings_only_applies_public_lockdown_to_existing_public_repo(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    runner = FakeRunner(_settings_responses())
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
+    assert report["status"] == "READY", report
+    assert report["steps"][-1]["name"] == "lockdown" and report["steps"][-1]["status"] == "ok", report
+    patches = [call[0] for call in runner.called("gh", "api", "-X", "PATCH")]
+    assert len(patches) == 2
+    assert patches[1][4:] == (
+        f"repos/{OWNER}/demo",
+        "-f", "security_and_analysis[secret_scanning][status]=enabled",
+        "-f", "security_and_analysis[secret_scanning_push_protection][status]=enabled",
+    )
+    puts = [call[0] for call in runner.called("gh", "api", "-X", "PUT")]
+    assert [put[4] for put in puts] == [f"repos/{OWNER}/demo/private-vulnerability-reporting"]
+    order = [call[0] for call in runner.calls]
+    readback = next(i for i, argv in enumerate(order) if argv[-1] == LOCKDOWN_SCANNING_QUERY)
+    assert order.index(patches[1]) < order.index(puts[0]) < readback
+    assert TOKEN not in json.dumps(report)
+    assert all("visibility" not in " ".join(call[0]) for call in runner.called("gh", "api", "-X"))
+    assert not runner.called("gh", "repo", "edit")
+
+
+def test_settings_only_skips_lockdown_for_private_repo(module, home, tools) -> None:
+    plan = _plan(module, home, visibility="private", **tools)
+    runner = FakeRunner(_settings_responses("private"))
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
+    assert report["status"] == "READY", report
+    assert report["steps"][-1]["name"] == "lockdown" and report["steps"][-1]["status"] == "skipped"
+    assert len(runner.called("gh", "api", "-X", "PATCH")) == 1
+    assert not runner.called("gh", "api", "-X", "PUT")
+
+
+def test_settings_only_blocks_when_lockdown_write_fails(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    for failing in [
+        ("gh", "api", "-X", "PATCH", f"repos/{OWNER}/demo", "-f"),
+        ("gh", "api", "-X", "PUT", f"repos/{OWNER}/demo/private-vulnerability-reporting"),
+    ]:
+        responses = _settings_responses()
+        responses[failing] = (1, "", "HTTP 403")
+        report = module.Bootstrapper(plan, FakeRunner(responses), today=TODAY).apply_settings()
+        assert report["status"] == "BLOCKED", (failing, report)
+        assert report["steps"][-1]["name"] == "lockdown" and report["steps"][-1]["status"] == "fail"
+        assert "HTTP 403" in report["steps"][-1]["detail"]
+        assert TOKEN not in json.dumps(report)
+    responses = _settings_responses()
+    responses[("gh", "api", "-X", "PATCH", f"repos/{OWNER}/demo", "-f")] = (1, "", "HTTP 403")
+    runner = FakeRunner(responses)
+    module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
+    assert not runner.called("gh", "api", "-X", "PUT")
+
+
+def test_settings_only_blocks_when_lockdown_readback_is_not_enabled(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    for kwargs in [
+        {"lockdown_readback": "enabled disabled\n"},
+        {"lockdown_readback": "disabled enabled\n"},
+        {"lockdown_readback": "\n"},
+        {"reporting_readback": "false\n"},
+        {"reporting_readback": "\n"},
+        {"reporting_readback": "null\n"},
+    ]:
+        report = module.Bootstrapper(plan, FakeRunner(_settings_responses(**kwargs)), today=TODAY).apply_settings()
+        assert report["status"] == "BLOCKED", (kwargs, report)
+        assert report["steps"][-1]["name"] == "lockdown" and report["steps"][-1]["status"] == "fail"
+    responses = _settings_responses()
+    responses[("gh", "api", f"repos/{OWNER}/demo", "--jq", LOCKDOWN_SCANNING_QUERY)] = (1, "", "HTTP 502")
+    report = module.Bootstrapper(plan, FakeRunner(responses), today=TODAY).apply_settings()
+    assert report["status"] == "BLOCKED" and report["steps"][-1]["status"] == "fail"
+
+
+def test_settings_only_does_not_start_lockdown_when_repo_settings_fail(module, home, tools) -> None:
+    plan = _plan(module, home, **tools)
+    responses = _settings_responses()
+    responses[("gh", "api", "-X", "PATCH", f"repos/{OWNER}/demo", "-F")] = (1, "", "HTTP 403")
+    runner = FakeRunner(responses)
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
+    assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "repo_settings"
+    assert not runner.called("gh", "api", "-X", "PUT")
 
 
 def test_settings_only_blocks_on_visibility_mismatch_or_failed_readback(module, home, tools) -> None:
@@ -930,7 +1018,7 @@ def test_settings_only_blocks_on_visibility_mismatch_or_failed_readback(module, 
     runner = FakeRunner(_settings_responses("private"))
     report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
     assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "remote_match"
-    assert not runner.called("gh", "api", "-X", "PATCH")
+    assert not runner.called("gh", "api", "-X")
     report = module.Bootstrapper(plan, FakeRunner(_settings_responses(readback="false\n")), today=TODAY).apply_settings()
     assert report["status"] == "BLOCKED" and report["steps"][-1]["status"] == "fail"
 
@@ -939,7 +1027,7 @@ def test_cli_settings_only_requires_confirm_and_skips_description(module, home, 
     args = ["--name", "demo", "--visibility", "public", "--settings-only", *_cli_tool_args(tools)]
     runner = FakeRunner(_settings_responses())
     assert module.main(args, runner=runner, home=home, env={}, today=TODAY) == 1
-    assert not runner.called("gh", "api", "-X", "PATCH")
+    assert not runner.called("gh", "api", "-X")
     capsys.readouterr()
     assert module.main([*args, "--confirm", "--json"], runner=runner, home=home, env={}, today=TODAY) == 0
     assert json.loads(capsys.readouterr().out)["mode"] == "settings"
@@ -955,7 +1043,7 @@ def test_settings_only_blocks_without_writing_when_repo_view_fails_or_is_unreada
         runner = FakeRunner(responses)
         report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
         assert report["status"] == "BLOCKED" and report["steps"][-1]["name"] == "remote_match", (view, report)
-        assert not runner.called("gh", "api", "-X", "PATCH")
+        assert not runner.called("gh", "api", "-X")
 
 
 def test_settings_only_blocks_when_patch_fails(module, home, tools) -> None:
@@ -991,7 +1079,7 @@ def test_settings_only_refuses_repository_served_by_redirect(module, home, tools
     runner = FakeRunner(responses)
     report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings()
     assert report["status"] == "BLOCKED" and "転送" in report["steps"][-1]["detail"]
-    assert not runner.called("gh", "api", "-X", "PATCH")
+    assert not runner.called("gh", "api", "-X")
 
 
 def test_execute_creates_new_repository_when_old_name_only_redirects(module, home, tools) -> None:
