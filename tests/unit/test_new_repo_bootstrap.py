@@ -11,6 +11,7 @@ import inspect
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import date
@@ -1229,8 +1230,21 @@ def test_settings_only_accepts_non_ascii_check_names_as_gh_prints_them(module, h
     assert report["status"] == "READY" and not rerun.called("gh", "api", "-X", "PUT", PROTECTION_PATH), report
 
 
-def test_protection_query_tolerates_protection_without_status_checks(module) -> None:
-    assert "// []" in module.PROTECTION_QUERY
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq が無い環境では照会式を評価できない")
+def test_protection_query_on_sample_payloads(module) -> None:
+    def evaluate(payload: dict) -> object:
+        out = subprocess.run(["jq", "-r", module.PROTECTION_QUERY], input=json.dumps(payload), text=True, capture_output=True, check=True).stdout
+        return json.loads(out)
+
+    assert evaluate({"allow_force_pushes": {"enabled": False}, "allow_deletions": {"enabled": False}}) == [None, None, False, False, []]
+    applied = {
+        "required_pull_request_reviews": {"required_approving_review_count": 0},
+        "required_conversation_resolution": {"enabled": True},
+        "allow_force_pushes": {"enabled": False},
+        "allow_deletions": {"enabled": False},
+        "required_status_checks": {"strict": False, "checks": [{"context": "題の検査", "app_id": 1}, {"context": "verify", "app_id": 1}]},
+    }
+    assert evaluate(applied) == [0, True, False, False, sorted(["題の検査", "verify"])]
 
 
 def test_settings_only_reports_other_protection_when_existing_has_no_checks(module, home, tools) -> None:
@@ -1245,7 +1259,7 @@ def test_settings_only_reports_other_protection_when_existing_has_no_checks(modu
 def test_cli_rejects_empty_or_duplicate_check_names(module, home, tools) -> None:
     base = ["--name", "demo", "--visibility", "public", "--settings-only", "--confirm", "--protect-main", *_cli_tool_args(tools)]
     runner = FakeRunner(_protection_responses(module))
-    for extra in (["--require-check", ""], ["--require-check", "verify", "--require-check", "verify"]):
+    for extra in (["--require-check", ""], ["--require-check", " verify"], ["--require-check", "verify", "--require-check", "verify"]):
         with pytest.raises(SystemExit):
             module.main([*base, *extra], runner=runner, home=home, env={}, today=TODAY)
     assert not runner.called("gh", "api", "-X")

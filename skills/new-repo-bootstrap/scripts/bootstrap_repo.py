@@ -758,7 +758,7 @@ class Bootstrapper:
         rc, out, err = self._gh("api", path, "--jq", PROTECTION_QUERY)
         if rc == 0:
             if _parse_json(out) == wanted:
-                return "ok", f"{branch} は既に同じ保護 (書き込みなし)"
+                return "ok", f"{branch} は求める5項目を既に満たしている (書き込みなし。管理者の扱いなど他の項目は照合していない)"
             return "fail", f"{branch} に別の保護がある ({out.strip()})。置き換えは全項目の上書きになるため、別に判断する"
         if "Branch not protected" not in err + out:
             return "fail", "保護の読み取りに失敗: " + err.strip()
@@ -1108,8 +1108,8 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
         parser.error("--protect-main は --settings-only と併用する")
     if args.protect_main != bool(args.require_check):
         parser.error("--protect-main と --require-check は組で指定する")
-    if any(not name.strip() for name in args.require_check) or len(set(args.require_check)) != len(args.require_check):
-        parser.error("--require-check に空の名前や重複がある")
+    if any(not name or name != name.strip() for name in args.require_check) or len(set(args.require_check)) != len(args.require_check):
+        parser.error("--require-check に空の名前、前後の空白、重複がある")
     home = home or Path.home()
     env = dict(os.environ) if env is None else env
     today = today or date.today()
