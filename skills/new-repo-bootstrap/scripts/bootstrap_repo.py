@@ -63,7 +63,7 @@ STEP_ORDER = (
     "branch_protection",
 )
 REPO_SETTINGS = (("delete_branch_on_merge", "true"),)
-GATE_SCRIPT_BLOB = "512cdac7aae4206ef63ee7061c6fac88f1b1a376"  # repo-preflight の scripts/github_settings_gate.py を中身で固定する
+GATE_SCRIPT_BLOB = "c798fbbb1eac3999d991efee2782e52426d91795"  # repo-preflight の scripts/github_settings_gate.py を中身で固定する
 GATE_PLAN_SCHEMA = "repo-preflight.branch-protection-plan/v1"
 GATE_PROFILE = "solo_public"
 PROTECTION_STATES = ("noop", "create", "overlay", "blocked")
