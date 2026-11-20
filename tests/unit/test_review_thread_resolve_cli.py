@@ -167,3 +167,18 @@ def test_resolve_cli_judges_with_expected_login_but_without_resolver(monkeypatch
     assert seen["resolver"] is None
     assert seen["apply"] is False
     assert json.loads(capsys.readouterr().out)["materials"][0]["reason_code"] == "no_record"
+
+
+def test_resolve_cli_partial_apply_with_open_threads_exits_one(monkeypatch, capsys) -> None:
+    cli = _load_cli()
+    payload = {
+        "decision": "hold",
+        "applied": True,
+        "resolved": [{"id": "t1", "isResolved": True}],
+        "materials": [{"id": "t2", "verdict": "hold", "reason_code": "no_record"}],
+        "errors": [],
+        "audit": {"decision": "hold"},
+    }
+    monkeypatch.setattr(cli, "run_resolve", lambda *args, **kwargs: payload)
+    assert cli.main(["--repo", "owner/name", "--pr", "3", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out)["resolved"] == [{"id": "t1", "isResolved": True}]

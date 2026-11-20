@@ -122,20 +122,24 @@ class FakeLookup:
             FIX: CommitFiles(frozenset({PATH}), False)
         }
         self.issues: dict[int, IssueRef | Exception] = {80: IssueRef(80, "open")}
+        self.repos: list[str] = []
 
     def compare_status(self, repo: str, base: str, head: str) -> str:
+        self.repos.append(repo)
         outcome = self.compare.get((base, head), NotFound("404"))
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
 
     def commit_files(self, repo: str, commit: str) -> CommitFiles:
+        self.repos.append(repo)
         outcome = self.files.get(commit, NotFound("404"))
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
 
     def issue_ref(self, repo: str, number: int) -> IssueRef:
+        self.repos.append(repo)
         outcome = self.issues.get(number, NotFound("404"))
         if isinstance(outcome, Exception):
             raise outcome
@@ -934,3 +938,10 @@ def test_record_query_reads_author_type(monkeypatch) -> None:
     monkeypatch.setattr(module.subprocess, "run", lambda command, **kw: _completed(page))
     record = fetch_thread_records(REPO, PR)["t1"]
     assert record.comments[0].author_type == "Bot"
+
+
+def test_lookups_only_ask_the_pull_request_repository() -> None:
+    lookup = FakeLookup()
+    assert _verdict(_record((LOGIN, fixed_mark())), lookup).verdict == "resolvable"
+    assert _verdict(_record((LOGIN, deferred_mark())), lookup).verdict == "resolvable"
+    assert lookup.repos and set(lookup.repos) == {REPO}
