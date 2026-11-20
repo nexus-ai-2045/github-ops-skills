@@ -182,9 +182,9 @@ def parse_disposition(
     if type(version) is not int or version != 1:
         return ParseError("invalid_version")
     kind = payload.get("kind")
-    field = DISPOSITION_FIELDS.get(kind) if isinstance(kind, str) else None
-    if field is None:
+    if not isinstance(kind, str) or kind not in DISPOSITION_FIELDS:
         return ParseError("invalid_kind")
+    field = DISPOSITION_FIELDS[kind]
     if set(payload) != {"v", "kind", field}:
         return ParseError("invalid_keys")
     value = payload[field]
@@ -707,7 +707,25 @@ def run_resolve(
         plan = replace(plan, errors=plan.errors + record_errors)
 
     if apply and plan.resolve_thread_ids:
-        stale = _stale_reason(plan, audit_source(repo, number))
+        fresh = audit_source(repo, number)
+        stale = _stale_reason(plan, fresh)
+        if stale is None:
+            try:
+                fresh_records = records_source(repo, number)
+            except API_ERRORS:
+                stale = "recheck_failed"
+            else:
+                replanned = plan_resolve(
+                    fresh,
+                    records=fresh_records,
+                    expected_login=expected_login,
+                    repo=repo,
+                    pr_number=number,
+                    lookup=lookup if lookup is not None else GhLookup(),
+                    proposed_thread_ids=proposed_thread_ids,
+                )
+                if replanned.resolve_thread_ids != plan.resolve_thread_ids:
+                    stale = "verdict_changed"
         if stale is not None:
             result = apply_resolve(plan, apply=False)
             result["decision"] = "error"

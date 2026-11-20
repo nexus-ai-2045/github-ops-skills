@@ -801,3 +801,41 @@ def test_gh_lookup_compare_status_and_issue_number(monkeypatch) -> None:
     assert GhLookup().issue_number(REPO, 80) == 80
     assert seen[0][4] == f"repos/{REPO}/compare/{FIX}...{HEAD}"
     assert seen[1][4] == f"repos/{REPO}/issues/80"
+
+
+def test_run_resolve_stops_when_a_new_finding_arrives_before_closing() -> None:
+    audit = _audit(_thread(thread_id="t1", state="unresolved_current"))
+    snapshots = [
+        {"t1": _record((LOGIN, fixed_mark()))},
+        {"t1": _record((LOGIN, fixed_mark()), ("review-bot", "still broken"))},
+    ]
+    closed: list[str] = []
+
+    def resolver(thread_id: str) -> dict:
+        closed.append(thread_id)
+        return _confirm(thread_id)
+
+    result = _run(
+        [audit],
+        {},
+        resolver=resolver,
+        records_source=lambda repo, number: snapshots.pop(0),
+    )
+    assert closed == []
+    assert result["applied"] is False
+    assert "stale_audit:verdict_changed" in result["errors"]
+
+
+def test_run_resolve_stops_when_records_recheck_fails() -> None:
+    audit = _audit(_thread(thread_id="t1", state="unresolved_current"))
+    calls: list[int] = []
+
+    def records_source(repo: str, number: int) -> dict:
+        calls.append(number)
+        if len(calls) > 1:
+            raise ValueError("GitHub GraphQL returned errors")
+        return {"t1": _record((LOGIN, fixed_mark()))}
+
+    result = _run([audit], {}, resolver=_confirm, records_source=records_source)
+    assert result["applied"] is False
+    assert "stale_audit:recheck_failed" in result["errors"]
