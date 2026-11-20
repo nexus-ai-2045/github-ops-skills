@@ -53,7 +53,7 @@ query($owner:String!, $name:String!, $number:Int!, $cursor:String) {
               id
               body
               path
-              author { login }
+              author { __typename login }
               originalCommit { oid }
             }
           }
@@ -110,6 +110,7 @@ class ThreadComment:
     path: str
     author: str
     original_commit: str
+    author_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,13 @@ class ThreadRecord:
 class CommitFiles:
     paths: frozenset[str]
     truncated: bool
+    parent_count: int = 1
+
+
+@dataclass(frozen=True)
+class IssueRef:
+    number: int
+    state: str
 
 
 class LookupFailure(Exception):
@@ -138,7 +146,7 @@ class GitHubLookup(Protocol):
 
     def commit_files(self, repo: str, commit: str) -> CommitFiles: ...
 
-    def issue_number(self, repo: str, number: int) -> int: ...
+    def issue_ref(self, repo: str, number: int) -> IssueRef: ...
 
 
 @dataclass(frozen=True)
@@ -218,6 +226,8 @@ def select_disposition(
     later = replies[own[-1] + 1 :]
     if any(comment.author.casefold() != login for comment in later):
         return ParseError("later_comment_by_other")
+    if later:
+        return ParseError("later_comment_after_mark")
     return parse_disposition(
         chosen.body, author=chosen.author, comment_id=chosen.id
     )
@@ -251,6 +261,8 @@ def _judge_fixed(
         return _hold(thread_id, "lookup_failed")
     if files.truncated:
         return _hold(thread_id, "files_truncated")
+    if files.parent_count != 1:
+        return _hold(thread_id, "merge_commit")
     if first.path not in files.paths:
         return _hold(thread_id, "commit_misses_path")
     return ThreadVerdict(thread_id, "resolvable", "fixed_verified")
@@ -269,13 +281,15 @@ def _judge_deferred(
     if number == ctx.pr_number:
         return _hold(thread_id, "ref_is_self")
     try:
-        found = lookup.issue_number(ctx.repo, number)
+        found = lookup.issue_ref(ctx.repo, number)
     except NotFound:
         return _hold(thread_id, "ref_not_found")
     except LookupFailure:
         return _hold(thread_id, "lookup_failed")
-    if found != number:
+    if found.number != number:
         return _hold(thread_id, "ref_mismatch")
+    if found.state != "open":
+        return _hold(thread_id, "ref_not_open")
     return ThreadVerdict(thread_id, "resolvable", "deferred_verified")
 
 
@@ -290,6 +304,8 @@ def judge_thread(
         return _hold(thread.id, "record_missing")
     if record.comments_truncated:
         return _hold(thread.id, "comments_truncated")
+    if record.comments[0].author_type != "Bot":
+        return _hold(thread.id, "first_author_not_bot")
     selected = select_disposition(record.comments, ctx.expected_login)
     if isinstance(selected, ParseError):
         return _hold(thread.id, selected.code)
@@ -402,7 +418,7 @@ def plan_resolve(
                 )
                 errors.append("unknown_thread")
 
-    resolve_ids = tuple(
+    resolve_ids = () if errors else tuple(
         thread.id for thread in audit.threads if by_id[thread.id].verdict == "resolvable"
     )
     needs_action = resolve_ids or materials
@@ -443,11 +459,9 @@ def resolve_thread(thread_id: str) -> dict[str, Any]:
 
 
 def _verified_mutation_thread(thread_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-    thread = (
-        payload.get("data", {})
-        .get("resolveReviewThread", {})
-        .get("thread", {})
-    )
+    thread: Any = payload
+    for key in ("data", "resolveReviewThread", "thread"):
+        thread = thread.get(key) if isinstance(thread, dict) else None
     if not isinstance(thread, dict):
         raise ValueError("resolve mutation thread payload is missing")
     returned_id = thread.get("id")
@@ -550,6 +564,7 @@ def _thread_record(node: dict[str, Any]) -> ThreadRecord:
                 path=comment.get("path") or "",
                 author=(comment.get("author") or {}).get("login", ""),
                 original_commit=(comment.get("originalCommit") or {}).get("oid", ""),
+                author_type=(comment.get("author") or {}).get("__typename", ""),
             )
             for comment in comments["nodes"]
         ),
@@ -614,6 +629,7 @@ class GhLookup:
         owner, name = repo_parts(repo)
         try:
             payload = json.loads(self._get(f"repos/{owner}/{name}/commits/{commit}"))
+            parent_count = len(payload["parents"])
             files = payload["files"]
             paths = {item["filename"] for item in files}
             paths |= {
@@ -624,16 +640,25 @@ class GhLookup:
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise LookupFailure(f"unexpected_github_response: {exc}") from exc
         return CommitFiles(
-            paths=frozenset(paths), truncated=len(files) >= COMMIT_FILES_LIMIT
+            paths=frozenset(paths),
+            truncated=len(files) >= COMMIT_FILES_LIMIT,
+            parent_count=parent_count,
         )
 
-    def issue_number(self, repo: str, number: int) -> int:
+    def issue_ref(self, repo: str, number: int) -> IssueRef:
         owner, name = repo_parts(repo)
-        raw = self._get(f"repos/{owner}/{name}/issues/{number}", "--jq", ".number")
+        raw = self._get(
+            f"repos/{owner}/{name}/issues/{number}", "--jq", "{number, state}"
+        )
         try:
-            return int(raw.strip())
-        except ValueError as exc:
+            payload = json.loads(raw)
+            found = payload["number"]
+            state = payload["state"]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise LookupFailure("unexpected_github_response") from exc
+        if type(found) is not int or not isinstance(state, str):
+            raise LookupFailure("unexpected_github_response")
+        return IssueRef(found, state)
 
 
 def _audit_error_from_exc(exc: BaseException) -> AuditResult:

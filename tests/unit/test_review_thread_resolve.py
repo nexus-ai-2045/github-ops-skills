@@ -11,6 +11,7 @@ from github_ops.review_thread_resolve import (
     CommitFiles,
     Disposition,
     GhLookup,
+    IssueRef,
     LookupFailure,
     NotFound,
     ParseError,
@@ -93,6 +94,7 @@ def _comment(author: str, body: str, *, index: int = 0) -> ThreadComment:
         path=PATH,
         author=author,
         original_commit=ORIGINAL,
+        author_type="Bot" if author == "review-bot" else "User",
     )
 
 
@@ -119,7 +121,7 @@ class FakeLookup:
         self.files: dict[str, CommitFiles | Exception] = {
             FIX: CommitFiles(frozenset({PATH}), False)
         }
-        self.issues: dict[int, int | Exception] = {80: 80}
+        self.issues: dict[int, IssueRef | Exception] = {80: IssueRef(80, "open")}
 
     def compare_status(self, repo: str, base: str, head: str) -> str:
         outcome = self.compare.get((base, head), NotFound("404"))
@@ -133,7 +135,7 @@ class FakeLookup:
             raise outcome
         return outcome
 
-    def issue_number(self, repo: str, number: int) -> int:
+    def issue_ref(self, repo: str, number: int) -> IssueRef:
         outcome = self.issues.get(number, NotFound("404"))
         if isinstance(outcome, Exception):
             raise outcome
@@ -405,7 +407,7 @@ def test_deferred_claim_github_cannot_confirm_stays_open(ref: str, code: str) ->
 
 def test_deferred_number_must_match_response() -> None:
     lookup = FakeLookup()
-    lookup.issues[80] = 79
+    lookup.issues[80] = IssueRef(79, "open")
     assert _verdict(_record((LOGIN, deferred_mark())), lookup).reason_code == "ref_mismatch"
 
 
@@ -430,9 +432,9 @@ def test_new_comment_by_another_author_after_record_stays_open() -> None:
     assert _verdict(record).reason_code == "later_comment_by_other"
 
 
-def test_later_unmarked_reply_by_same_author_keeps_record() -> None:
-    record = _record((LOGIN, fixed_mark()), (LOGIN, "補足です"))
-    assert _verdict(record).verdict == "resolvable"
+def test_later_unmarked_reply_by_same_author_stays_open() -> None:
+    record = _record((LOGIN, fixed_mark()), (LOGIN, "まだ直っていません"))
+    assert _verdict(record).reason_code == "later_comment_after_mark"
 
 
 def test_latest_record_replaces_an_earlier_one() -> None:
@@ -699,7 +701,7 @@ def _record_node(thread_id: str, *, comments_next: bool = False) -> dict:
                     "id": f"{thread_id}-0",
                     "body": "P1 finding",
                     "path": PATH,
-                    "author": {"login": "review-bot"},
+                    "author": {"__typename": "Bot", "login": "review-bot"},
                     "originalCommit": {"oid": ORIGINAL},
                 },
                 {
@@ -759,7 +761,7 @@ def test_gh_lookup_maps_404_to_not_found(monkeypatch) -> None:
 def test_gh_lookup_maps_other_failures_to_lookup_failure(monkeypatch) -> None:
     monkeypatch.setattr(module.subprocess, "run", _gh_failure("gh: Server Error (HTTP 502)"))
     with pytest.raises(LookupFailure) as excinfo:
-        GhLookup().issue_number(REPO, 80)
+        GhLookup().issue_ref(REPO, 80)
     assert not isinstance(excinfo.value, NotFound)
 
 
@@ -776,7 +778,10 @@ def test_gh_lookup_rejects_non_oid_before_calling_api(monkeypatch) -> None:
 
 def test_gh_lookup_commit_files_uses_new_and_previous_names(monkeypatch) -> None:
     body = json.dumps(
-        {"files": [{"filename": "src/new.py", "previous_filename": PATH}, {"filename": "a"}]}
+        {
+            "parents": [{"sha": ORIGINAL}],
+            "files": [{"filename": "src/new.py", "previous_filename": PATH}, {"filename": "a"}],
+        }
     )
     monkeypatch.setattr(module.subprocess, "run", lambda command, **kw: _completed(body))
     files = GhLookup().commit_files(REPO, FIX)
@@ -784,21 +789,25 @@ def test_gh_lookup_commit_files_uses_new_and_previous_names(monkeypatch) -> None
 
 
 def test_gh_lookup_commit_files_at_limit_is_truncated(monkeypatch) -> None:
-    body = json.dumps({"files": [{"filename": f"f{i}"} for i in range(300)]})
+    body = json.dumps(
+        {"parents": [{"sha": ORIGINAL}], "files": [{"filename": f"f{i}"} for i in range(300)]}
+    )
     monkeypatch.setattr(module.subprocess, "run", lambda command, **kw: _completed(body))
     assert GhLookup().commit_files(REPO, FIX).truncated is True
 
 
-def test_gh_lookup_compare_status_and_issue_number(monkeypatch) -> None:
+def test_gh_lookup_compare_status_and_issue_ref(monkeypatch) -> None:
     seen: list[list[str]] = []
 
     def fake_run(command, **kwargs):
         seen.append(command)
-        return _completed("ahead\n" if "compare" in command[4] else "80\n")
+        return _completed(
+            "ahead\n" if "compare" in command[4] else '{"number":80,"state":"open"}\n'
+        )
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
     assert GhLookup().compare_status(REPO, FIX, HEAD) == "ahead"
-    assert GhLookup().issue_number(REPO, 80) == 80
+    assert GhLookup().issue_ref(REPO, 80) == IssueRef(80, "open")
     assert seen[0][4] == f"repos/{REPO}/compare/{FIX}...{HEAD}"
     assert seen[1][4] == f"repos/{REPO}/issues/80"
 
@@ -839,3 +848,89 @@ def test_run_resolve_stops_when_records_recheck_fails() -> None:
     result = _run([audit], {}, resolver=_confirm, records_source=records_source)
     assert result["applied"] is False
     assert "stale_audit:recheck_failed" in result["errors"]
+
+
+def test_thread_started_by_a_person_stays_open_even_with_a_valid_record() -> None:
+    record = ThreadRecord(
+        "t1",
+        (
+            _comment("human-reviewer", "この設計はやめるべきです"),
+            _comment(LOGIN, fixed_mark(), index=1),
+        ),
+        False,
+    )
+    assert _verdict(record).reason_code == "first_author_not_bot"
+
+
+def test_fixed_pointing_at_a_merge_commit_stays_open() -> None:
+    lookup = FakeLookup()
+    lookup.files[FIX] = CommitFiles(frozenset({PATH}), False, parent_count=2)
+    verdict = _verdict(_record((LOGIN, fixed_mark())), lookup)
+    assert verdict.reason_code == "merge_commit"
+
+
+def test_deferred_to_a_closed_issue_stays_open() -> None:
+    lookup = FakeLookup()
+    lookup.issues[80] = IssueRef(80, "closed")
+    verdict = _verdict(_record((LOGIN, deferred_mark())), lookup)
+    assert verdict.reason_code == "ref_not_open"
+
+
+def test_unknown_proposed_thread_blocks_every_resolve() -> None:
+    audit = _audit(_thread(thread_id="t1", state="unresolved_current"))
+    closed: list[str] = []
+
+    def resolver(thread_id: str) -> dict:
+        closed.append(thread_id)
+        return _confirm(thread_id)
+
+    result = run_resolve(
+        REPO,
+        PR,
+        proposed_thread_ids=("t1", "typo"),
+        apply=True,
+        resolver=resolver,
+        expected_login=LOGIN,
+        lookup=FakeLookup(),
+        records_source=lambda repo, number: {"t1": _record((LOGIN, fixed_mark()))},
+        audit_source=lambda repo, number: audit,
+    )
+    assert closed == []
+    assert "unknown_thread" in result["errors"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"data": None}, {"data": {"resolveReviewThread": None}}],
+)
+def test_null_mutation_payload_keeps_partial_progress(payload: dict) -> None:
+    audit = _audit(
+        _thread(thread_id="t1", state="unresolved_current"),
+        _thread(thread_id="t2", state="unresolved_current"),
+    )
+    records = {
+        "t1": _record((LOGIN, fixed_mark()), thread_id="t1"),
+        "t2": _record((LOGIN, fixed_mark()), thread_id="t2"),
+    }
+
+    def resolver(thread_id: str) -> dict:
+        return payload if thread_id == "t2" else _confirm(thread_id)
+
+    result = _run([audit], records, resolver=resolver)
+    assert result["decision"] == "error"
+    assert [item["id"] for item in result["resolved"]] == ["t1"]
+
+
+def test_gh_lookup_commit_files_counts_parents(monkeypatch) -> None:
+    body = json.dumps(
+        {"parents": [{"sha": ORIGINAL}, {"sha": BASE}], "files": [{"filename": PATH}]}
+    )
+    monkeypatch.setattr(module.subprocess, "run", lambda command, **kw: _completed(body))
+    assert GhLookup().commit_files(REPO, FIX).parent_count == 2
+
+
+def test_record_query_reads_author_type(monkeypatch) -> None:
+    page = _record_page([_record_node("t1")])
+    monkeypatch.setattr(module.subprocess, "run", lambda command, **kw: _completed(page))
+    record = fetch_thread_records(REPO, PR)["t1"]
+    assert record.comments[0].author_type == "Bot"

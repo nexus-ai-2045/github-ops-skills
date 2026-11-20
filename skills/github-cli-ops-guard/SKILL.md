@@ -88,9 +88,10 @@ python skills/github-cli-ops-guard/scripts/github_pr_review_thread_audit.py --re
 ```
 
 - `JSON` の鍵は種類ごとに固定。余分な鍵、欠けた鍵、`v` が `1` 以外は不正。1 つの返信に印が 2 つ以上あっても不正。
-- 採用する記録は、2 件目以降のコメントのうち、作者が `--expected-login` と一致し印を含む最後の物。最初のコメント（ボット本文）の印は読まない。採用した記録の後に別の名義のコメントがあれば保留。
-- `fixed`: 閉じてよいのは、`commit` が `head` の祖先か同一、指摘の `originalCommit` の厳密な子孫、`base` に含まれず、スレッドの `path` を変えている時だけ。変更ファイルが 300 件以上で切れていれば保留。
-- `deferred`: 同じリポジトリの課題か `PR` が実在し、この `PR` 自身でない時だけ閉じてよい。
+- 採用する記録は、2 件目以降のコメントのうち、作者が `--expected-login` と一致し印を含む最後の物。最初のコメント（ボット本文）の印は読まない。採用した記録の後にコメントがあれば、名義を問わず保留（再指摘の扱い）。
+- 最初のコメントの作者が `GitHub` 上の `Bot` でないスレッド（人のレビュアーが立てた物）は、記録があっても閉じない。
+- `fixed`: 閉じてよいのは、`commit` が `head` の祖先か同一、指摘の `originalCommit` の厳密な子孫、`base` に含まれず、スレッドの `path` を変えている時だけ。変更ファイルが 300 件以上で切れている時と、マージコミット（親が 2 つ以上）の時は保留。
+- `deferred`: 同じリポジトリの課題か `PR` が実在して開いており、この `PR` 自身でない時だけ閉じてよい。
 - `dismissed`: 人が閉じる。
 - 記録なし、印が不正、作者が違う、コメントのページが切れている、照合の `API` が失敗した場合は保留する。
 
@@ -101,10 +102,11 @@ python scripts/github_pr_review_thread_resolve.py --repo owner/name --pr N --app
 ```
 
 - `--apply` なしは判定だけ。各スレッドの `verdicts`（`resolvable` / `human` / `hold` / `already_resolved` と理由コード）を返し、変更操作は出さない。`--expected-login` が無いと全件保留。
-- `--apply` は、判定が `resolvable` のスレッドだけ `resolveReviewThread` で閉じる。発行の直前に監査を取り直し、`head` / `base` が変わった、またはスレッドが未解決でなくなっていれば 1 件も閉じずに止まる。
+- `--apply` は、判定が `resolvable` のスレッドだけ `resolveReviewThread` で閉じる。発行の直前に監査と記録を取り直して判定し直し、`head` / `base` が変わった、スレッドが未解決でなくなった、または閉じてよい組が変わっていれば 1 件も閉じずに止まる。`--thread-id` に監査に無い ID が混じる時も 1 件も閉じない。
 - 部分的に閉じる。照合できた物だけ閉じ、残りは `materials` に理由コードつきで残る。操作後に未解決が残らなければ `ready`（終了コード `0`）、残れば `hold`、失敗は `error`（どちらも終了コード `1`）。
 - `--apply` には既存 `write` 契約どおり `--confirm` と `IdentityProbe` 入力（`--repo-root` / `--expected-owner` / `--expected-login`）が必要。`GH_HOST` は `github.com` に固定する。
 - `raw` `resolveReviewThread` や本文推定での `close` は使わない。
+- 限界: 取り直しから発行までの短い間に付いた返信やボット本文の書き換えは捉えない。`--expected-login` は記録を書く名義と同じなので、人が同じ名義で返信しても別人とは区別できない（印の後のコメントは名義を問わず保留にして補う）。
 
 ## 停止条件
 
