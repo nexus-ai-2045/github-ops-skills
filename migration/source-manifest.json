@@ -86,9 +86,9 @@
       "source_root": "shared",
       "source_path": "skills/github-cli-ops-guard/SKILL.md",
       "target_path": "skills/github-cli-ops-guard/SKILL.md",
-      "sha256": "f30922d0e4b987479d23f6b271e245ffd0bf1899e35c703844fde0f8ce1690a7",
+      "sha256": "43c3c8be9e6124be9103df56822f92a784ca9530cb58a4f92daeb76cbd37d711",
       "source_sha256": "20cac80f1a9c08a932d303ee3e8ebbfbc71b30192969f77d57eea66ba998a34c",
-      "target_sha256": "f30922d0e4b987479d23f6b271e245ffd0bf1899e35c703844fde0f8ce1690a7",
+      "target_sha256": "43c3c8be9e6124be9103df56822f92a784ca9530cb58a4f92daeb76cbd37d711",
       "normalized": true
     },
     {
