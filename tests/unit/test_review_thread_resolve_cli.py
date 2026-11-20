@@ -124,6 +124,8 @@ def test_resolve_cli_apply_runs_identity_preflight(monkeypatch, capsys, tmp_path
     assert out["decision"] == "ready"
     assert seen["kwargs"]["expected_login"] == "example-user"
     assert seen["run"]["apply"] is True
+    assert seen["run"]["resolver"] is cli.resolve_thread
+    assert seen["run"]["expected_login"] == "example-user"
 
 
 def test_resolve_cli_ready_exits_zero(monkeypatch, capsys) -> None:
@@ -141,3 +143,42 @@ def test_resolve_cli_ready_exits_zero(monkeypatch, capsys) -> None:
     out = json.loads(capsys.readouterr().out)
     assert out["decision"] == "ready"
     assert out["materials"] == []
+
+
+def test_resolve_cli_judges_with_expected_login_but_without_resolver(monkeypatch, capsys) -> None:
+    cli = _load_cli()
+    seen: dict = {}
+
+    def fake_run_resolve(*args, **kwargs):
+        seen.update(kwargs)
+        return {
+            "decision": "hold",
+            "applied": False,
+            "resolved": [],
+            "materials": [{"id": "t1", "reason_code": "no_record"}],
+            "errors": [],
+            "audit": {},
+        }
+
+    monkeypatch.setattr(cli, "run_resolve", fake_run_resolve)
+    argv = ["--repo", "owner/name", "--pr", "3", "--expected-login", "example-user", "--json"]
+    assert cli.main(argv) == 1
+    assert seen["expected_login"] == "example-user"
+    assert seen["resolver"] is None
+    assert seen["apply"] is False
+    assert json.loads(capsys.readouterr().out)["materials"][0]["reason_code"] == "no_record"
+
+
+def test_resolve_cli_partial_apply_with_open_threads_exits_one(monkeypatch, capsys) -> None:
+    cli = _load_cli()
+    payload = {
+        "decision": "hold",
+        "applied": True,
+        "resolved": [{"id": "t1", "isResolved": True}],
+        "materials": [{"id": "t2", "verdict": "hold", "reason_code": "no_record"}],
+        "errors": [],
+        "audit": {"decision": "hold"},
+    }
+    monkeypatch.setattr(cli, "run_resolve", lambda *args, **kwargs: payload)
+    assert cli.main(["--repo", "owner/name", "--pr", "3", "--json"]) == 1
+    assert json.loads(capsys.readouterr().out)["resolved"] == [{"id": "t1", "isResolved": True}]

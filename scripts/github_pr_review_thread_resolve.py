@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Fail-closed PR review-thread resolve gated by the existing audit judge.
+"""Fail-closed PR review-thread resolve gated by review-disposition records.
 
-Uses `github_ops.review_threads` only. Does not invent a close protocol.
-Unresolved or unjudgeable threads stay open and are surfaced as materials.
+Closes only threads whose disposition record GitHub itself confirms.
+Unresolved or unverifiable threads stay open and are surfaced as materials.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ if __package__ in {None, ""}:
 from github_ops.identity import IdentityProbe
 from github_ops.output import configure_utf8_stdout
 from github_ops.result import Status
-from github_ops.review_thread_resolve import run_resolve
+from github_ops.review_thread_resolve import resolve_thread, run_resolve
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -31,12 +31,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         default=None,
         dest="thread_ids",
-        help="Optional proposed thread ID (repeatable). Unresolved IDs stay open.",
+        help="Optional thread ID to close (repeatable). Other threads stay open.",
     )
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Confirm only IDs authorized by the existing audit judge.",
+        help="Close the threads whose disposition record is verified.",
     )
     parser.add_argument(
         "--confirm",
@@ -54,7 +54,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--expected-login",
-        help="IdentityProbe の expected login（--apply 時必須）",
+        help="IdentityProbe の expected login（--apply 時必須）。判定でも記録の作者として使う",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON.")
     return parser.parse_args(argv)
@@ -138,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
             args.pr,
             proposed_thread_ids=proposed,
             apply=args.apply,
+            resolver=resolve_thread if args.apply else None,
+            expected_login=args.expected_login,
         )
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
