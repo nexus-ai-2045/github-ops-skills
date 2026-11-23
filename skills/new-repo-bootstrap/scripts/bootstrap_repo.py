@@ -63,7 +63,7 @@ STEP_ORDER = (
     "branch_protection",
 )
 REPO_SETTINGS = (("delete_branch_on_merge", "true"),)
-GATE_SCRIPT_BLOB = "c798fbbb1eac3999d991efee2782e52426d91795"  # repo-preflight の scripts/github_settings_gate.py を中身で固定する
+GATE_SCRIPT_BLOB = "99692bc9b795919f9c9955edd02cc222082c8ed4"  # repo-preflight の scripts/github_settings_gate.py を中身で固定する
 GATE_PLAN_SCHEMA = "repo-preflight.branch-protection-plan/v1"
 GATE_PROFILE = "solo_public"
 PROTECTION_STATES = ("noop", "create", "overlay", "blocked")
@@ -864,9 +864,10 @@ class Bootstrapper:
         if _parse_json(out) != readback["expected"]:
             return "fail", f"保護の読み戻しが {out.strip()} で {json.dumps(readback['expected'], ensure_ascii=False)} にならない"
         admins, approvals, conversation, force, deletions, required = readback["expected"][:6]
+        required = [item.get("context") if isinstance(item, dict) else item for item in required]
         action = {"noop": "既に満たしていて書き込みなし", "create": "新しく当てた", "overlay": "既存の保護に重ねた"}[plan["state"]]
         return "ok", (f"{plan['default_branch']}: {action}。管理者も対象={admins}、承認数={approvals}、会話の解決必須={conversation}、"
-                      f"強制の送信={force}、枝の削除={deletions}、必須の検査 {', '.join(required)} (読み戻しで確認)")
+                      f"強制の送信={force}、枝の削除={deletions}、必須の検査 {', '.join(map(str, required))} (読み戻しで確認)")
 
     def _lockdown(self) -> tuple[str, str]:
         if self.plan.visibility != "public":

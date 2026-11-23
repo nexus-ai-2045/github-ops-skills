@@ -1255,6 +1255,16 @@ def test_readback_mismatch_blocks(module, home, tools, pinned_gate, readback) ->
     assert report["status"] == "BLOCKED" and "読み戻し" in report["steps"][-1]["detail"]
 
 
+def test_readback_expected_with_check_bindings_is_reported_by_name(module, home, tools, pinned_gate) -> None:
+    plan = _plan(module, home, **tools)
+    gate_plan = _gate_plan("create")
+    gate_plan["readback"]["expected"][5] = [{"context": "verify", "app_id": 15368}]
+    runner = GateRunner(_protect_responses(pinned_gate), gate_plan)
+    report = module.Bootstrapper(plan, runner, today=TODAY).apply_settings(protect_checks=PROTECT_CHECKS)
+    assert report["status"] == "READY", report
+    assert "必須の検査 verify" in report["steps"][-1]["detail"]
+
+
 def test_non_ascii_check_names_round_trip_through_plan_and_readback(module, home, tools, pinned_gate) -> None:
     plan = _plan(module, home, **tools)
     checks = ("題の検査", "verify")
