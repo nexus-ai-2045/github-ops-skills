@@ -751,6 +751,8 @@ def run_resolve(
                 )
                 if replanned.resolve_thread_ids != plan.resolve_thread_ids:
                     stale = "verdict_changed"
+                else:
+                    plan = replace(replanned, errors=replanned.errors + record_errors)
         if stale is not None:
             result = apply_resolve(plan, apply=False)
             result["decision"] = "error"

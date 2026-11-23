@@ -945,3 +945,26 @@ def test_lookups_only_ask_the_pull_request_repository() -> None:
     assert _verdict(_record((LOGIN, fixed_mark())), lookup).verdict == "resolvable"
     assert _verdict(_record((LOGIN, deferred_mark())), lookup).verdict == "resolvable"
     assert lookup.repos and set(lookup.repos) == {REPO}
+
+
+def test_run_resolve_reports_threads_that_appear_during_the_recheck() -> None:
+    before = _audit(_thread(thread_id="t1", state="unresolved_current"))
+    after = _audit(
+        _thread(thread_id="t1", state="unresolved_current"),
+        _thread(thread_id="t2", state="unresolved_current"),
+    )
+    records = {
+        "t1": _record((LOGIN, fixed_mark()), thread_id="t1"),
+        "t2": _record(thread_id="t2"),
+    }
+    closed: list[str] = []
+
+    def resolver(thread_id: str) -> dict:
+        closed.append(thread_id)
+        return _confirm(thread_id)
+
+    result = _run([before, after], records, resolver=resolver)
+    assert closed == ["t1"]
+    assert result["decision"] == "hold"
+    assert [item["id"] for item in result["materials"]] == ["t2"]
+    assert [thread["id"] for thread in result["audit"]["threads"]] == ["t1", "t2"]
