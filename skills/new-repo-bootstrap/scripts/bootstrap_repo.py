@@ -19,13 +19,16 @@ owner の token だけを使った GitHub 作成、公開直後の lockdown、ca
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any
 
 KNOWN_IDENTITIES: dict[str, tuple[str, str]] = {
@@ -57,8 +60,15 @@ SCAFFOLD_ORDER = ("LICENSE", "README.md", "SECURITY.md", "PREFLIGHT.md", "CONTRI
 STEP_ORDER = (
     "prepare_local", "set_identity", "scaffold_docs", "initial_commit", "readiness_scan",
     "create_remote", "repo_settings", "lockdown", "add_remote", "push", "promote_main", "verify", "register",
+    "branch_protection",
 )
 REPO_SETTINGS = (("delete_branch_on_merge", "true"),)
+GATE_SCRIPT_BLOB = "99692bc9b795919f9c9955edd02cc222082c8ed4"  # repo-preflight の scripts/github_settings_gate.py を中身で固定する
+GATE_PLAN_SCHEMA = "repo-preflight.branch-protection-plan/v1"
+GATE_PROFILE = "solo_public"
+PROTECTION_STATES = ("noop", "create", "overlay", "blocked")
+PROTECTION_LATER = ("最初のプルリクエストがマージされた後に --settings-only --confirm --protect-main"
+                    " --require-check <検査の名前> で当てる")
 LOCKDOWN_SCANNING_QUERY = (
     "[.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status]"
     ' | join(" ")'
@@ -107,6 +117,49 @@ class Plan:
             return "~/" + path.resolve().relative_to(self.home.resolve()).as_posix()
         except ValueError:
             return path.as_posix()
+
+
+def _parse_json(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def git_blob_id(data: bytes) -> str:
+    return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+
+
+def protection_digest(read: Any) -> str:
+    canonical = json.dumps(read, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def protection_plan_problem(plan: Any, nwo: str, checks: tuple[str, ...]) -> str | None:
+    if not isinstance(plan, dict) or plan.get("schema_version") != GATE_PLAN_SCHEMA:
+        return "関門の出力が保護の計画の形でない"
+    if str(plan.get("repository", "")).lower() != nwo.lower() or plan.get("required_checks") != list(checks):
+        return "関門の計画の対象が依頼と合わない"
+    if plan.get("state") not in PROTECTION_STATES:
+        return "関門の計画の状態が分からない"
+    if plan["state"] == "blocked":
+        return None
+    readback, basis, operation = plan.get("readback"), plan.get("basis"), plan.get("operation")
+    if not isinstance(readback, dict) or not isinstance(basis, dict):
+        return "関門の計画に読み戻しか取り直しの基準が無い"
+    if not isinstance(readback.get("jq"), str) or not isinstance(readback.get("expected"), list) or len(readback["expected"]) < 6:
+        return "関門の計画の読み戻しの照会式か期待値が無い"
+    if basis.get("state") not in {"absent", "present"} or not isinstance(plan.get("default_branch"), str) or not plan["default_branch"]:
+        return "関門の計画の取り直しの基準か既定の枝が無い"
+    target = f"repos/{nwo}/branches/{quote(plan['default_branch'], safe='/')}/protection"
+    endpoints = [readback.get("endpoint"), basis.get("endpoint")]
+    if plan["state"] != "noop":
+        if not isinstance(operation, dict) or operation.get("method") != "PUT" or not isinstance(operation.get("body"), dict):
+            return "関門の計画に書き込みの中身が無い"
+        endpoints.append(operation.get("endpoint"))
+    if any(not isinstance(e, str) or e.lower() != target.lower() for e in endpoints):
+        return "関門の計画の書き込み先が対象の既定の枝の保護でない"
+    return None
 
 
 class SubprocessRunner:
@@ -386,13 +439,14 @@ def insert_registry_row(text: str, plan: Plan, *, today: date) -> str:
 
 class Bootstrapper:
     def __init__(self, plan: Plan, runner, *, today: date, allow_no_preflight: bool = False,  # noqa: ANN001
-                 resume: bool = False, skip_push: bool = False) -> None:
+                 resume: bool = False, skip_push: bool = False, protect_checks: tuple[str, ...] | None = None) -> None:
         self.plan = plan
         self.runner = runner
         self.today = today
         self.allow_no_preflight = allow_no_preflight
         self.resume = resume          # 途中で止まった後の再実行 (remote / origin が既にあっても一致すれば続ける)
         self.skip_push = skip_push    # push を別経路で済ませた時だけ。verify が main の実在と sha を確認する
+        self.protect_checks = protect_checks
         self._token: str | None = None
         self._remote: dict[str, Any] | None = None   # gh repo view の結果 (存在する時)
         self._pushed_sha: str | None = None
@@ -589,19 +643,34 @@ class Bootstrapper:
             "initial_commit": self._initial_commit, "readiness_scan": self._readiness_scan,
             "create_remote": self._create_remote, "repo_settings": self._repo_settings, "lockdown": self._lockdown, "add_remote": self._add_remote,
             "push": self._push, "promote_main": self._promote_main, "register": self._register, "verify": self._verify,
+            "branch_protection": self._execute_protection,
         }
         for name in STEP_ORDER:
             try:
                 status, detail = actions[name]()
             except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
                 status, detail = "fail", f"{type(exc).__name__}: {exc}"
+            if name == "branch_protection" and status == "pending":
+                record(name, "pending", detail)
+                report["pending"] = [name]
+                report["protection_next"] = PROTECTION_LATER
+                continue
             if not record(name, status, detail):
-                return report
-        report["status"] = "READY"
+                break
+        else:
+            report["status"] = "READY"
         if self.registration is not None:
             report["registration"] = self.registration
             report["next"] = REGISTRATION_NEXT
         return report
+
+    def _execute_protection(self) -> tuple[str, str]:
+        if self.plan.visibility != "public":
+            return "skipped", "private は既定の枝の保護の対象外 (無料の契約では使えない)"
+        if self.protect_checks is None:
+            return "pending", "既定の枝の保護は未適用。" + PROTECTION_LATER
+        status, detail = self._protect_main(self.protect_checks)
+        return (status, detail) if status == "ok" else ("pending", "既定の枝の保護は未適用 (" + detail + ")。" + PROTECTION_LATER)
 
     def _prepare_local(self) -> tuple[str, str]:
         if self.plan.repo_dir.exists():
@@ -693,7 +762,7 @@ class Bootstrapper:
             applied.append(f"{key}={value}")
         return "ok", ", ".join(applied)
 
-    def apply_settings(self) -> dict[str, Any]:
+    def apply_settings(self, protect_checks: tuple[str, ...] | None = None) -> dict[str, Any]:
         report: dict[str, Any] = {"repository": self.plan.nwo, "visibility": self.plan.visibility, "steps": []}
         token = self._resolve_token()
         report["steps"].append({"name": "token_login", "status": "ok" if token == "ok" else "fail", "detail": token})
@@ -730,8 +799,75 @@ class Bootstrapper:
         if status == "ok":
             status, detail = self._lockdown_readback()
         report["steps"].append({"name": "lockdown", "status": status, "detail": detail})
+        if status in {"ok", "skipped"} and protect_checks is not None:
+            if self.plan.visibility != "public":
+                status, detail = "skipped", "private は既定の枝の保護の対象外 (無料の契約では使えない)"
+            else:
+                status, detail = self._protect_main(protect_checks)
+            report["steps"].append({"name": "branch_protection", "status": status, "detail": detail})
         report["status"] = "READY" if status in {"ok", "skipped"} else "BLOCKED"
         return report
+
+    def _gate_plan(self, checks: tuple[str, ...]) -> tuple[dict[str, Any] | None, str]:
+        script = self.plan.preflight_script
+        if script is None:
+            return None, "repo-preflight が見つからない"
+        root = script.parents[1]
+        rc, source, _ = self._git_at(root, "cat-file", "blob", GATE_SCRIPT_BLOB)
+        data = source.encode("utf-8")
+        if rc != 0 or git_blob_id(data) != GATE_SCRIPT_BLOB:
+            return None, f"repo-preflight に固定した版の関門 (blob {GATE_SCRIPT_BLOB[:12]}) が無い。repo-preflight を fetch する"
+        argv = ["protection-plan", "--repository", self.plan.nwo, "--profile", GATE_PROFILE, "--expected-login", self.plan.owner]
+        for name in checks:
+            argv += ["--require-check", name]
+        with tempfile.TemporaryDirectory() as directory:
+            gate = Path(directory) / "github_settings_gate.py"
+            gate.write_bytes(data)
+            rc, out, err = self.runner.run(["python3", str(gate), *argv],
+                                           scoped_env={"GH_TOKEN": self._token or "", "GH_HOST": "github.com"})
+        plan = _parse_json(out)
+        problem = protection_plan_problem(plan, self.plan.nwo, checks)
+        if problem:
+            return None, f"{problem} (rc={rc}): {err.strip()[:300]}"
+        return plan, ""
+
+    def _protect_main(self, checks: tuple[str, ...]) -> tuple[str, str]:
+        plan, problem = self._gate_plan(checks)
+        if plan is None:
+            return "fail", problem
+        if plan["state"] == "blocked":
+            return "fail", "関門が保護の計画を止めた: " + "; ".join(map(str, plan.get("blocked_reasons") or []))
+        readback = plan["readback"]
+        if plan["state"] != "noop":
+            basis = plan["basis"]
+            rc, out, err = self._gh("api", basis["endpoint"])
+            if rc == 0 and isinstance(_parse_json(out), dict):
+                current = ("present", protection_digest(_parse_json(out)))
+            elif rc != 0 and "Branch not protected" in err + out:
+                current = ("absent", None)
+            else:
+                return "fail", "保護の取り直しに失敗: " + err.strip()
+            if current != (basis.get("state"), basis.get("sha256")):
+                return "fail", "関門が計画を作った後に保護が変わった。書き込まずに止め、計画を取り直す"
+            operation = plan["operation"]
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
+                json.dump(operation["body"], handle, ensure_ascii=False)
+            try:
+                rc, _, err = self._gh("api", "-X", "PUT", operation["endpoint"], "--input", handle.name)
+            finally:
+                Path(handle.name).unlink(missing_ok=True)
+            if rc != 0:
+                return "fail", "保護の書き込みに失敗: " + err.strip()
+        rc, out, err = self._gh("api", readback["endpoint"], "--jq", readback["jq"])
+        if rc != 0:
+            return "fail", "保護の読み戻しに失敗: " + err.strip()
+        if _parse_json(out) != readback["expected"]:
+            return "fail", f"保護の読み戻しが {out.strip()} で {json.dumps(readback['expected'], ensure_ascii=False)} にならない"
+        admins, approvals, conversation, force, deletions, required = readback["expected"][:6]
+        required = [item.get("context") if isinstance(item, dict) else item for item in required]
+        action = {"noop": "既に満たしていて書き込みなし", "create": "新しく当てた", "overlay": "既存の保護に重ねた"}[plan["state"]]
+        return "ok", (f"{plan['default_branch']}: {action}。管理者も対象={admins}、承認数={approvals}、会話の解決必須={conversation}、"
+                      f"強制の送信={force}、枝の削除={deletions}、必須の検査 {', '.join(map(str, required))} (読み戻しで確認)")
 
     def _lockdown(self) -> tuple[str, str]:
         if self.plan.visibility != "public":
@@ -1037,6 +1173,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-push", action="store_true", help="push を別経路で済ませた後に残りだけを行う (--resume と併用)")
     parser.add_argument("--settings-only", action="store_true",
                         help="既存の repository に REPO_SETTINGS と、public なら公開時の lockdown を当てる (--confirm と併用)。作成・push・台帳は触らない")
+    parser.add_argument("--protect-main", action="store_true",
+                        help="既定の枝に、repo-preflight の関門が出した保護の計画を当てて読み戻す。関門が止めたら書き込まない")
+    parser.add_argument("--require-check", action="append", default=[], metavar="NAME",
+                        help="--protect-main で必須にする検査の名前。繰り返して複数指定する")
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -1047,6 +1187,12 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
     args = parser.parse_args(argv)
     if not args.settings_only and not args.description:
         parser.error("--description は新規作成に必須")
+    if args.protect_main and not (args.settings_only or args.confirm):
+        parser.error("--protect-main は --settings-only か --confirm と併用する")
+    if args.protect_main != bool(args.require_check):
+        parser.error("--protect-main と --require-check は組で指定する")
+    if any(not name or name != name.strip() for name in args.require_check) or len(set(args.require_check)) != len(args.require_check):
+        parser.error("--require-check に空の名前、前後の空白、重複がある")
     home = home or Path.home()
     env = dict(os.environ) if env is None else env
     today = today or date.today()
@@ -1061,13 +1207,14 @@ def main(argv: list[str] | None = None, *, runner=None, home: Path | None = None
         print(json.dumps({"mode": "plan", "status": "BLOCKED", "cause": str(exc)}, ensure_ascii=False))
         return 1
     boot = Bootstrapper(plan, runner or SubprocessRunner(), today=today,
-                        allow_no_preflight=args.allow_no_preflight, resume=args.resume, skip_push=args.skip_push)
+                        allow_no_preflight=args.allow_no_preflight, resume=args.resume, skip_push=args.skip_push,
+                        protect_checks=tuple(args.require_check) if args.protect_main else None)
     if args.settings_only:
         if not args.confirm:
             print(json.dumps({"mode": "settings", "status": "BLOCKED", "cause": "--settings-only は --confirm と併用する",
                               "settings": dict(REPO_SETTINGS)}, ensure_ascii=False))
             return 1
-        result = boot.apply_settings()
+        result = boot.apply_settings(tuple(args.require_check) if args.protect_main else None)
         result["mode"] = "settings"
     elif args.confirm:
         result = boot.execute()
