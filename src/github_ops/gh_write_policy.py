@@ -46,6 +46,9 @@ _API_FORBIDDEN_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 _API_METHOD_RE = re.compile(r"^(?:-X|--method)(?:=)?(.*)$")
+# gh api --help (gh 2.96.0) の短いフラグ。値を取る物と取らない物に分ける。
+_API_VALUE_SHORTS = frozenset("FHqXpft")
+_API_BOOLEAN_SHORTS = frozenset("i")
 _REPO_NEW_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _REPO_YES_FLAGS = frozenset({"-y", "--yes"})
 _REPO_SELECTOR_FLAGS = frozenset({"-R", "--repo"})
@@ -133,18 +136,43 @@ def _url_repo(token: str) -> tuple[str | None, str | None]:
 
 
 def _api_method(rest: list[str]) -> str:
+    """gh api の実効 HTTP メソッドを返す。読めない短いフラグがあれば UNKNOWN を返す。
+
+    短いフラグは gh (pflag) と同じく、`-iXDELETE` のようにまとめて書ける。値を取るフラグの後ろは
+    同じ語の残り、無ければ次の語が値になる。
+    """
     method = None
     has_fields = False
-    for index, token in enumerate(rest):
-        match = _API_METHOD_RE.match(token)
-        if match and token not in ("-X", "--method") and match.group(1):
-            method = match.group(1)
-        elif token in ("-X", "--method") and index + 1 < len(rest):
-            method = rest[index + 1]
-        elif token in ("-f", "-F", "--field", "--raw-field", "--input") or re.match(
-            r"^-[fF].|^--(raw-)?field=|^--input=", token
-        ):
-            has_fields = True
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token.startswith("--"):
+            match = _API_METHOD_RE.match(token)
+            if match and token != "--method" and match.group(1):
+                method = match.group(1)
+            elif token == "--method" and index + 1 < len(rest):
+                method = rest[index + 1]
+            elif token in ("--field", "--raw-field", "--input") or re.match(r"^--(raw-)?field=|^--input=", token):
+                has_fields = True
+        elif token.startswith("-") and len(token) > 1:
+            position = 1
+            while position < len(token):
+                flag = token[position]
+                if flag in _API_BOOLEAN_SHORTS:
+                    position += 1
+                    continue
+                if flag not in _API_VALUE_SHORTS:
+                    return "UNKNOWN"
+                value = token[position + 1 :]
+                if not value and index + 1 < len(rest):
+                    index += 1
+                    value = rest[index]
+                if flag == "X":
+                    method = value.removeprefix("=")
+                elif flag in "fF":
+                    has_fields = True
+                break
+        index += 1
     if method:
         return method.strip("'\"").upper()
     return "POST" if has_fields else "GET"

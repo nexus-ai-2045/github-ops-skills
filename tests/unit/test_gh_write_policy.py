@@ -64,6 +64,28 @@ def test_repo_rename_needs_confirmation_and_explicit_target() -> None:
     assert check_scope(["repo", "rename", "new-name"], TARGET, TARGET) == "repo_change_target_not_explicit"
 
 
+@pytest.mark.parametrize(
+    "method_args",
+    [
+        ["-iXDELETE"],
+        ["-iX", "DELETE"],
+        ["-i", "-X", "DELETE"],
+        ["-X=DELETE"],
+        ["-iX=PATCH"],
+        ["-if", "name=x"],
+        ["-Z"],
+    ],
+)
+def test_grouped_short_flags_cannot_hide_a_write_to_the_repository_root(method_args: list[str]) -> None:
+    args = ["api", f"repos/{TARGET}", *method_args]
+    assert check_scope(args, TARGET) == "api_path_needs_dedicated_entrypoint"
+
+
+@pytest.mark.parametrize("method_args", [["-i"], ["-q", ".name"], ["-qXDELETE"], ["-X", "GET"]])
+def test_reads_of_the_repository_root_stay_allowed(method_args: list[str]) -> None:
+    assert check_scope(["api", f"repos/{TARGET}", *method_args], TARGET) is None
+
+
 def test_api_write_to_dedicated_path_is_denied() -> None:
     args = ["api", f"repos/{TARGET}/pulls/2/merge", "-X", "PUT"]
     assert check_scope(args, TARGET) == "api_path_needs_dedicated_entrypoint"
